@@ -286,7 +286,7 @@ static void handleDataFragment(uint16_t seq, uint8_t fi, uint8_t nf,
         s_rxNf = 0;
         s_rxWindow = true;
         memset(s_rxHoldLen, 0, sizeof(s_rxHoldLen));
-        delta = 0;
+        delta = (uint16_t)((seq - headSeq) & 0xFFF);   // = fi (база уже = headSeq)
     }
     uint8_t slot = (uint8_t)(delta & (MESH_IP_WINDOW - 1));
 
