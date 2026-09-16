@@ -134,6 +134,14 @@ static void natSendUpTcpip(void* arg) {
     if (!p) return;
     memcpy(p->payload, s_upSeg, s_upSegLen);
     err_t err = raw_sendto_if_src(pcb, p, &s_upDst, s_staNetif, &s_upSrc);
+    {
+        ip4_addr_t a = ip_2_ip4(&s_upSrc), b = ip_2_ip4(&s_upDst);
+        slog("[NAT] ↑ %dB proto=%d %d.%d.%d.%d → %d.%d.%d.%d err=%d\n",
+                  s_upSegLen, s_upProto,
+                  (int)ip4_addr1(&a), (int)ip4_addr2(&a), (int)ip4_addr3(&a), (int)ip4_addr4(&a),
+                  (int)ip4_addr1(&b), (int)ip4_addr2(&b), (int)ip4_addr3(&b), (int)ip4_addr4(&b),
+                  (int)err);
+    }
     if (err != ERR_OK) slog("[NAT] up send err=%d\n", (int)err);
     pbuf_free(p);
     s_upSegLen = 0;
@@ -227,6 +235,8 @@ static u8_t coordRawRecv(void* arg, struct raw_pcb* pcb, struct pbuf* p,
     } else {
         return 0;
     }
+    slog("[NAT] ↓ raw %dB proto=%d dst=%d.%d.%d.%d:%u\n", copied, proto,
+              (int)buf[16], (int)buf[17], (int)buf[18], (int)buf[19], dstPort);
     NatEntry* e = natFindByExt(proto, dstPort);
     if (!e) return 0;   // не наш трафик — lwIP разберётся сам
 
