@@ -66,6 +66,10 @@ static volatile uint32_t s_upDropNetif = 0;
 static volatile uint32_t s_upDropPcb = 0;
 static volatile uint32_t s_upDropPbuf = 0;
 static volatile uint32_t s_upCalls = 0;
+static volatile uint32_t s_upSrcIp = 0;     // последний отправленный апстрим
+static volatile uint32_t s_upDstIp = 0;
+static volatile uint32_t s_upExtPort = 0;
+static volatile uint16_t s_upDstPort0 = 0;
 
 void meshIpNatTick() {
     if (s_dlSeen) {
@@ -83,6 +87,15 @@ void meshIpNatTick() {
                   (unsigned long)s_upCalls, (unsigned long)s_upDropLen,
                   (unsigned long)s_upDropNetif, (unsigned long)s_upDropPcb,
                   (unsigned long)s_upDropPbuf);
+        if (s_upExtPort) {
+            uint32_t a = s_upSrcIp, b = s_upDstIp;
+            slog("[NAT] ↑ src=%d.%d.%d.%d dst=%d.%d.%d.%d extPort=%lu dstPort0=%u\n",
+                      (int)((a >> 24) & 0xFF), (int)((a >> 16) & 0xFF),
+                      (int)((a >> 8) & 0xFF), (int)(a & 0xFF),
+                      (int)((b >> 24) & 0xFF), (int)((b >> 16) & 0xFF),
+                      (int)((b >> 8) & 0xFF), (int)(b & 0xFF),
+                      (unsigned long)s_upExtPort, (unsigned)s_upDstPort0);
+        }
         s_upCnt = 0;
     }
 }
@@ -179,6 +192,8 @@ static void natSendUpTcpip(void* arg) {
     s_upCnt++;
     s_upLen = s_upSegLen;
     s_upProtoStat = s_upProto;
+    s_upSrcIp = s_upSrc.u_addr.ip4.addr;
+    s_upDstIp = s_upDst.u_addr.ip4.addr;
     if (err != ERR_OK) { s_upErrCnt++; s_upLastErr = (uint32_t)err; }
     pbuf_free(p);
     s_upSegLen = 0;
@@ -212,6 +227,7 @@ static void natUpstreamCb(const uint8_t* pkt, uint16_t len) {
 
     NatEntry* e = natFindOrCreate(proto, phoneIp, phonePort);
     if (!e) { slog("[NAT] table full\n"); return; }
+    s_upExtPort = e->ext_port;
     // Обновляем src IP на текущий STA-адрес
     uint32_t staIp = 0;
     if (s_staEspNetif) {
