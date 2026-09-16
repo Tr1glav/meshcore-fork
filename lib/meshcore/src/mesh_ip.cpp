@@ -162,6 +162,22 @@ static uint8_t  s_rxMsgBuf[MESH_IP_PKT_MAX];
 // Статический общий буфер для base64
 static char s_b64buf[MESH_IP_FRAG_MAX * 4 / 3 + 8];
 
+// --- Токен-слоты (полудуплексный маятник) ---
+// Строгое чередование TX/RX: кто последний передал — уступает ход пиру.
+// s_slotTurn: true = наш ход (мы передаём), false = ход пира (мы слушаем)
+static bool     s_slotTurn   = true;   // компаньон начинает (у него есть апстрим)
+static uint32_t s_lastSlotMs = 0;      // момент отправки последнего фрагмента (guard)
+
+// Отложенный ACK координатора: когда в очереди есть даунлинк, ACK на пришедший
+// апстрим-фрагмент не уходит сразу — его заменяет даунлинк-фрагмент (он же даёт
+// ход компаньону). По ACK на даунлинк накопленный ACK сбрасывается одной посылкой.
+static bool     s_ackQValid  = false;
+static uint16_t s_ackQBase   = 0;
+static uint16_t s_ackQBitmap = 0;
+
+// Принят poll "ip:p" от пира (у координатора: надо вернуть ход — эхо/даунлинк)
+static bool     s_receivedPoll = false;
+
 // ===================== Публичные =====================
 
 uint16_t meshIpFragCap() {
@@ -193,6 +209,8 @@ void meshIpReset() {
     s_rxNf = 0;
     memset(s_rxHoldLen, 0, sizeof(s_rxHoldLen));
     s_rxMsgReady = false;
+    s_slotTurn   = true;
+    s_lastSlotMs = 0;
 }
 
 void meshIpInit() {
@@ -237,7 +255,12 @@ static void sendSensorFrame(const char* msg) {
     String sMsg(msg);
     uint8_t frame[256];
     int f = buildGroupFrameFlood(sensorChannelIdx, sMsg, frame, sizeof(frame));
-    if (f > 0) txFrame(frame, f);
+    if (f > 0) {
+        txFrame(frame, f);
+        // Любая передача съедает ход: после TX уступаем пиру, RX его вернёт.
+        s_slotTurn   = false;
+        s_lastSlotMs = millis();
+    }
 }
 
 static void sendFragment(const uint8_t* raw, uint8_t len, uint16_t seq, uint8_t fi, uint8_t nf) {
@@ -265,6 +288,19 @@ static void handleAck(uint16_t ackBase, uint16_t bitmap) {
         s_txHead = (s_txHead + 1) % MESH_IP_QUEUE_MAX;
         s_txCount--;
         slog("[IP] TX complete, queued=%d\n", s_txCount);
+        // Координатор: пачку даунлинка приняли целиком — пора выдать накопленный
+        // апстрим-ACK (мы его задерживали, пока шёл даунлинк).
+        #if defined(MQTT_ENABLED)
+        if (s_ackQValid) {
+            char ackFrame[16];
+            snprintf(ackFrame, sizeof(ackFrame), "%sa%03X%04X", MESH_IP_PFX,
+                     s_ackQBase & 0xFFF, s_ackQBitmap);
+            sendSensorFrame(ackFrame);
+            s_ackQValid = false;
+            slog("[IP] ACK flush base=%03X bitmap=%04X\n",
+                          s_ackQBase & 0xFFF, s_ackQBitmap);
+        }
+        #endif
     } else {
         // Пачка не собрана — повторных ретраев не нужно, следующий фрагмент в tick
         s_txLastMs = 0;
@@ -307,11 +343,24 @@ static void handleDataFragment(uint16_t seq, uint8_t fi, uint8_t nf,
     slog("[IP] RX frag seq=%03X fi=%d/%d raw=%d bitmap=%04X\n",
                   seq, fi, nf, rawLen, s_rxBitmap);
 
-    // ACK этой порции до сброса состояния: bitmap ещё отражает принятые фрагменты
-    char ackFrame[16];
-    snprintf(ackFrame, sizeof(ackFrame), "%sa%03X%04X", MESH_IP_PFX,
-             s_rxAckBase & 0xFFF, s_rxBitmap);
-    sendSensorFrame(ackFrame);
+#if defined(MQTT_ENABLED)
+    // Координатор: if есть даунлинк в очереди и он ещё не в полёте — ACK откладываем.
+    // Ход тратим на даунлинк-фрагмент; накопленный ACK сбросится по ACK даунлинка.
+    if (s_txCount > 0 && !s_txInFlight) {
+        s_ackQValid  = true;
+        s_ackQBase   = s_rxAckBase;   // копируем ДО сброса окна ниже
+        s_ackQBitmap = s_rxBitmap;
+        slog("[IP] ACK deferred base=%03X bitmap=%04X (downlink queued=%d)\n",
+                      s_rxAckBase & 0xFFF, s_rxBitmap, s_txCount);
+    } else
+#endif
+    {
+        // ACK этой порции до сброса состояния: bitmap ещё отражает принятые фрагменты
+        char ackFrame[16];
+        snprintf(ackFrame, sizeof(ackFrame), "%sa%03X%04X", MESH_IP_PFX,
+                 s_rxAckBase & 0xFFF, s_rxBitmap);
+        sendSensorFrame(ackFrame);
+    }
 
     if (s_rxNf != 0) {
         bool complete = true;
@@ -348,7 +397,8 @@ static void handleDataFragment(uint16_t seq, uint8_t fi, uint8_t nf,
 bool meshIpOnChannelText(const String& name, const String& text) {
     if (text.length() <= 3 || !text.startsWith(MESH_IP_PFX)) return false;
     char cmd = text.charAt(3);
-    if (cmd != 'd' && cmd != 'D' && cmd != 'a' && cmd != 'A') return false;
+    if (cmd != 'd' && cmd != 'D' && cmd != 'a' && cmd != 'A' &&
+        cmd != 'p' && cmd != 'P') return false;
 
     // Игнорируем собственные фрагменты (echo自己的 flood)
     if (name == cfg.name) return true;
@@ -356,6 +406,15 @@ bool meshIpOnChannelText(const String& name, const String& text) {
     s_linkPeer = name;
     s_lastRxMs = millis();
     s_linkUp = true;
+    // Пир передал — ход наш (следующий TX съест turn в sendSensorFrame)
+    s_slotTurn = true;
+
+    if (cmd == 'p' || cmd == 'P') {
+        // Poll пира: он даёт ход и ждёт, что у нас есть (ACK/даунлинк) — либо
+        // молчит; обработчик в tick вернёт ход эхом. Принимаем и пометим.
+        s_receivedPoll = true;
+        return true;
+    }
 
     if (cmd == 'd' || cmd == 'D') {
         // Данные: "ip:d" + 3seq + 1fn + base64
@@ -419,10 +478,62 @@ void meshIpTick() {
     // фрагмент, принятый координатором, поднимет линк и на его стороне.
     if (!s_linkUp && s_txCount == 0) return;
 
-    // Исходящий фрагмент-движок (stop-and-wait): один фрагмент за цикл.
-    // Каждый кадр ~245 Б на SF8/BW62.5 занимает в эфире ~1.8 c — если слать
-    // пачку подряд, радио всё это время в TX и не слышит ни ACK, ни даунлинк
-    // пира. Между отправками держим RX-окно: слышим ACK и встречный трафик.
+    // ---- Токен-слоты (полудуплексный маятник) ----
+    // Передаём, когда: (а) линк не поднят — bootstrap, ждать нечего;
+    // (б) ход наш (s_slotTurn, вернётся RX от пира); (в) ретрай созрел, а пир
+    // молчит — иначе маятник бы завис, потеряв кадр. Ретрай НЕ пускаем, если пир
+    // недавно говорил (он живой и, возможно, шлёт нам пачку — не мешаем ему).
+    uint32_t nowMs = millis();
+    bool peerSilent = (nowMs - s_lastRxMs) >= MESH_IP_RTT_MS;
+    bool retryDue = s_txInFlight &&
+                    (nowMs - s_txLastMs) >= MESH_IP_RTT_MS && peerSilent;
+    bool myTurn = !s_linkUp || s_slotTurn || retryDue;
+    if (!myTurn) return;
+
+    // Координатор: пир дал ход, даунлинк пуст — выдать накопленный апстрим-ACK
+    // (страховка на случай, если пачка даунлинка сдохла до полного сбора).
+    #if defined(MQTT_ENABLED)
+    if (s_ackQValid && !s_txInFlight) {
+        char ackFrame[16];
+        snprintf(ackFrame, sizeof(ackFrame), "%sa%03X%04X", MESH_IP_PFX,
+                 s_ackQBase & 0xFFF, s_ackQBitmap);
+        sendSensorFrame(ackFrame);
+        s_ackQValid = false;
+        slog("[IP] ACK flush (idle) base=%03X bitmap=%04X\n",
+                      s_ackQBase & 0xFFF, s_ackQBitmap);
+    }
+    #endif
+
+    // Компаньон: очередь пуста, линк жив, пир молчит — опрос координатора.
+    // Отдаёт ход, бодрит линк и будит даунлинк, если тот висит в очереди.
+    #if defined(COMPANION_NODE)
+    if (s_linkUp && !s_txInFlight && s_txCount == 0 &&
+        (nowMs - s_lastRxMs) >= MESH_IP_POLL_MS) {
+        slog("[IP] POLL\n");
+        sendSensorFrame("ip:p");
+        return;
+    }
+    #endif
+
+    if (s_receivedPoll) {
+        s_receivedPoll = false;
+        if (s_txInFlight || s_txCount > 0) {
+            // Есть трафик — движок ниже использует наш ход по делу.
+        } else {
+            // Говорить нечего. Координатор обязан эхо-вернуть ход кометьсьону
+            // (иначе тот встанет на своём таймере в жёсткую паузу); компаньон
+            // на poll всегда молчит — эхо породило бы бесконечный маятник.
+            #if defined(MQTT_ENABLED)
+            slog("[IP] POLL echo\n");
+            sendSensorFrame("ip:p");
+            #endif
+            return;
+        }
+    }
+
+    // Исходящий фрагмент-движок: один фрагмент за ход. Каждый кадр ~245 Б на
+    // SF8/BW62.5 занимает в эфире ~1.8 c — передав, мы уступаем ход пиру, и его
+    // ACK/даунлинк успевает дойти до возврата нашего слота.
     const uint8_t* pkt = s_txQueue[s_txHead];
     uint16_t pktLen = s_txQLen[s_txHead];
 
@@ -437,13 +548,25 @@ void meshIpTick() {
         }
         // ACK пришёл с прогрессом (s_txLastMs==0) → шлём следующий фрагмент сразу
         bool wantSend = (s_txLastMs == 0);
-        if (!wantSend && millis() - s_txLastMs >= MESH_IP_RTT_MS) {
+        if (!wantSend && retryDue) {
             s_txRetries++;
             if (s_txRetries > MESH_IP_RETRY_MAX) {
                 s_txInFlight = false;
                 s_txHead = (s_txHead + 1) % MESH_IP_QUEUE_MAX;
                 s_txCount--;
                 slog("[IP] TX TIMEOUT (retries=%d), packet dropped\n", s_txRetries);
+                #if defined(MQTT_ENABLED)
+                // Пачка даунлинка сдохла — освобождаем застрявший апстрим-ACK
+                if (s_ackQValid) {
+                    char ackFrame[16];
+                    snprintf(ackFrame, sizeof(ackFrame), "%sa%03X%04X", MESH_IP_PFX,
+                             s_ackQBase & 0xFFF, s_ackQBitmap);
+                    sendSensorFrame(ackFrame);
+                    s_ackQValid = false;
+                    slog("[IP] ACK flush (drop) base=%03X bitmap=%04X\n",
+                                  s_ackQBase & 0xFFF, s_ackQBitmap);
+                }
+                #endif
                 return;
             }
             slog("[IP] TX RETRY %d/%d\n", s_txRetries, MESH_IP_RETRY_MAX);

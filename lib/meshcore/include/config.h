@@ -248,7 +248,9 @@ struct PeerEntry {
 #define MESH_IP_FRAG_MAX        210       // макс. полезных байт в одном фрагменте (≈ 3/4 канала)
 #define MESH_IP_WINDOW          16        // слотов приёмного окна (∈ bitmap ACK)
 #define MESH_IP_FRAGS_PER_MSG   15        // макс. фрагментов сообщения (умещается в 1 hex)
-#define MESH_IP_RTT_MS          1500      // таймаут ретрансмиссии (мс)
+#define MESH_IP_FRAME_MS        2000      // длительность кадра в эфире + запас (мс)
+#define MESH_IP_RTT_MS          5000      // таймаут ретрансмиссии (мс) ≥ 2×FRAME + запас
+#define MESH_IP_POLL_MS         4000      // период пустого опроса координатора (компаньон даёт ход)
 #define MESH_IP_RETRY_MAX       4         // повторов пачки, после — сброс пакета
 #define MESH_IP_IDLE_MS         60000     // таймаут неактивной сессии (мс)
 #define MESH_IP_LINK_TICK_MS    500       // период сторожевого таймера meshIpTick (мс)
