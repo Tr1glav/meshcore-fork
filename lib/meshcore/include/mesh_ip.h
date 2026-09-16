@@ -43,6 +43,8 @@ void     meshIpApStop();
 bool     meshIpApActive();
 const char* meshIpApSsid();
 const char* meshIpApPass();
+uint32_t meshIpApTunTx();   // отправлено в туннель (с телефона)
+uint32_t meshIpApTunRx();   // получено из туннеля и отдано телефону
 #endif
 
 // Координатор: NAT через raw pcb

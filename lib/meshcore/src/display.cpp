@@ -182,8 +182,10 @@ void drawIdleStatus() {
         display.println("IP MESH AP");
         display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
         display.setCursor(0, 14);
-        display.printf("SSID:\n%s\n", meshIpApSsid());
-        display.printf("PASS:\n%s\n", meshIpApPass());
+        display.printf("SSID: %s\n", meshIpApSsid());
+        display.printf("PASS: %s\n", meshIpApPass());
+        display.printf("tun rx:%lu\n", (unsigned long)meshIpApTunRx());
+        display.printf("    tx:%lu\n", (unsigned long)meshIpApTunTx());
         display.setCursor(0, 56);
         display.print(meshIpLinkUp() ? "tunnel UP" : "waiting peer");
         display.display();

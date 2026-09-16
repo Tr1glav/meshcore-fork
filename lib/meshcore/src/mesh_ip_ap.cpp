@@ -146,8 +146,12 @@ void meshIpApStop() {
 // ===================== Захват входящих кадров телефона =====================
 
 uint32_t g_meshIpRxFwd = 0;   // forwarded to lwIP (ARP/DHCP/local)
-uint32_t g_meshIpRxTun = 0;   // injected into tunnel
+uint32_t g_meshIpRxTun = 0;   // injected into tunnel (telegram от телефона → mesh)
+uint32_t g_meshIpTxOk  = 0;   // принято из туннеля и доставлено телефону
 static uint32_t s_rxTotal = 0; // all calls into apRxGrab
+
+uint32_t meshIpApTunTx()   { return g_meshIpRxTun; }   // в туннель (от телефона)
+uint32_t meshIpApTunRx()   { return g_meshIpTxOk; }    // из туннеля → телефону
 
 static esp_err_t apRxGrab(void* buffer, uint16_t len, void* eb) {
     if (!s_apNetif || !buffer || len < 14) {
@@ -272,6 +276,7 @@ static void apSendToPhoneTcpip(void* arg) {
     if (err != ERR_OK) {
         Serial.printf("[IP] → phone ERR %d  proto=%d seg=%d\n", (int)err, proto, segLen);
     } else {
+        g_meshIpTxOk++;
         Serial.printf("[IP] → phone OK   proto=%d seg=%d %d.%d.%d.%d\n",
                       proto, segLen, ip[16], ip[17], ip[18], ip[19]);
     }
