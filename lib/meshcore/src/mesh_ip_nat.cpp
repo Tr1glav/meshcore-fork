@@ -176,13 +176,16 @@ static void natSendUpTcpip(void* arg) {
 
 // meshIpRecvCb: датаграмма телефона из туннеля (main-loop контекст)
 static void natUpstreamCb(const uint8_t* pkt, uint16_t len) {
-    if (len < 20 || !s_staNetif) return;
+    if (len < 20 || !s_staNetif) {
+        slog("[NAT] !tunnel drop netif=%p len=%u\n", (void*)s_staNetif, len);
+        return;
+    }
     uint8_t ihl = (uint8_t)((pkt[0] & 0x0F) * 4);
-    if (ihl < 20 || ihl >= len) return;
+    if (ihl < 20 || ihl >= len) { slog("[NAT] !tunnel drop ihl=%u len=%u\n", ihl, len); return; }
     uint8_t proto = pkt[9];
-    if (proto != 1 && proto != 6 && proto != 17) return;
+    if (proto != 1 && proto != 6 && proto != 17) { slog("[NAT] !tunnel drop proto=%u\n", proto); return; }
     uint16_t fragOff = (uint16_t)(((pkt[6] & 0x1F) << 8) | pkt[7]);
-    if (fragOff != 0) return;
+    if (fragOff != 0) { slog("[NAT] !tunnel drop fragOff=%u\n", fragOff); return; }
 
     uint16_t phonePort;
     if (proto == 1) phonePort = (uint16_t)((pkt[ihl + 4] << 8) | pkt[ihl + 5]);
@@ -191,7 +194,7 @@ static void natUpstreamCb(const uint8_t* pkt, uint16_t len) {
                        ((uint32_t)pkt[14] << 8) | (uint32_t)pkt[15];
     uint32_t dstIp = ((uint32_t)pkt[16] << 24) | ((uint32_t)pkt[17] << 16) |
                      ((uint32_t)pkt[18] << 8) | (uint32_t)pkt[19];
-    if ((dstIp & 0xFF000000) == 0xE0000000 || dstIp == 0xFFFFFFFF) return;
+    if ((dstIp & 0xFF000000) == 0xE0000000 || dstIp == 0xFFFFFFFF) { slog("[NAT] !tunnel drop mcast\n"); return; }
 
     slog("[NAT] ← tunnel %dB proto=%d %d.%d.%d.%d:%u → %d.%d.%d.%d\n", len, proto,
                   (int)pkt[12], (int)pkt[13], (int)pkt[14], (int)pkt[15], phonePort,
