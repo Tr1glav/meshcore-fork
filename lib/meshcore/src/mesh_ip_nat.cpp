@@ -149,6 +149,20 @@ void meshIpNatInit() {
     if (s_staEspNetif) {
         s_staNetif = (struct netif*)esp_netif_get_netif_impl(s_staEspNetif);
     }
+    if (s_staEspNetif && s_staNetif) {
+        esp_netif_ip_info_t inf;
+        if (esp_netif_get_ip_info(s_staEspNetif, &inf) == ESP_OK) {
+            uint32_t ip = inf.ip.addr, gw = inf.gw.addr, ms = inf.netmask.addr;
+            slog("[NAT] STA ip=%d.%d.%d.%d gw=%d.%d.%d.%d mask=%d.%d.%d.%d netif=%p\n",
+                      (int)(ip >> 24) & 0xFF, (int)(ip >> 16) & 0xFF,
+                      (int)(ip >> 8) & 0xFF, (int)ip & 0xFF,
+                      (int)(gw >> 24) & 0xFF, (int)(gw >> 16) & 0xFF,
+                      (int)(gw >> 8) & 0xFF, (int)gw & 0xFF,
+                      (int)(ms >> 24) & 0xFF, (int)(ms >> 16) & 0xFF,
+                      (int)(ms >> 8) & 0xFF, (int)ms & 0xFF,
+                      (void*)s_staNetif);
+        }
+    }
     // raw_recv для TCP/UDP/ICMP
     for (uint8_t proto = 1; proto <= 17; proto += (proto == 1) ? 5 : 11) {
         if (proto != 1 && proto != 6 && proto != 17) continue;
