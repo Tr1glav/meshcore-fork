@@ -208,8 +208,12 @@ static void natSendUpTcpip(void* arg) {
     s_upCnt++;
     s_upLen = s_upSegLen;
     s_upProtoStat = s_upProto;
-    s_upSrcIp = s_upSrc.u_addr.ip4.addr;
-    s_upDstIp = s_upDst.u_addr.ip4.addr;
+    const ip4_addr_t* a4 = ip_2_ip4(&s_upSrc);
+    const ip4_addr_t* d4 = ip_2_ip4(&s_upDst);
+    s_upSrcIp = ((uint32_t)ip4_addr_get_byte(a4, 0) << 24) | ((uint32_t)ip4_addr_get_byte(a4, 1) << 16) |
+                ((uint32_t)ip4_addr_get_byte(a4, 2) << 8) | ip4_addr_get_byte(a4, 3);
+    s_upDstIp = ((uint32_t)ip4_addr_get_byte(d4, 0) << 24) | ((uint32_t)ip4_addr_get_byte(d4, 1) << 16) |
+                ((uint32_t)ip4_addr_get_byte(d4, 2) << 8) | ip4_addr_get_byte(d4, 3);
     if (err != ERR_OK) { s_upErrCnt++; s_upLastErr = (uint32_t)err; }
     pbuf_free(p);
     s_upSegLen = 0;
