@@ -253,8 +253,10 @@ static void sendFragment(const uint8_t* raw, uint8_t len, uint16_t seq, uint8_t 
 static void handleAck(uint16_t ackBase, uint16_t bitmap) {
     if (!s_txInFlight) return;
     if (ackBase != s_txBaseSeq) return;
+    if (bitmap == 0 || (s_txWaitBitmap | bitmap) == s_txWaitBitmap) return;
     s_txWaitBitmap |= bitmap;
-    s_txLastMs = millis();
+    s_txRetries = 0;                 // был прогресс — пачку не рвём
+    s_txLastMs = millis();           // следующий фрагмент выйдем сразу после сброса ниже
     Serial.printf("[IP] ACK base=%03X bitmap=%04X wait=%04X expect=%04X\n",
                   ackBase, bitmap, s_txWaitBitmap, s_txExpectBitmap);
     if (s_txWaitBitmap == s_txExpectBitmap) {
@@ -262,6 +264,9 @@ static void handleAck(uint16_t ackBase, uint16_t bitmap) {
         s_txHead = (s_txHead + 1) % MESH_IP_QUEUE_MAX;
         s_txCount--;
         Serial.printf("[IP] TX complete, queued=%d\n", s_txCount);
+    } else {
+        // Пачка не собрана — повторных ретраев не нужно, следующий фрагмент в tick
+        s_txLastMs = 0;
     }
 }
 
@@ -413,10 +418,25 @@ void meshIpTick() {
     // фрагмент, принятый координатором, поднимет линк и на его стороне.
     if (!s_linkUp && s_txCount == 0) return;
 
-    // Исходящий фрагмент-движок
+    // Исходящий фрагмент-движок (stop-and-wait): один фрагмент за цикл.
+    // Каждый кадр ~245 Б на SF8/BW62.5 занимает в эфире ~1.8 c — если слать
+    // пачку подряд, радио всё это время в TX и не слышит ни ACK, ни даунлинк
+    // пира. Между отправками держим RX-окно: слышим ACK и встречный трафик.
+    const uint8_t* pkt = s_txQueue[s_txHead];
+    uint16_t pktLen = s_txQLen[s_txHead];
+
     if (s_txInFlight) {
-        // Таймаут → ретрансмиссия
-        if (millis() - s_txLastMs >= MESH_IP_RTT_MS) {
+        // Пачка собрана — снимаем пакет с очереди
+        if (s_txWaitBitmap == s_txExpectBitmap) {
+            s_txInFlight = false;
+            s_txHead = (s_txHead + 1) % MESH_IP_QUEUE_MAX;
+            s_txCount--;
+            Serial.printf("[IP] TX complete, queued=%d\n", s_txCount);
+            return;
+        }
+        // ACK пришёл с прогрессом (s_txLastMs==0) → шлём следующий фрагмент сразу
+        bool wantSend = (s_txLastMs == 0);
+        if (!wantSend && millis() - s_txLastMs >= MESH_IP_RTT_MS) {
             s_txRetries++;
             if (s_txRetries > MESH_IP_RETRY_MAX) {
                 s_txInFlight = false;
@@ -426,24 +446,21 @@ void meshIpTick() {
                 return;
             }
             Serial.printf("[IP] TX RETRY %d/%d\n", s_txRetries, MESH_IP_RETRY_MAX);
-            if (s_txCount > 0) {
-                const uint8_t* pkt = s_txQueue[s_txHead];
-                uint16_t pktLen = s_txQLen[s_txHead];
-                uint16_t rawMax = meshIpFragCap();
-                for (uint8_t i = 0; i < s_txFragCount; ++i) {
-                    if (!(s_txWaitBitmap & (1 << i))) {
-                        uint16_t off = (uint16_t)(i * rawMax);
-                        uint8_t  flen = (uint8_t)((off + rawMax <= pktLen)
-                                                  ? rawMax : (pktLen - off));
-                        sendFragment(pkt + off, flen, s_txBaseSeq + i, i, s_txFragCount);
-                    }
-                }
-                s_txLastMs = millis();
+            wantSend = true;
+        }
+        if (wantSend) {
+            uint16_t rawMax = meshIpFragCap();
+            // первый неподтверждённый фрагмент (обычно следующий по порядку)
+            uint8_t i = 0;
+            while (i < s_txFragCount && (s_txWaitBitmap & (1 << i))) i++;
+            if (i < s_txFragCount) {
+                uint16_t off = (uint16_t)(i * rawMax);
+                uint8_t  flen = (uint8_t)((off + rawMax <= pktLen) ? rawMax : (pktLen - off));
+                sendFragment(pkt + off, flen, s_txBaseSeq + i, i, s_txFragCount);
             }
+            s_txLastMs = millis();
         }
     } else if (s_txCount > 0) {
-        const uint8_t* pkt = s_txQueue[s_txHead];
-        uint16_t pktLen = s_txQLen[s_txHead];
         uint16_t rawMax = meshIpFragCap();
         s_txFragCount = (pktLen == 0) ? 1 : (uint8_t)((pktLen + rawMax - 1) / rawMax);
         if (s_txFragCount > MESH_IP_FRAGS_PER_MSG) s_txFragCount = MESH_IP_FRAGS_PER_MSG;
@@ -456,11 +473,8 @@ void meshIpTick() {
 
         Serial.printf("[IP] TX START seq=%03X frags=%d pktLen=%d rawMax=%d expect=%04X\n",
                       s_txBaseSeq, s_txFragCount, pktLen, rawMax, s_txExpectBitmap);
-        for (uint8_t i = 0; i < s_txFragCount; ++i) {
-            uint16_t off = (uint16_t)(i * rawMax);
-            uint8_t  flen = (uint8_t)((off + rawMax <= pktLen) ? rawMax : (pktLen - off));
-            sendFragment(pkt + off, flen, s_txBaseSeq + i, i, s_txFragCount);
-        }
+        sendFragment(pkt, (uint8_t)min((uint16_t)rawMax, pktLen),
+                     s_txBaseSeq, 0, s_txFragCount);
         s_txLastMs = millis();
     }
 }
