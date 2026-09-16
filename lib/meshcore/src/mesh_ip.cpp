@@ -146,6 +146,8 @@ static uint16_t s_nextSeq = 0;
 
 // --- Входящее окно (восстановление из фрагментов пира) ---
 static uint16_t s_rxBase    = 0;     // база текущего окна
+static bool     s_rxWindow  = false;  // окно инициализировано
+static uint16_t s_rxAckBase = 0;     // head-сeq сообщения, по которому шлём ACK
 static uint16_t s_rxBitmap  = 0;     // бит i = 1 → фрагмент с seq=rxBase+i получен
 static uint8_t  s_rxNf      = 0;     // nf из fi==0 (0 = ещё не знаем)
 static uint8_t  s_rxHold[MESH_IP_WINDOW][MESH_IP_FRAG_MAX];
@@ -167,10 +169,11 @@ uint16_t meshIpFragCap() {
     // buildGroupEnc: plaintext = 4 (ts) + 1 (type) + nameLen + 2 (": ") + tunnelMsg
     // tunnelMsg <= 240 - 5 - (nameLen + 2)
     int tunnelMax = GROUP_TEXT_MAX_PLAIN - 5 - nameLen - 2;
-    // tunnelMsg = "ip:"(3) + seq3(3) + fn1(1) + base64
-    int b64Max = tunnelMax - 3 - 3 - 1;
+    // tunnelMsg = "ip:"(3) + cmd(1) + seq3(3) + fn1(1) + base64
+    int b64Max = tunnelMax - 3 - 1 - 3 - 1;
     if (b64Max < 0) b64Max = 0;
-    int rawMax = (b64Max * 3) / 4;
+    // base64 длина = 4*ceil(raw/3) → rawMax = (b64Max/4)*3 (чтобы влезло с паддингом)
+    int rawMax = (b64Max / 4) * 3;
     if (rawMax > MESH_IP_FRAG_MAX) rawMax = MESH_IP_FRAG_MAX;
     if (rawMax < 1) rawMax = 1;
     return (uint16_t)rawMax;
@@ -240,15 +243,8 @@ static void sendFragment(const uint8_t* raw, uint8_t len, uint16_t seq, uint8_t 
     int b64len = b64enc(raw, len, s_b64buf, (int)sizeof(s_b64buf) - 1);
     s_b64buf[b64len] = 0;
     char frame[1400];
-    snprintf(frame, sizeof(frame), "%s%03X%01X%s", MESH_IP_PFX,
+    snprintf(frame, sizeof(frame), "%sd%03X%01X%s", MESH_IP_PFX,
              seq & 0xFFF, ((fi & 0xF) << 4) | (nf & 0xF), s_b64buf);
-    sendSensorFrame(frame);
-}
-
-static void sendAck() {
-    char frame[16];
-    snprintf(frame, sizeof(frame), "%s%03X%04X", MESH_IP_PFX,
-             s_rxBase & 0xFFF, s_rxBitmap);
     sendSensorFrame(frame);
 }
 
@@ -279,12 +275,16 @@ static void handleDataFragment(uint16_t seq, uint8_t fi, uint8_t nf,
     s_linkUp = true;
 
     // Пир ушёл в переполнение окна (сброс на своей стороне) → начинаем заново
+    uint16_t headSeq = seq - fi;
+    s_rxAckBase = headSeq;   // все фрагменты одного сообщения делят head → base ACK текущий
     uint16_t delta = (uint16_t)((seq - s_rxBase) & 0xFFF);
-    if (delta >= MESH_IP_WINDOW) {
+    if (!s_rxWindow || delta >= MESH_IP_WINDOW) {
         Serial.printf("[IP] RX window reset: seq=%03X base=%03X delta=%u\n", seq, s_rxBase, delta);
-        s_rxBase = seq;
+        s_rxBase = headSeq;
+        s_rxAckBase = headSeq;
         s_rxBitmap = 0;
         s_rxNf = 0;
+        s_rxWindow = true;
         memset(s_rxHoldLen, 0, sizeof(s_rxHoldLen));
         delta = 0;
     }
@@ -298,9 +298,14 @@ static void handleDataFragment(uint16_t seq, uint8_t fi, uint8_t nf,
     if (s_rxNf == 0 || fi == 0) s_rxNf = nf;
     if (s_rxNf > MESH_IP_FRAGS_PER_MSG) s_rxNf = MESH_IP_FRAGS_PER_MSG;
 
-    uint16_t headSeq = seq - fi;
     Serial.printf("[IP] RX frag seq=%03X fi=%d/%d raw=%d bitmap=%04X\n",
                   seq, fi, nf, rawLen, s_rxBitmap);
+
+    // ACK этой порции до сброса состояния: bitmap ещё отражает принятые фрагменты
+    char ackFrame[16];
+    snprintf(ackFrame, sizeof(ackFrame), "%sa%03X%04X", MESH_IP_PFX,
+             s_rxAckBase & 0xFFF, s_rxBitmap);
+    sendSensorFrame(ackFrame);
 
     if (s_rxNf != 0) {
         bool complete = true;
@@ -323,6 +328,7 @@ static void handleDataFragment(uint16_t seq, uint8_t fi, uint8_t nf,
             s_rxMsgLen = (uint16_t)total;
             s_rxMsgReady = true;
             Serial.printf("[IP] RX ASSEMBLED %dB, delivering via recvCb\n", total);
+            s_rxAckBase = headSeq;   // ACK базой остаётся head собранного сообщения
             s_rxBase = (uint16_t)((headSeq + s_rxNf) & 0xFFF);
             s_rxBitmap = 0;
             s_rxNf = 0;
@@ -357,7 +363,6 @@ bool meshIpOnChannelText(const String& name, const String& text) {
         int rawLen = b64dec(p, rawBuf, sizeof(rawBuf));
         if (rawLen <= 0) return false;
         handleDataFragment(seq, fi, nf, rawBuf, (uint8_t)rawLen);
-        sendAck();
         return true;
     }
     // ACK
