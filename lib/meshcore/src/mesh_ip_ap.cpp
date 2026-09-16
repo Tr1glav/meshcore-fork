@@ -13,6 +13,7 @@
 #include "companion.h"   // companionBleStop / companionBegin
 #include "globals.h"
 #include "display.h"
+#include "ota.h"        // slog: журнал (Serial + web-хвост координатора)
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -64,7 +65,7 @@ void meshIpApInit() {
     s_ssid = String(ssidBuf);
     s_pass = String(passBuf);
     s_inited = true;
-    Serial.printf("[IP] pass=%s generated at boot\n", passBuf);
+    slog("[IP] pass=%s generated at boot\n", passBuf);
 }
 
 const char* meshIpApSsid() { return s_ssid.c_str(); }
@@ -73,17 +74,17 @@ bool meshIpApActive()      { return s_apActive; }
 
 void meshIpApStart() {
     if (s_apActive) return;
-    if (!s_inited) { Serial.println("[IP] not inited!"); return; }
+    if (!s_inited) { slog("[IP] not inited!\n"); return; }
 
-    Serial.println("[IP] === AP START ===");
+    slog("[IP] === AP START ===\n");
 
     // 1) Полностью выключаем BLE — освобождаем ~70 КБ RAM + освобождаем радио
-    Serial.println("[IP] stopping BLE...");
+    slog("[IP] stopping BLE...\n");
     companionBleStop();
 
     // 2) Максимальная частота процессора — вся мощность на WiFi + LoRa
     setCpuFrequencyMhz(CPU_MHZ_FAST);
-    Serial.printf("[IP] CPU → %d MHz\n", CPU_MHZ_FAST);
+    slog("[IP] CPU → %d MHz\n", CPU_MHZ_FAST);
 
     // 3) Поднимаем WiFi AP
     WiFi.mode(WIFI_AP);
@@ -97,7 +98,7 @@ void meshIpApStart() {
         s_apLwip = (struct netif*)esp_netif_get_netif_impl(s_apNetif);
     }
     if (!s_apLwip) {
-        Serial.println("[IP] AP netif FAIL — rollback");
+        slog("[IP] AP netif FAIL — rollback\n");
         WiFi.softAPdisconnect(true);
         WiFi.mode(WIFI_STA);
         setCpuFrequencyMhz(CPU_MHZ_IDLE);
@@ -108,17 +109,17 @@ void meshIpApStart() {
     // 4) Перехват RX-буфера AP: гребём «чужой» IPv4 в туннель,
     //    ARP/DHCP/локальное — в lwIP как обычно.
     esp_err_t rc = esp_wifi_internal_reg_rxcb(WIFI_IF_AP, apRxGrab);
-    Serial.printf("[IP] reg_rxcb(WIFI_IF_AP) rc=0x%X  (%s)\n", rc,
+    slog("[IP] reg_rxcb(WIFI_IF_AP) rc=0x%X  (%s)\n", rc,
                   rc == ESP_OK ? "OK" : "FAIL");
     if (rc != ESP_OK) {
-        Serial.println("[IP] WARNING: rxcb NOT installed — телефон не сможет ходить в туннель");
+        slog("[IP] WARNING: rxcb NOT installed — телефон не сможет ходить в туннель\n");
     }
 
     // 5) Даунлинк: из туннеля → телефон
     meshIpSetRecvCb(meshIpApRecvCb);
 
     s_apActive = true;
-    Serial.printf("[IP] AP UP  ssid=%s pass=%s gw=%d.%d.%d.%d\n",
+    slog("[IP] AP UP  ssid=%s pass=%s gw=%d.%d.%d.%d\n",
                   s_ssid.c_str(), s_pass.c_str(),
                   s_apIp.ip.addr & 0xFF, (s_apIp.ip.addr >> 8) & 0xFF,
                   (s_apIp.ip.addr >> 16) & 0xFF, (s_apIp.ip.addr >> 24) & 0xFF);
@@ -127,7 +128,7 @@ void meshIpApStart() {
 
 void meshIpApStop() {
     if (!s_apActive) return;
-    Serial.println("[IP] === AP STOP ===");
+    slog("[IP] === AP STOP ===\n");
     s_apActive = false;
 
     WiFi.softAPdisconnect(true);
@@ -135,11 +136,11 @@ void meshIpApStop() {
 
     // Восстанавливаем BLE
     companionBegin();
-    Serial.println("[IP] BLE restarted");
+    slog("[IP] BLE restarted\n");
 
     // Восстанавливаем частоту
     setCpuFrequencyMhz(CPU_MHZ_IDLE);
-    Serial.printf("[IP] CPU → %d MHz\n", CPU_MHZ_IDLE);
+    slog("[IP] CPU → %d MHz\n", CPU_MHZ_IDLE);
     screenWake();
 }
 
@@ -163,7 +164,7 @@ static esp_err_t apRxGrab(void* buffer, uint16_t len, void* eb) {
 
     // Первые 20 пакетов — логируем каждый, чтобы понять что вообще приходит
     if (s_rxTotal <= 20) {
-        Serial.printf("[IP] apRxGrab #%lu len=%d eth=%02X%02X\n",
+        slog("[IP] apRxGrab #%lu len=%d eth=%02X%02X\n",
                       s_rxTotal, len, b[12], b[13]);
     }
 
@@ -178,7 +179,7 @@ static esp_err_t apRxGrab(void* buffer, uint16_t len, void* eb) {
     } else {
         g_meshIpRxFwd++;
         if (s_rxTotal <= 20)
-            Serial.printf("[IP] fwd #%lu: unknown-eth, %dB\n", s_rxTotal, len);
+            slog("[IP] fwd #%lu: unknown-eth, %dB\n", s_rxTotal, len);
         esp_netif_receive(s_apNetif, buffer, len, eb);
         return ESP_OK;
     }
@@ -187,7 +188,7 @@ static esp_err_t apRxGrab(void* buffer, uint16_t len, void* eb) {
     if (etype != 0x0800) {
         g_meshIpRxFwd++;
         if (s_rxTotal <= 20)
-            Serial.printf("[IP] fwd #%lu: non-IPv4 eth=0x%04X, %dB\n", s_rxTotal, etype, len);
+            slog("[IP] fwd #%lu: non-IPv4 eth=0x%04X, %dB\n", s_rxTotal, etype, len);
         esp_netif_receive(s_apNetif, buffer, len, eb);
         return ESP_OK;
     }
@@ -206,7 +207,7 @@ static esp_err_t apRxGrab(void* buffer, uint16_t len, void* eb) {
     if (dst == 0 || dst == 0xFFFFFFFF || dst == s_apGw) {
         g_meshIpRxFwd++;
         if (s_rxTotal <= 20 || (g_meshIpRxFwd & 0x0F) == 1)
-            Serial.printf("[IP] fwd #%lu: dst=%d.%d.%d.%d %s, %dB\n",
+            slog("[IP] fwd #%lu: dst=%d.%d.%d.%d %s, %dB\n",
                           s_rxTotal, ip[16], ip[17], ip[18], ip[19],
                           etype == 0x0800 ? "IPv4-ICMP/UDP" : "?", len);
         esp_netif_receive(s_apNetif, buffer, len, eb);
@@ -225,7 +226,7 @@ static esp_err_t apRxGrab(void* buffer, uint16_t len, void* eb) {
     if ((g_meshIpRxTun & 0x1F) == 1) {   // раз в 32 пакета, чтобы не спамить
         uint32_t src = ((uint32_t)ip[12] << 24) | ((uint32_t)ip[13] << 16) |
                        ((uint32_t)ip[14] << 8) | (uint32_t)ip[15];
-        Serial.printf("[IP] rx tun #%lu: %d.%d.%d.%d → %d.%d.%d.%d (%dB)\n",
+        slog("[IP] rx tun #%lu: %d.%d.%d.%d → %d.%d.%d.%d (%dB)\n",
                       g_meshIpRxTun,
                       (int)ip[12], (int)ip[13], (int)ip[14], (int)ip[15],
                       (int)ip[16], (int)ip[17], (int)ip[18], (int)ip[19],
@@ -264,9 +265,9 @@ static void apSendToPhoneTcpip(void* arg) {
     uint16_t segLen = s_sendLen - ihl;
 
     struct raw_pcb* pcb = apGetOrCreateRaw(proto);
-    if (!pcb) { Serial.println("[IP] raw_new FAIL"); return; }
+    if (!pcb) { slog("[IP] raw_new FAIL\n"); return; }
     struct pbuf* p = pbuf_alloc(PBUF_RAW, segLen, PBUF_RAM);
-    if (!p) { Serial.println("[IP] pbuf_alloc FAIL"); return; }
+    if (!p) { slog("[IP] pbuf_alloc FAIL\n"); return; }
     memcpy(p->payload, ip + ihl, segLen);
 
     ip_addr_t src_ip, dst_ip;
@@ -274,10 +275,10 @@ static void apSendToPhoneTcpip(void* arg) {
     IP_ADDR4(&dst_ip, ip[16], ip[17], ip[18], ip[19]);
     err_t err = raw_sendto_if_src(pcb, p, &dst_ip, s_apLwip, &src_ip);
     if (err != ERR_OK) {
-        Serial.printf("[IP] → phone ERR %d  proto=%d seg=%d\n", (int)err, proto, segLen);
+        slog("[IP] → phone ERR %d  proto=%d seg=%d\n", (int)err, proto, segLen);
     } else {
         g_meshIpTxOk++;
-        Serial.printf("[IP] → phone OK   proto=%d seg=%d %d.%d.%d.%d\n",
+        slog("[IP] → phone OK   proto=%d seg=%d %d.%d.%d.%d\n",
                       proto, segLen, ip[16], ip[17], ip[18], ip[19]);
     }
     pbuf_free(p);
@@ -285,7 +286,7 @@ static void apSendToPhoneTcpip(void* arg) {
 
 static void meshIpApRecvCb(const uint8_t* pkt, uint16_t len) {
     if (!s_apActive || len > sizeof(s_sendPkt)) return;
-    Serial.printf("[IP] recvCb %dB → phone\n", len);
+    slog("[IP] recvCb %dB → phone\n", len);
     memcpy(s_sendPkt, pkt, len);
     s_sendLen = len;
     tcpip_callback(apSendToPhoneTcpip, NULL);

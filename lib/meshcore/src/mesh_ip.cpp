@@ -10,6 +10,7 @@
 #include "globals.h"
 #include "mesh.h"
 #include "radio.h"
+#include "ota.h"        // slog: журнал (Serial + web-хвост координатора)
 
 #include <Arduino.h>
 #include <cstring>
@@ -257,13 +258,13 @@ static void handleAck(uint16_t ackBase, uint16_t bitmap) {
     s_txWaitBitmap |= bitmap;
     s_txRetries = 0;                 // был прогресс — пачку не рвём
     s_txLastMs = millis();           // следующий фрагмент выйдем сразу после сброса ниже
-    Serial.printf("[IP] ACK base=%03X bitmap=%04X wait=%04X expect=%04X\n",
+    slog("[IP] ACK base=%03X bitmap=%04X wait=%04X expect=%04X\n",
                   ackBase, bitmap, s_txWaitBitmap, s_txExpectBitmap);
     if (s_txWaitBitmap == s_txExpectBitmap) {
         s_txInFlight = false;
         s_txHead = (s_txHead + 1) % MESH_IP_QUEUE_MAX;
         s_txCount--;
-        Serial.printf("[IP] TX complete, queued=%d\n", s_txCount);
+        slog("[IP] TX complete, queued=%d\n", s_txCount);
     } else {
         // Пачка не собрана — повторных ретраев не нужно, следующий фрагмент в tick
         s_txLastMs = 0;
@@ -284,7 +285,7 @@ static void handleDataFragment(uint16_t seq, uint8_t fi, uint8_t nf,
     s_rxAckBase = headSeq;   // все фрагменты одного сообщения делят head → base ACK текущий
     uint16_t delta = (uint16_t)((seq - s_rxBase) & 0xFFF);
     if (!s_rxWindow || delta >= MESH_IP_WINDOW) {
-        Serial.printf("[IP] RX window reset: seq=%03X base=%03X delta=%u\n", seq, s_rxBase, delta);
+        slog("[IP] RX window reset: seq=%03X base=%03X delta=%u\n", seq, s_rxBase, delta);
         s_rxBase = headSeq;
         s_rxAckBase = headSeq;
         s_rxBitmap = 0;
@@ -303,7 +304,7 @@ static void handleDataFragment(uint16_t seq, uint8_t fi, uint8_t nf,
     if (s_rxNf == 0 || fi == 0) s_rxNf = nf;
     if (s_rxNf > MESH_IP_FRAGS_PER_MSG) s_rxNf = MESH_IP_FRAGS_PER_MSG;
 
-    Serial.printf("[IP] RX frag seq=%03X fi=%d/%d raw=%d bitmap=%04X\n",
+    slog("[IP] RX frag seq=%03X fi=%d/%d raw=%d bitmap=%04X\n",
                   seq, fi, nf, rawLen, s_rxBitmap);
 
     // ACK этой порции до сброса состояния: bitmap ещё отражает принятые фрагменты
@@ -332,7 +333,7 @@ static void handleDataFragment(uint16_t seq, uint8_t fi, uint8_t nf,
             }
             s_rxMsgLen = (uint16_t)total;
             s_rxMsgReady = true;
-            Serial.printf("[IP] RX ASSEMBLED %dB, delivering via recvCb\n", total);
+            slog("[IP] RX ASSEMBLED %dB, delivering via recvCb\n", total);
             s_rxAckBase = headSeq;   // ACK базой остаётся head собранного сообщения
             s_rxBase = (uint16_t)((headSeq + s_rxNf) & 0xFFF);
             s_rxBitmap = 0;
@@ -392,12 +393,12 @@ void meshIpTick() {
     if ((millis() - s_dbgStatusMs) >= 5000) {
         s_dbgStatusMs = millis();
         #if defined(COMPANION_NODE) && FEATURE_MESH_IP
-        Serial.printf("[IP] st: link=%d rxFwd=%lu rxTun=%lu txQue=%d peer=%s\n",
+        slog("[IP] st: link=%d rxFwd=%lu rxTun=%lu txQue=%d peer=%s\n",
                       (int)s_linkUp, (unsigned long)g_meshIpRxFwd,
                       (unsigned long)g_meshIpRxTun, (int)s_txCount,
                       s_linkPeer.length() ? s_linkPeer.c_str() : "-");
         #else
-        Serial.printf("[IP] st: link=%d txQue=%d peer=%s\n",
+        slog("[IP] st: link=%d txQue=%d peer=%s\n",
                       (int)s_linkUp, (int)s_txCount,
                       s_linkPeer.length() ? s_linkPeer.c_str() : "-");
         #endif
@@ -431,7 +432,7 @@ void meshIpTick() {
             s_txInFlight = false;
             s_txHead = (s_txHead + 1) % MESH_IP_QUEUE_MAX;
             s_txCount--;
-            Serial.printf("[IP] TX complete, queued=%d\n", s_txCount);
+            slog("[IP] TX complete, queued=%d\n", s_txCount);
             return;
         }
         // ACK пришёл с прогрессом (s_txLastMs==0) → шлём следующий фрагмент сразу
@@ -442,10 +443,10 @@ void meshIpTick() {
                 s_txInFlight = false;
                 s_txHead = (s_txHead + 1) % MESH_IP_QUEUE_MAX;
                 s_txCount--;
-                Serial.printf("[IP] TX TIMEOUT (retries=%d), packet dropped\n", s_txRetries);
+                slog("[IP] TX TIMEOUT (retries=%d), packet dropped\n", s_txRetries);
                 return;
             }
-            Serial.printf("[IP] TX RETRY %d/%d\n", s_txRetries, MESH_IP_RETRY_MAX);
+            slog("[IP] TX RETRY %d/%d\n", s_txRetries, MESH_IP_RETRY_MAX);
             wantSend = true;
         }
         if (wantSend) {
@@ -471,7 +472,7 @@ void meshIpTick() {
         s_txRetries = 0;
         s_txInFlight = true;
 
-        Serial.printf("[IP] TX START seq=%03X frags=%d pktLen=%d rawMax=%d expect=%04X\n",
+        slog("[IP] TX START seq=%03X frags=%d pktLen=%d rawMax=%d expect=%04X\n",
                       s_txBaseSeq, s_txFragCount, pktLen, rawMax, s_txExpectBitmap);
         sendFragment(pkt, (uint8_t)min((uint16_t)rawMax, pktLen),
                      s_txBaseSeq, 0, s_txFragCount);

@@ -12,6 +12,7 @@
 #include "mesh_ip.h"
 #include "globals.h"
 #include "radio.h"
+#include "ota.h"        // slog: журнал (Serial + web-хвост координатора)
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -78,7 +79,7 @@ static NatEntry* natFindOrCreate(uint8_t proto, uint32_t phoneIp, uint16_t phone
     reuse->ext_port   = s_natPortCursor++;
     if (s_natPortCursor > 16000) s_natPortCursor = 10000;   // кольцевые ext-порты
     reuse->last_ms = millis();
-    Serial.printf("[NAT] map %d.%d.%d.%d:%u proto=%u -> ext %u\n",
+    slog("[NAT] map %d.%d.%d.%d:%u proto=%u -> ext %u\n",
                   (int)(phoneIp >> 24) & 0xFF, (int)(phoneIp >> 16) & 0xFF,
                   (int)(phoneIp >> 8) & 0xFF, (int)phoneIp & 0xFF,
                   phonePort, proto, reuse->ext_port);
@@ -97,11 +98,11 @@ void meshIpNatInit() {
     for (uint8_t proto = 1; proto <= 17; proto += (proto == 1) ? 5 : 11) {
         if (proto != 1 && proto != 6 && proto != 17) continue;
         struct raw_pcb* pcb = raw_new_ip_type(IPADDR_TYPE_V4, proto);
-        if (!pcb) { Serial.printf("[NAT] raw_new %u failed\n", proto); continue; }
+        if (!pcb) { slog("[NAT] raw_new %u failed\n", proto); continue; }
         raw_recv(pcb, coordRawRecv, NULL);
         s_rawRecv[proto] = pcb;
     }
-    Serial.printf("[NAT] init, sta_netif=%p\n", (void*)s_staNetif);
+    slog("[NAT] init, sta_netif=%p\n", (void*)s_staNetif);
     meshIpSetRecvCb(natUpstreamCb);
 }
 
@@ -133,7 +134,7 @@ static void natSendUpTcpip(void* arg) {
     if (!p) return;
     memcpy(p->payload, s_upSeg, s_upSegLen);
     err_t err = raw_sendto_if_src(pcb, p, &s_upDst, s_staNetif, &s_upSrc);
-    if (err != ERR_OK) Serial.printf("[NAT] up send err=%d\n", (int)err);
+    if (err != ERR_OK) slog("[NAT] up send err=%d\n", (int)err);
     pbuf_free(p);
     s_upSegLen = 0;
 }
@@ -157,19 +158,19 @@ static void natUpstreamCb(const uint8_t* pkt, uint16_t len) {
                      ((uint32_t)pkt[18] << 8) | (uint32_t)pkt[19];
     if ((dstIp & 0xFF000000) == 0xE0000000 || dstIp == 0xFFFFFFFF) return;
 
-    Serial.printf("[NAT] ← tunnel %dB proto=%d %d.%d.%d.%d:%u → %d.%d.%d.%d\n", len, proto,
+    slog("[NAT] ← tunnel %dB proto=%d %d.%d.%d.%d:%u → %d.%d.%d.%d\n", len, proto,
                   (int)pkt[12], (int)pkt[13], (int)pkt[14], (int)pkt[15], phonePort,
                   (int)pkt[16], (int)pkt[17], (int)pkt[18], (int)pkt[19]);
 
     NatEntry* e = natFindOrCreate(proto, phoneIp, phonePort);
-    if (!e) { Serial.println("[NAT] table full"); return; }
+    if (!e) { slog("[NAT] table full\n"); return; }
     // Обновляем src IP на текущий STA-адрес
     uint32_t staIp = 0;
     if (s_staEspNetif) {
         esp_netif_ip_info_t info;
         if (esp_netif_get_ip_info(s_staEspNetif, &info) == ESP_OK) staIp = info.ip.addr;
     }
-    if (staIp == 0) { Serial.println("[NAT] STA IP not ready"); return; }
+    if (staIp == 0) { slog("[NAT] STA IP not ready\n"); return; }
 
     // Строим сегмент: копия транспорта с подменённым src-портом
     uint16_t segLen = len - ihl;
