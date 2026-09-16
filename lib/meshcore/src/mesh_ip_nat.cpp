@@ -135,12 +135,13 @@ static void natSendUpTcpip(void* arg) {
     memcpy(p->payload, s_upSeg, s_upSegLen);
     err_t err = raw_sendto_if_src(pcb, p, &s_upDst, s_staNetif, &s_upSrc);
     {
-        ip4_addr_t a = ip_2_ip4(&s_upSrc), b = ip_2_ip4(&s_upDst);
+        uint32_t a = s_upSrc.u_addr.ip4.addr, b = s_upDst.u_addr.ip4.addr;
         slog("[NAT] ↑ %dB proto=%d %d.%d.%d.%d → %d.%d.%d.%d err=%d\n",
                   s_upSegLen, s_upProto,
-                  (int)ip4_addr1(&a), (int)ip4_addr2(&a), (int)ip4_addr3(&a), (int)ip4_addr4(&a),
-                  (int)ip4_addr1(&b), (int)ip4_addr2(&b), (int)ip4_addr3(&b), (int)ip4_addr4(&b),
-                  (int)err);
+                  (int)((a >> 24) & 0xFF), (int)((a >> 16) & 0xFF),
+                  (int)((a >> 8) & 0xFF), (int)(a & 0xFF),
+                  (int)((b >> 24) & 0xFF), (int)((b >> 16) & 0xFF),
+                  (int)((b >> 8) & 0xFF), (int)(b & 0xFF), (int)err);
     }
     if (err != ERR_OK) slog("[NAT] up send err=%d\n", (int)err);
     pbuf_free(p);
