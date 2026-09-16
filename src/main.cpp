@@ -287,6 +287,9 @@ void loop() {
     #if FEATURE_MESH_IP
     meshIpTick();    // IP-туннель: доставка в логику, дедупликация фрагментов,
                      // отправка пачек и ретрансмиссий по сенсорному каналу
+    #if defined(MQTT_ENABLED)
+    meshIpNatTick();   // NAT-диагностика (счётчики из tcpip_thread печатаем здесь)
+    #endif
     #endif
 
     statusScreenTick();   // статус на экране раз в полсекунды

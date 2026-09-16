@@ -50,6 +50,7 @@ uint32_t meshIpApTunRx();   // получено из туннеля и отда�
 // Координатор: NAT через raw pcb
 #if defined(MQTT_ENABLED)
 void     meshIpNatInit();
+void     meshIpNatTick();   // печать NAT-диагностики из main-loop (не tcpip_thread)
 #endif
 
 // === Чексум-хелперы (для NAT-модуля) ===

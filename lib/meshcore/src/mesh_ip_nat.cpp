@@ -45,6 +45,39 @@ static struct raw_pcb* s_rawSend[18] = {0};   // отправка
 static esp_netif_t*  s_staEspNetif = NULL;
 static struct netif* s_staNetif    = NULL;
 
+// Диагностика без printf в tcpip-контексте: raw-обработчик и natSendUpTcpip крутятся
+// на стеке сетевой задачи (tcpip_thread), а vsnprintf там переполняет стек → паника.
+// Поэтому из их контекста пишем только числа, а текстовый вывод делает meshIpNatTick
+// в main-loop, где стек большой.
+static volatile uint32_t s_dlSeen = 0;    // raw-ответов дошло
+static volatile uint32_t s_dlKept = 0;    // из них совпало с NAT-таблицей
+static volatile uint32_t s_dlRej  = 0;    // отдано назад в lwIP (чужой порт)
+static volatile uint16_t s_dlPort = 0;    // последний ext-порт
+static volatile uint16_t s_dlLen  = 0;
+static volatile uint8_t  s_dlProto = 0;
+static volatile uint32_t s_upCnt  = 0;    // отправлено в интернет
+static volatile uint32_t s_upErrCnt = 0;
+static volatile uint32_t s_upLastErr = 0;
+static volatile uint16_t s_upLen  = 0;
+static volatile uint8_t  s_upProto = 0;
+static volatile uint8_t  s_upProtoStat = 0;
+
+void meshIpNatTick() {
+    if (s_dlSeen) {
+        slog("[NAT] ↓ raw seen=%lu kept=%lu rej=%lu proto=%u port=%u len=%u\n",
+                  (unsigned long)s_dlSeen, (unsigned long)s_dlKept,
+                  (unsigned long)s_dlRej, (unsigned)s_dlProto,
+                  (unsigned)s_dlPort, (unsigned)s_dlLen);
+        s_dlSeen = 0; s_dlKept = 0; s_dlRej = 0;
+    }
+    if (s_upCnt) {
+        slog("[NAT] ↑ sent=%lu errCnt=%lu lastErr=%u proto=%u len=%u\n",
+                  (unsigned long)s_upCnt, (unsigned long)s_upErrCnt,
+                  (unsigned)s_upLastErr, (unsigned)s_upProtoStat, (unsigned)s_upLen);
+        s_upCnt = 0;
+    }
+}
+
 // Определены ниже, нужны meshIpNatInit.
 static u8_t coordRawRecv(void* arg, struct raw_pcb* pcb, struct pbuf* p,
                          const ip_addr_t* src_ip);
@@ -123,7 +156,6 @@ static uint8_t  s_upSeg[MESH_IP_PKT_MAX];
 static uint16_t s_upSegLen  = 0;
 static ip_addr_t s_upDst;
 static ip_addr_t s_upSrc;
-static uint8_t  s_upProto  = 0;
 
 static void natSendUpTcpip(void* arg) {
     (void)arg;
@@ -134,16 +166,10 @@ static void natSendUpTcpip(void* arg) {
     if (!p) return;
     memcpy(p->payload, s_upSeg, s_upSegLen);
     err_t err = raw_sendto_if_src(pcb, p, &s_upDst, s_staNetif, &s_upSrc);
-    {
-        uint32_t a = s_upSrc.u_addr.ip4.addr, b = s_upDst.u_addr.ip4.addr;
-        slog("[NAT] ↑ %dB proto=%d %d.%d.%d.%d → %d.%d.%d.%d err=%d\n",
-                  s_upSegLen, s_upProto,
-                  (int)((a >> 24) & 0xFF), (int)((a >> 16) & 0xFF),
-                  (int)((a >> 8) & 0xFF), (int)(a & 0xFF),
-                  (int)((b >> 24) & 0xFF), (int)((b >> 16) & 0xFF),
-                  (int)((b >> 8) & 0xFF), (int)(b & 0xFF), (int)err);
-    }
-    if (err != ERR_OK) slog("[NAT] up send err=%d\n", (int)err);
+    s_upCnt++;
+    s_upLen = s_upSegLen;
+    s_upProtoStat = s_upProto;
+    if (err != ERR_OK) { s_upErrCnt++; s_upLastErr = (uint32_t)err; }
     pbuf_free(p);
     s_upSegLen = 0;
 }
@@ -236,10 +262,10 @@ static u8_t coordRawRecv(void* arg, struct raw_pcb* pcb, struct pbuf* p,
     } else {
         return 0;
     }
-    slog("[NAT] ↓ raw %dB proto=%d dst=%d.%d.%d.%d:%u\n", copied, proto,
-              (int)buf[16], (int)buf[17], (int)buf[18], (int)buf[19], dstPort);
+    s_dlSeen++;
+    s_dlProto = proto; s_dlPort = dstPort; s_dlLen = copied;
     NatEntry* e = natFindByExt(proto, dstPort);
-    if (!e) return 0;   // не наш трафик — lwIP разберётся сам
+    if (!e) { s_dlRej++; return 0; }   // не наш трафик — lwIP разберётся сам
 
     // Восстанавливаем адрес телефона
     buf[16] = (uint8_t)(e->phone_ip >> 24);
@@ -269,6 +295,7 @@ static u8_t coordRawRecv(void* arg, struct raw_pcb* pcb, struct pbuf* p,
     buf[11] = (uint8_t)(ipc & 0xFF);
 
     e->last_ms = millis();
+    s_dlKept++;
     meshIpInject(buf, copied);
     pbuf_free(p);
     return 1;   // датаграмму забрали себе — в TCP/UDP-стек не пускаем
