@@ -61,6 +61,11 @@ static volatile uint32_t s_upLastErr = 0;
 static volatile uint16_t s_upLen  = 0;
 static volatile uint8_t  s_upProto = 0;
 static volatile uint8_t  s_upProtoStat = 0;
+static volatile uint32_t s_upDropLen = 0;   // ветви выхода natSendUpTcpip
+static volatile uint32_t s_upDropNetif = 0;
+static volatile uint32_t s_upDropPcb = 0;
+static volatile uint32_t s_upDropPbuf = 0;
+static volatile uint32_t s_upCalls = 0;
 
 void meshIpNatTick() {
     if (s_dlSeen) {
@@ -74,6 +79,10 @@ void meshIpNatTick() {
         slog("[NAT] ↑ sent=%lu errCnt=%lu lastErr=%u proto=%u len=%u\n",
                   (unsigned long)s_upCnt, (unsigned long)s_upErrCnt,
                   (unsigned)s_upLastErr, (unsigned)s_upProtoStat, (unsigned)s_upLen);
+        slog("[NAT] ↑ calls=%lu dropLen=%lu dropNetif=%lu dropPcb=%lu dropPbuf=%lu\n",
+                  (unsigned long)s_upCalls, (unsigned long)s_upDropLen,
+                  (unsigned long)s_upDropNetif, (unsigned long)s_upDropPcb,
+                  (unsigned long)s_upDropPbuf);
         s_upCnt = 0;
     }
 }
@@ -159,11 +168,12 @@ static ip_addr_t s_upSrc;
 
 static void natSendUpTcpip(void* arg) {
     (void)arg;
-    if (s_upSegLen == 0 || !s_staNetif) return;
+    s_upCalls++;
+    if (s_upSegLen == 0 || !s_staNetif) { s_upDropNetif++; return; }
     struct raw_pcb* pcb = natGetOrCreateSend(s_upProto);
-    if (!pcb) return;
+    if (!pcb) { s_upDropPcb++; return; }
     struct pbuf* p = pbuf_alloc(PBUF_RAW, s_upSegLen, PBUF_RAM);
-    if (!p) return;
+    if (!p) { s_upDropPbuf++; return; }
     memcpy(p->payload, s_upSeg, s_upSegLen);
     err_t err = raw_sendto_if_src(pcb, p, &s_upDst, s_staNetif, &s_upSrc);
     s_upCnt++;
