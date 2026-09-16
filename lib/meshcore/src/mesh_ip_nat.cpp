@@ -152,14 +152,16 @@ void meshIpNatInit() {
     if (s_staEspNetif && s_staNetif) {
         esp_netif_ip_info_t inf;
         if (esp_netif_get_ip_info(s_staEspNetif, &inf) == ESP_OK) {
-            uint32_t ip = inf.ip.addr, gw = inf.gw.addr, ms = inf.netmask.addr;
+            const ip4_addr_t* ip4  = (const ip4_addr_t*)&inf.ip;
+            const ip4_addr_t* gw4  = (const ip4_addr_t*)&inf.gw;
+            const ip4_addr_t* ms4  = (const ip4_addr_t*)&inf.netmask;
             slog("[NAT] STA ip=%d.%d.%d.%d gw=%d.%d.%d.%d mask=%d.%d.%d.%d netif=%p\n",
-                      (int)(ip >> 24) & 0xFF, (int)(ip >> 16) & 0xFF,
-                      (int)(ip >> 8) & 0xFF, (int)ip & 0xFF,
-                      (int)(gw >> 24) & 0xFF, (int)(gw >> 16) & 0xFF,
-                      (int)(gw >> 8) & 0xFF, (int)gw & 0xFF,
-                      (int)(ms >> 24) & 0xFF, (int)(ms >> 16) & 0xFF,
-                      (int)(ms >> 8) & 0xFF, (int)ms & 0xFF,
+                      ip4_addr_get_byte(ip4, 0), ip4_addr_get_byte(ip4, 1),
+                      ip4_addr_get_byte(ip4, 2), ip4_addr_get_byte(ip4, 3),
+                      ip4_addr_get_byte(gw4, 0), ip4_addr_get_byte(gw4, 1),
+                      ip4_addr_get_byte(gw4, 2), ip4_addr_get_byte(gw4, 3),
+                      ip4_addr_get_byte(ms4, 0), ip4_addr_get_byte(ms4, 1),
+                      ip4_addr_get_byte(ms4, 2), ip4_addr_get_byte(ms4, 3),
                       (void*)s_staNetif);
         }
     }
@@ -242,13 +244,15 @@ static void natUpstreamCb(const uint8_t* pkt, uint16_t len) {
     NatEntry* e = natFindOrCreate(proto, phoneIp, phonePort);
     if (!e) { slog("[NAT] table full\n"); return; }
     s_upExtPort = e->ext_port;
-    // Обновляем src IP на текущий STA-адрес
-    uint32_t staIp = 0;
-    if (s_staEspNetif) {
-        esp_netif_ip_info_t info;
-        if (esp_netif_get_ip_info(s_staEspNetif, &info) == ESP_OK) staIp = info.ip.addr;
-    }
-    if (staIp == 0) { slog("[NAT] STA IP not ready\n"); return; }
+    // Обновляем src IP на текущий STA-адрес. esp_netif_get_ip_info возвращает адрес
+    // уже в lwIP-формате (на little-endian это НЕ host-order число), поэтому байты
+    // извлекаем через lwIP-макрос, а адрес передаём прямой копией структуры.
+    esp_netif_ip_info_t staInfo;
+    bool staOk = s_staEspNetif && esp_netif_get_ip_info(s_staEspNetif, &staInfo) == ESP_OK;
+    if (!staOk || staInfo.ip.addr == 0) { slog("[NAT] STA IP not ready\n"); return; }
+    const ip4_addr_t* sta4 = (const ip4_addr_t*)&staInfo.ip;
+    uint8_t srcIpB[4] = { ip4_addr_get_byte(sta4, 0), ip4_addr_get_byte(sta4, 1),
+                          ip4_addr_get_byte(sta4, 2), ip4_addr_get_byte(sta4, 3) };
 
     // Строим сегмент: копия транспорта с подменённым src-портом
     uint16_t segLen = len - ihl;
@@ -262,8 +266,6 @@ static void natUpstreamCb(const uint8_t* pkt, uint16_t len) {
         s_upSeg[1] = (uint8_t)(e->ext_port & 0xFF);
     }
     // Чексума сегмента с новым pseudo-header (src=STA, dst=Internet)
-    uint8_t srcIpB[4] = { (uint8_t)(staIp >> 24), (uint8_t)(staIp >> 16),
-                          (uint8_t)(staIp >> 8),  (uint8_t)staIp };
     uint8_t dstIpB[4] = { (uint8_t)(dstIp >> 24), (uint8_t)(dstIp >> 16),
                           (uint8_t)(dstIp >> 8),  (uint8_t)dstIp };
     if (proto == 1) {
