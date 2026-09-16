@@ -11,6 +11,7 @@
 #include "mesh.h"
 #include "radio.h"
 #include "ota.h"        // slog: журнал (Serial + web-хвост координатора)
+#include "crypto.h"     // encryptGroupText
 
 #include <Arduino.h>
 #include <cstring>
@@ -178,6 +179,9 @@ static uint16_t s_ackQBitmap = 0;
 // Принят poll "ip:p" от пира (у координатора: надо вернуть ход — эхо/даунлинк)
 static bool     s_receivedPoll = false;
 
+// Счетчик seq для IP-датграмм в fast-режиме
+static uint8_t  s_ipSeq      = 0;
+
 // ===================== Публичные =====================
 
 uint16_t meshIpFragCap() {
@@ -253,6 +257,16 @@ void meshIpInject(const uint8_t* pkt, uint16_t len) {
 static void sendSensorFrame(const char* msg) {
     if (sensorChannelIdx < 0) return;
     String sMsg(msg);
+    // Быстрый режим: отправка через FSK 250 кбит/с (режим прошивки)
+    if (ipFastMode) {
+        uint8_t frame[300];
+        int f = rawBuildFrame(frame, RAW_TYPE_IP, ++s_ipSeq, (const uint8_t*)sMsg.c_str(), sMsg.length());
+        rawTxFrame(frame, f);
+        // Любая передача съедает ход: после TX уступаем пиру, RX его вернёт.
+        s_slotTurn   = false;
+        s_lastSlotMs = millis();
+        return;
+    }
     uint8_t frame[256];
     int f = buildGroupFrameFlood(sensorChannelIdx, sMsg, frame, sizeof(frame));
     if (f > 0) {
@@ -396,6 +410,31 @@ static void handleDataFragment(uint16_t seq, uint8_t fi, uint8_t nf,
 
 bool meshIpOnChannelText(const String& name, const String& text) {
     if (text.length() <= 3 || !text.startsWith(MESH_IP_PFX)) return false;
+    // Управление fast-режимом IP-туннеля (выполняется перед обычными cmd)
+    if (text == "ip:fast") {
+        // Запрос входа в fast-режим: координатор получает это и переключает радио,
+        // затем оба узла устанавливают ipFastMode=true
+        if (name == cfg.name) {
+            // Собственное echo — игнорируем
+            return true;
+        }
+        // Отвечаем подтверждением и просим переключить радио
+        sendSensorFrame("ip:fast:ok");
+        // Здесь можно добавить логику ожидания подтверждения отpeer,
+        // но для простоты полагаемся на вручную переключение после reply.
+        return true;
+    }
+    if (text == "ip:slow") {
+        // Выход из fast-режима: оба узла переключаются обратно в LoRa mesh
+        if (name == cfg.name) {
+            // Собственное echo — игнорируем
+            return true;
+        }
+        sendSensorFrame("ip:slow:ok");
+        ipFastMode = false;
+        radioSetNormalConfig(); // вернём радио в LoRa режим
+        return true;
+    }
     char cmd = text.charAt(3);
     if (cmd != 'd' && cmd != 'D' && cmd != 'a' && cmd != 'A' &&
         cmd != 'p' && cmd != 'P') return false;

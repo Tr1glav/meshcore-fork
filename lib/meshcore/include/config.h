@@ -217,6 +217,7 @@ struct PeerEntry {
 #define RAW_TYPE_DONE_ACK 0x83
 #define RAW_TYPE_FAIL    0x84
 #define RAW_TYPE_WACK    0x85     // seq = первый недостающий чанк, данные = маска 2B LE следующих
+#define RAW_TYPE_IP      0x08     // IP-датграммы для fast-режима
 // Сжатый файл прошивки (scripts/copy_firmware.py): [OTAZ][размер образа 4B LE][CRC32 образа 4B LE][zlib]
 #define OTA_Z_MAGIC "OTAZ"
 #define OTA_Z_HDR   12
