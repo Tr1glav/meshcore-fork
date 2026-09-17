@@ -11,12 +11,14 @@
 //   -DHAS_OLED=0        board has no display (serial-only build)
 //   -DHAS_FEM=0         board has no external FEM/LNA module
 //   -DOLED_DRIVER_SH1106=0   use Adafruit_SSD1306 instead of built-in SH1106 driver
+//   -DOLED_DRIVER_ST7789=1   use built-in ST7789 TFT driver (SPI panel, e.g. T-Deck)
 //
 // Pin flags (all optional, defaults = Heltec V4.3):
 //   -DP_LORA_NSS/-DP_LORA_DIO_1/-DP_LORA_RESET/-DP_LORA_BUSY   SX1262 SPI
 //   -DP_LORA_SCLK/-DP_LORA_MISO/-DP_LORA_MOSI                  SPI bus
 //   -DPIN_BOARD_SDA/-DPIN_BOARD_SCL                            I2C
 //   -DPIN_OLED_RESET                                           OLED reset GPIO
+//   -DP_TFT_CS/-DP_TFT_DC/-DP_TFT_RST/-DP_TFT_BL               ST7789 SPI panel
 //   -DPIN_USER_BTN                                             user button (-1 = none)
 //   -DPIN_VEXT_EN + -DPIN_VEXT_EN_ACTIVE                       peripheral power rail
 //   -DP_LORA_PA_POWER/-DP_LORA_KCT8103L_PA_CSD/-DP_LORA_KCT8103L_PA_CTX  FEM pins
@@ -223,12 +225,41 @@
 #include <Adafruit_GFX.h>
 #include "cyrillic.h"
 
+// ST7789 TFT panel pins (used only when OLED_DRIVER_ST7789=1): SPI bus shared
+// with SX1262 (same SCK/MISO/MOSI), CS/DC/RST/BL are additional GPIO.
+#ifdef P_TFT_CS
+  #define TFT_CS  P_TFT_CS
+#endif
+#ifdef P_TFT_DC
+  #define TFT_DC  P_TFT_DC
+#endif
+#ifdef P_TFT_RST
+  #define TFT_RST P_TFT_RST
+#endif
+#ifdef P_TFT_BL
+  #define TFT_BL  P_TFT_BL
+#endif
+
 #if HAS_OLED
 
   #ifndef OLED_DRIVER_SH1106
-    #define OLED_DRIVER_SH1106 1
+    #define OLED_DRIVER_SH1106 0
   #endif
-  #if OLED_DRIVER_SH1106
+  #ifndef OLED_DRIVER_ST7789
+    #define OLED_DRIVER_ST7789 0
+  #endif
+  #if OLED_DRIVER_ST7789
+    #if !defined(TFT_CS) || !defined(TFT_DC)
+      #error "OLED_DRIVER_ST7789 requires -DP_TFT_CS and -DP_TFT_DC"
+    #endif
+    #ifndef TFT_RST
+      #define TFT_RST -1            // у некоторых панелей RESET не разведён
+    #endif
+    #ifndef TFT_BL
+      #define TFT_BL -1             // без пина подсветки — нечего ШИМить
+    #endif
+    #include "st7789.h"
+  #elif OLED_DRIVER_SH1106
     #include "sysoled.h"          // own compact SH1106 driver (Heltec V4 panels)
   #else
     #include <Adafruit_SSD1306.h>
@@ -299,7 +330,9 @@
 // so multiple translation units can use `display` without link errors.
 #ifdef DISPLAY_DEFINE_HERE
   #if HAS_OLED
-    #if OLED_DRIVER_SH1106
+    #if OLED_DRIVER_ST7789
+      RusST7789 display(SCREEN_WIDTH, SCREEN_HEIGHT, TFT_CS, TFT_DC, TFT_RST, TFT_BL);
+    #elif OLED_DRIVER_SH1106
       SysOled display(SCREEN_WIDTH, SCREEN_HEIGHT);
     #else
       RusSSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
@@ -309,7 +342,9 @@
   #endif
 #else
   #if HAS_OLED
-    #if OLED_DRIVER_SH1106
+    #if OLED_DRIVER_ST7789
+      extern RusST7789 display;
+    #elif OLED_DRIVER_SH1106
       extern SysOled display;
     #else
       extern RusSSD1306 display;

@@ -69,8 +69,34 @@ void setup() {
     Serial.println("FEM OK");
     #endif
     
-    // ===== OLED =====
+    #if BUTTON_PIN >= 0
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+    #endif
+    
+    // ===== SPI =====
+    // Идёт ДО инициализации дисплея: на T-Deck SX1262 и ST7789 делят одну шину
+    // (SCK40/MISO38/MOSI41), и панель должна увидеть уже настроенный бус.
+    SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
+    
+    // ===== OLED / TFT =====
     #if HAS_OLED
+    #if OLED_DRIVER_ST7789
+    // ST7789 — SPI-панель: никакого I2C, адреса и отдельного RESET нет (драйвер
+    // сбрасывает контроллер командой SWRESET). Подсветкой управляет сам драйвер.
+    Serial.println("TFT ST7789 init...");
+    if (!display.begin(SSD1306_SWITCHCAPVCC, 0)) {
+        Serial.println("TFT FAILED!");
+        while (1) delay(1000);
+    } else {
+        Serial.printf("TFT ok, %dx%d\n", (int)display.width(), (int)display.height());
+    }
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.println("MeshCore");
+    display.println("T-Deck init...");
+    display.display();
+    #else
     pinMode(OLED_RESET, OUTPUT);
     digitalWrite(OLED_RESET, LOW);
     delay(10);
@@ -132,14 +158,8 @@ void setup() {
     display.println("MeshCore");
     display.println("V4.3 init...");
     display.display();
-    #endif
-    
-    #if BUTTON_PIN >= 0
-    pinMode(BUTTON_PIN, INPUT_PULLUP);
-    #endif
-    
-    // ===== SPI =====
-    SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
+    #endif   // OLED_DRIVER_ST7789
+    #endif   // HAS_OLED
     
     // ===== RESET =====
     pinMode(LORA_RST, OUTPUT);
@@ -227,10 +247,11 @@ void setup() {
     
     #if HAS_OLED
     display.clearDisplay();
-    // Стартовая заставка: только имя устройства по центру экрана (128x64).
+    // Стартовая заставка: только имя устройства по центру экрана.
     display.setTextSize(2);                     // 12x16 симв.
     const char* splash = "MeshCore";
-    display.setCursor((128 - (int)strlen(splash) * 12) / 2, (64 - 16) / 2);
+    display.setCursor((SCREEN_WIDTH - (int)strlen(splash) * 12) / 2,
+                      (SCREEN_HEIGHT - 16) / 2);
     display.print(splash);
     display.setTextSize(1);
     display.display();
