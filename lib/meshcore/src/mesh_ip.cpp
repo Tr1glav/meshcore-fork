@@ -585,9 +585,12 @@ void meshIpTick() {
     // молчит — иначе маятник бы завис, потеряв кадр. Ретрай НЕ пускаем, если пир
     // недавно говорил (он живой и, возможно, шлёт нам пачку — не мешаем ему).
     uint32_t nowMs = millis();
-    bool peerSilent = (nowMs - s_lastRxMs) >= MESH_IP_RTT_MS;
+    // Паузы чередования/опроса в fast-режиме короче: кадр FSK ~10 мс вместо ~1.8 c
+    uint32_t rttMs  = ipFastMode ? MESH_IP_FAST_RTT_MS  : MESH_IP_RTT_MS;
+    uint32_t pollMs = ipFastMode ? MESH_IP_FAST_POLL_MS : MESH_IP_POLL_MS;
+    bool peerSilent = (nowMs - s_lastRxMs) >= rttMs;
     bool retryDue = s_txInFlight &&
-                    (nowMs - s_txLastMs) >= MESH_IP_RTT_MS && peerSilent;
+                    (nowMs - s_txLastMs) >= rttMs && peerSilent;
     bool myTurn = !s_linkUp || s_slotTurn || retryDue;
     if (!myTurn) return;
 
@@ -609,7 +612,7 @@ void meshIpTick() {
     // Отдаёт ход, бодрит линк и будит даунлинк, если тот висит в очереди.
     #if defined(COMPANION_NODE)
     if (s_linkUp && !s_txInFlight && s_txCount == 0 &&
-        (nowMs - s_lastRxMs) >= MESH_IP_POLL_MS) {
+        (nowMs - s_lastRxMs) >= pollMs) {
         slog("[IP] POLL\n");
         sendSensorFrame("ip:p");
         return;
