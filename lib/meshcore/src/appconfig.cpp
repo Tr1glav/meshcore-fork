@@ -3,6 +3,9 @@
 #include "globals.h"   // otaActive: во время прошивки по радио перезагружаться нельзя
 #include "crypto.h"    // fmtFix/parseFixed: печать и разбор чисел без float-printf
 #include "mesh.h"
+#if FEATURE_MESH_IP
+#include "mesh_ip.h"
+#endif
 #include <Preferences.h>
 
 AppConfig cfg;
@@ -268,6 +271,14 @@ static void cfgHandleLine(String line) {
         return;
     }
     if (verb == "help") { cfgHelp(); return; }
+    #if FEATURE_MESH_IP
+    if (verb == "ipfast") {
+        bool on = (rest == "on" || rest == "1" || rest == "fast");
+        Serial.printf("[CFG] IP fast-режим %s\n", on ? "ВКЛ (FSK 250 кбит/с)" : "ВЫКЛ (LoRa mesh)");
+        meshIpSetFastMode(on);
+        return;
+    }
+    #endif
     if (verb == "show") { cfgPrint(rest == "all"); return; }
     if (verb == "save") { cfgSave(); return; }
     if (verb == "reboot") { Serial.println("[CFG] перезагрузка..."); delay(200); ESP.restart(); return; }

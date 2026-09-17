@@ -182,6 +182,13 @@ static bool     s_receivedPoll = false;
 // Счетчик seq для IP-датграмм в fast-режиме
 static uint8_t  s_ipSeq      = 0;
 
+// --- Fast-режим (хендшейк переключения радио на FSK 250 кбит/с) ---
+// s_fastModePending: хендшейк начат, радио ещё на LoRa; переключение произойдёт
+// в meshIpTick в момент s_fastSwitchAt (пауза SETTLE: оба узла успевают услышать
+// подтверждение "ip:fast:ok", пока ещё в LoRa).
+static bool     s_fastModePending = false;
+static uint32_t s_fastSwitchAt    = 0;
+
 // ===================== Публичные =====================
 
 uint16_t meshIpFragCap() {
@@ -232,6 +239,54 @@ void meshIpInit() {
 
 void meshIpSetRecvCb(meshIpRecvCb cb) { s_recvCb = cb; }
 
+static void sendSensorFrame(const char* msg);
+
+// ===================== Fast-режим (тесты на FSK 250 кбит/с) =====================
+
+// Переключение радио и флага в момент таймера хендшейка. Вызывается из meshIpTick.
+static void meshIpFastApply() {
+    ipFastMode = true;
+    radioSetFastConfig();
+    s_fastModePending = false;
+    slog("[IP] fast: радио -> FSK %d кбит/с\n", (int)OTA_FSK_BR);
+}
+
+void meshIpSetFastMode(bool on) {
+    if (on) {
+        if (ipFastMode || s_fastModePending) return;
+        slog("[IP] fast: запрос входа\n");
+        sendSensorFrame("ip:fast");
+        return;   // переключимся, когда придёт "ip:fast:ok"
+    }
+    // Выход
+    if (!ipFastMode) {
+        s_fastModePending = false;
+        return;
+    }
+    if (s_fastModePending) return;
+    slog("[IP] fast: запрос выхода\n");
+    sendSensorFrame("ip:slow");
+}
+
+// Сырой кадр fast-канала: [BE EF][type][seq 4][text][crc16 2]
+// Принимаем только RAW_TYPE_IP; содержимое — тот же текст туннеля, что летит
+// и обычным каналом, поэтому отдаём его в meshIpOnChannelText.
+void meshIpOnRawFrame(const uint8_t* buf, int len) {
+    if (len < 9 || buf[0] != RAW_MAGIC0 || buf[1] != RAW_MAGIC1) return;
+    if (buf[2] != RAW_TYPE_IP) return;
+    int paylen = len - 2;
+    uint16_t c = (uint16_t)(buf[len - 1] << 8) | buf[len - 2];
+    if (crc16buf(buf, paylen) != c) return;
+    int tlen = len - 9;                 // header 7 + crc 2
+    if (tlen <= 0) return;
+    char txt[257];
+    if (tlen > 256) tlen = 256;
+    memcpy(txt, buf + 7, tlen);
+    txt[tlen] = 0;
+    // fast-канал не несёт имени отправителя — используем имя пира из линка
+    meshIpOnChannelText(s_linkPeer, String(txt));
+}
+
 // ===================== Внутренняя очередь =====================
 
 // Потокобезопасная (portENTER_CRITICAL) обёртка
@@ -255,9 +310,9 @@ void meshIpInject(const uint8_t* pkt, uint16_t len) {
 // ===================== Отправка фрагмента =====================
 
 static void sendSensorFrame(const char* msg) {
-    if (sensorChannelIdx < 0) return;
     String sMsg(msg);
-    // Быстрый режим: отправка через FSK 250 кбит/с (режим прошивки)
+    // Быстрый режим: отправка через FSK 250 кбит/с (режим прошивки).
+    // Сенсорный канал не нужен — кадр сырой, вне meshcore-маршрутизации.
     if (ipFastMode) {
         uint8_t frame[300];
         int f = rawBuildFrame(frame, RAW_TYPE_IP, ++s_ipSeq, (const uint8_t*)sMsg.c_str(), sMsg.length());
@@ -267,6 +322,7 @@ static void sendSensorFrame(const char* msg) {
         s_lastSlotMs = millis();
         return;
     }
+    if (sensorChannelIdx < 0) return;
     uint8_t frame[256];
     int f = buildGroupFrameFlood(sensorChannelIdx, sMsg, frame, sizeof(frame));
     if (f > 0) {
@@ -410,29 +466,30 @@ static void handleDataFragment(uint16_t seq, uint8_t fi, uint8_t nf,
 
 bool meshIpOnChannelText(const String& name, const String& text) {
     if (text.length() <= 3 || !text.startsWith(MESH_IP_PFX)) return false;
-    // Управление fast-режимом IP-туннеля (выполняется перед обычными cmd)
-    if (text == "ip:fast") {
-        // Запрос входа в fast-режим: координатор получает это и переключает радио,
-        // затем оба узла устанавливают ipFastMode=true
-        if (name == cfg.name) {
-            // Собственное echo — игнорируем
-            return true;
-        }
-        // Отвечаем подтверждением и просим переключить радио
-        sendSensorFrame("ip:fast:ok");
-        // Здесь можно добавить логику ожидания подтверждения отpeer,
-        // но для простоты полагаемся на вручную переключение после reply.
+    // Управление fast-режимом IP-туннеля (выполняется перед обычными cmd).
+    // Хендшейк идёт по текущему каналу, СЕЙЧАС ещё штатному LoRa:
+    //   инициатор -> "ip:fast"        (шлёт при ipfast on)
+    //   ведомый   -> "ip:fast:ok"     (подтвердил, переключает радио)
+    //   инициатор <- "ip:fast:ok"     (переключает радио)
+    // Выход — зеркально "ip:slow" / "ip:slow:ok", но уже по fast-каналу,
+    // поэтому sendSensorFrame в этих ветках тоже учитывает ipFastMode.
+    if (text == "ip:fast" || text == "ip:fast:ok") {
+        if (name == cfg.name) return true;   // собственное echo — игнорируем
+        if (s_fastModePending) return true;  // уже переключаемся
+        slog("[IP] fast: %s\n", text == "ip:fast" ? "request" : "confirm");
+        if (text == "ip:fast") sendSensorFrame("ip:fast:ok");
+        s_fastModePending = true;
+        s_fastSwitchAt = millis() + MESH_IP_FAST_SETTLE_MS;
         return true;
     }
-    if (text == "ip:slow") {
-        // Выход из fast-режима: оба узла переключаются обратно в LoRa mesh
-        if (name == cfg.name) {
-            // Собственное echo — игнорируем
-            return true;
-        }
-        sendSensorFrame("ip:slow:ok");
+    if (text == "ip:slow" || text == "ip:slow:ok") {
+        if (name == cfg.name) return true;
+        if (!ipFastMode && !s_fastModePending) return true;
+        slog("[IP] slow: %s\n", text == "ip:slow" ? "request" : "confirm");
+        if (text == "ip:slow") sendSensorFrame("ip:slow:ok");
         ipFastMode = false;
-        radioSetNormalConfig(); // вернём радио в LoRa режим
+        radioSetNormalConfig();  // вернём радио в LoRa режим
+        s_fastModePending = false;
         return true;
     }
     char cmd = text.charAt(3);
@@ -481,6 +538,11 @@ bool meshIpOnChannelText(const String& name, const String& text) {
 // ===================== Сторожевой таймер =====================
 
 void meshIpTick() {
+    // Применение отложенного переключения в fast-режим (оба узла ждут паузу)
+    if (s_fastModePending && !ipFastMode && millis() >= s_fastSwitchAt) {
+        meshIpFastApply();
+    }
+
     // Доставка собранного пакета в recvCb
     if (s_rxMsgReady && s_recvCb) {
         s_recvCb(s_rxMsgBuf, s_rxMsgLen);

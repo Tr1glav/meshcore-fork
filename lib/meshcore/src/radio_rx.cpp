@@ -5,6 +5,9 @@
 #include "mesh.h"
 #include "ota.h"
 #include "display.h"
+#if FEATURE_MESH_IP
+#include "mesh_ip.h"
+#endif
 #ifdef MQTT_ENABLED
 #include "mqtt.h"
 #endif
@@ -49,6 +52,14 @@ void radioRxTick() {
                     otaHandleRawFrame(buffer, pktLen);
                     lastReArmMs = millis();
                     if (!otaRawDidTx) radio.startReceive();
+                } else if (pktLen > 0 && ipFastMode &&
+                           buffer[0] == RAW_MAGIC0 && buffer[1] == RAW_MAGIC1 &&
+                           buffer[2] == RAW_TYPE_IP) {
+                    // IP-туннель в fast-режиме: сырые кадры несут текст туннеля
+                    fastRxFrames++;
+                    meshIpOnRawFrame(buffer, pktLen);
+                    lastReArmMs = millis();
+                    radio.startReceive();
                 } else if (checkAndMarkSeen(buffer, pktLen)) {
                     duplicateCount++;
                     Serial.printf("[DUP] skipped (total dups=%lu)\n", duplicateCount);

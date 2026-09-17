@@ -253,6 +253,10 @@ struct PeerEntry {
 #define MESH_IP_RTT_MS          5000      // таймаут ретрансмиссии (мс) ≥ 2×FRAME + запас
 #define MESH_IP_POLL_MS         4000      // период пустого опроса координатора (компаньон даёт ход)
 #define MESH_IP_RETRY_MAX       4         // повторов пачки, после — сброс пакета
+// Fast-режим тестов: канал FSK 250 кбит/с (радио ~10 мс/кадр) — тайминги можно срезать.
+#define MESH_IP_FAST_RTT_MS     400       // таймаут ретрансмиссии в fast-режиме (мс)
+#define MESH_IP_FAST_POLL_MS    400       // период опроса в fast-режиме (мс)
+#define MESH_IP_FAST_SETTLE_MS  3000      // пауза после переключения радио перед трафиком (мс)
 #define MESH_IP_IDLE_MS         60000     // таймаут неактивной сессии (мс)
 #define MESH_IP_LINK_TICK_MS    500       // период сторожевого таймера meshIpTick (мс)
 

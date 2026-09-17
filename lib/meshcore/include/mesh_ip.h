@@ -15,6 +15,12 @@ void meshIpInit();
 // Вызывается из parseMeshCorePacket. Вернёт true, если сообщение туннеля.
 bool meshIpOnChannelText(const String& name, const String& text);
 
+// === Точка входа сырого кадра fast-режима (RAW_TYPE_IP) ===
+// Вызывается из radioRxTick, когда радио в fast-конфигурации и поймали кадр
+// с магией BE EF и типом RAW_TYPE_IP. Дальше текст внутри кадра обрабатывается
+// тем же обработчиком, что и обычные сообщения сенсорного канала.
+void meshIpOnRawFrame(const uint8_t* buf, int len);
+
 // === Очередь IP-датаграммы на отправку по линку ===
 // Потокобезопасна (использует critical section); можно вызывать из ISR/task.
 void meshIpInject(const uint8_t* pkt, uint16_t len);
@@ -32,6 +38,13 @@ void meshIpTick();
 uint16_t meshIpFragCap();    // макс. полезных байт в одном фрагменте
 bool     meshIpLinkUp();     // есть ли видимый пир
 void     meshIpReset();      // полный сброс линка
+
+// === Fast-режим (тесты IP-туннеля на быстром канале FSK, как у прошивки) ===
+// Вход: отправляет "ip:fast" по сенсорному каналу и ждёт "ip:fast:ok" от пира,
+// после чего оба узла переключают радио на OTA_FAST_* (250 кбит/с FSK) и IP
+// начинается лететь сырыми RAW_TYPE_IP-кадрами. Выход: "ip:slow" по fast-каналу,
+// оба возвращаются в штатный LoRa-конфиг. Вызывается из консоли ("ipfast on/off").
+void     meshIpSetFastMode(bool on);
 
 // === Роль-зависимый glue (компиляется условно) ===
 

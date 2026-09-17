@@ -266,8 +266,9 @@ void loop() {
     cfgConsoleTick();   // настройка через USB-консоль, не блокирует радио
 
     // ===== ADVERT (периодический) =====
-    // без настроек в эфир не выходим: имя узла пустое, каналов нет
-    if (isListening && !otaFastMode && cfgReady()) {
+    // без настроек в эфир не выходим: имя узла пустое, каналов нет;
+    // в fast-режиме IP-туннеля/прошивки канал занят — adverts не льём
+    if (isListening && !otaFastMode && !ipFastMode && cfgReady()) {
         if (!advertBootSent && millis() > 6000) {   // стартовый beacon
             advertBootSent = true;
             sendAdvert(ADV_ROUTE_DIRECT);

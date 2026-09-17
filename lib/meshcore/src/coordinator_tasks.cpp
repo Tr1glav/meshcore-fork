@@ -50,7 +50,7 @@ void coordinatorTasksTick() {
         char tbuf[32];
         strftime(tbuf, sizeof(tbuf), "%H:%M:%S %d.%m.%Y", &tm_now);
         Serial.printf("[RTC] NTP time synced: %s\n", tbuf);
-        if (sensorChannelIdx >= 0 && !otaSessionActive()) {
+        if (sensorChannelIdx >= 0 && !otaSessionActive() && !ipFastMode) {
             lastSensorTimeSyncMs = millis();
             sendSensorTimeSync();
         }
@@ -59,7 +59,7 @@ void coordinatorTasksTick() {
     // Работает только при реально синхронизированном времени (ntpSyncedLogged):
     // build-time устаревает, и датчики должны получать истинный epoch.
     // во время mesh OTA любой TX бота бьёт ответы сенсора; рассылка догонит после сессии
-    if (ntpSyncedLogged && sensorChannelIdx >= 0 && !otaSessionActive() &&
+    if (ntpSyncedLogged && sensorChannelIdx >= 0 && !otaSessionActive() && !ipFastMode &&
         (int32_t)(millis() - lastSensorTimeSyncMs) >= (int32_t)SENSOR_TIME_SYNC_INTERVAL_MS) {
         lastSensorTimeSyncMs = millis();
         sendSensorTimeSync();
