@@ -543,15 +543,20 @@ void meshIpTick() {
         meshIpFastApply();
     }
 
-    // Аварийный выход из fast-режима: если пир молчит дольше MESH_IP_IDLE_MS —
-    // вторая сторона, скорее всего, перезагрузилась в штатный LoRa. Иначе мы
-    // навсегда останемся на FSK и потеряем линк (координатор шлёт по LoRa, мы
-    // слушаем быстрый канал). Возвращаемся в LoRa, чтобы линк поднялся сам.
-    if (ipFastMode && !s_fastModePending && millis() - s_lastRxMs > MESH_IP_IDLE_MS) {
-        slog("[IP] fast: пир молчит, возврат в LoRa\n");
-        ipFastMode = false;
-        radioSetNormalConfig();
-        meshIpReset();
+    // Аварийный выход из fast-режима: если пир молчит дольше MESH_IP_IDLE_MS после
+    // момента переключения (s_fastSwitchAt) либо последнего кадра — вторая сторона,
+    // скорее всего, перезагрузилась в штатный LoRa. Иначе мы навсегда останемся на
+    // FSK и потеряем линк (координатор шлёт по LoRa, мы слушаем быстрый канал).
+    // Ориентир — max(последний кадр, момент входа в fast): не вылетаем сразу, если
+    // линк был поднят давно, а телефон ещё ничего не слал.
+    if (ipFastMode && !s_fastModePending) {
+        uint32_t base = s_lastRxMs > s_fastSwitchAt ? s_lastRxMs : s_fastSwitchAt;
+        if (millis() - base > MESH_IP_IDLE_MS) {
+            slog("[IP] fast: пир молчит, возврат в LoRa\n");
+            ipFastMode = false;
+            radioSetNormalConfig();
+            meshIpReset();
+        }
     }
 
     // Доставка собранного пакета в recvCb
