@@ -558,9 +558,10 @@ void meshIpTick() {
                       (unsigned long)g_meshIpRxTun, (int)s_txCount,
                       s_linkPeer.length() ? s_linkPeer.c_str() : "-");
         #else
-        slog("[IP] st: link=%d txQue=%d peer=%s\n",
+        slog("[IP] st: link=%d txQue=%d peer=%s fast=%d\n",
                       (int)s_linkUp, (int)s_txCount,
-                      s_linkPeer.length() ? s_linkPeer.c_str() : "-");
+                      s_linkPeer.length() ? s_linkPeer.c_str() : "-",
+                      (int)(ipFastMode || s_fastModePending));
         #endif
     }
 
