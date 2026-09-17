@@ -243,7 +243,7 @@
 #if HAS_OLED
 
   #ifndef OLED_DRIVER_SH1106
-    #define OLED_DRIVER_SH1106 0
+    #define OLED_DRIVER_SH1106 1
   #endif
   #ifndef OLED_DRIVER_ST7789
     #define OLED_DRIVER_ST7789 0
