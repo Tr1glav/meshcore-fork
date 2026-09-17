@@ -46,7 +46,9 @@ void setup() {
     initSystemClock();
     
     // ===== ПИТАНИЕ ПЕРИФЕРИИ (VEXT) =====
-    #if HAS_OLED && defined(VEXT_PIN)
+    // Включается на любой плате, где задан PIN_VEXT_EN — даже без дисплея
+    // (например T-Deck: GPIO10 BOARD_POWERON питает и LoRa-модуль).
+    #if defined(VEXT_PIN)
     pinMode(VEXT_PIN, OUTPUT);
     digitalWrite(VEXT_PIN, cfg.vextOn ? HIGH : LOW);
     delay(300);
