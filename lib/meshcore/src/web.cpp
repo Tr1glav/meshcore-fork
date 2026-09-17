@@ -5,6 +5,7 @@
 #include "mesh.h"
 #include "ota.h"
 #include "ota_internal.h"
+#include "mesh_ip.h"
 #include "fwupdate.h"   // проверка обновлений по кнопке
 #include "display.h"
 #include <esp_system.h>
@@ -308,6 +309,19 @@ void otaHandleSensorsHello() {
     slog("[WEB] опрос сенсоров (%s)\n", SENSOR_MSG_HELLO_REQ);
     sensorSendMsg(SENSOR_MSG_HELLO_REQ);
     otaServer.send(200, "text/plain", "sent");
+}
+
+// Переключение IP-туннеля в fast-режим (FSK 250 кбит/с) без USB-консоли: /ipfast?on=1|0
+void otaHandleIpFast() {
+    #if FEATURE_MESH_IP
+    bool on = otaServer.arg("on") == "1";
+    slog("[WEB] ipfast %s\n", on ? "on" : "off");
+    meshIpSetFastMode(on);
+    otaServer.send(200, "text/plain; charset=utf-8",
+                   on ? "fast включён" : "fast выключен");
+    #else
+    otaServer.send(404, "text/plain", "нет FEATURE_MESH_IP");
+    #endif
 }
 
 // CSS и JS лежат в web/ и попадают в прошивку уже сжатыми (scripts/gen_web.py собирает
@@ -692,6 +706,7 @@ void setupOtaServer() {
     otaServer.on("/ota/status", HTTP_GET, otaHandleStatus);
     otaServer.on("/sensors", HTTP_GET, otaHandleSensors);
     otaServer.on("/sensors/hello", HTTP_POST, otaHandleSensorsHello);
+    otaServer.on("/ipfast", HTTP_GET, otaHandleIpFast);
     otaServer.on("/fw/check", HTTP_POST, otaHandleFwCheck);
     otaServer.on("/fw/status", HTTP_GET, otaHandleFwStatus);
     otaServer.on("/sensors/config", HTTP_POST, otaHandleSensorsConfig);
