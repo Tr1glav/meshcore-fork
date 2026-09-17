@@ -3,7 +3,6 @@
 #include "config.h"
 
 void slog(const char* fmt, ...);
-void logGetSnapshot(String& tailOut, uint32_t& totalOut);
 
 // Потоковый поиск маркера платы (FW_MARKER) в образе прошивки. Образ приходит кусками,
 // маркер может лечь на границу двух кусков — поэтому храним хвост предыдущего.
@@ -23,6 +22,7 @@ void fwScanFeed(FwScan* s, const uint8_t* data, size_t n);
 // 1 — образ нашей платы, 0 — маркера нет (сборка старше проверки), -1 — чужая плата
 int fwScanVerdict(const FwScan* s);
 #ifdef MQTT_ENABLED
+void logGetSnapshot(String& tailOut, uint32_t& totalOut);
 void otaTxGroup(const String& msg);
 void otaBotAbort(const char* why);
 void otaDrawProgress();

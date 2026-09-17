@@ -3,7 +3,6 @@
 #include "crypto.h"
 #include "display.h"
 #include "companion.h"   // код сопряжения BLE на экране компаньона
-#include "mesh_ip.h"     // экран AP IP-туннеля (FEATURE_MESH_IP)
 
 #ifdef SENSOR_NODE
 // "12m05s" / "3h07m" — сколько прошло с момента sinceMs
@@ -171,27 +170,6 @@ static void drawBtIcon(int x, int y) {
 #endif
 
 void drawIdleStatus() {
-    #if defined(COMPANION_NODE) && FEATURE_MESH_IP
-    // Режим AP (IP over mesh) имеет полный приоритет: BLE выключен, экран —
-    // только SSID и пароль точки, чтобы их можно было прочитать и ввести.
-    if (meshIpApActive()) {
-        if (!screenOn) { screenOn = true; display.setPower(true); }
-        display.clearDisplay();
-        display.setTextSize(1);
-        display.setCursor(0, 0);
-        display.println("IP MESH AP");
-        display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
-        display.setCursor(0, 14);
-        display.printf("SSID: %s\n", meshIpApSsid());
-        display.printf("PASS: %s\n", meshIpApPass());
-        display.printf("tun rx:%lu\n", (unsigned long)meshIpApTunRx());
-        display.printf("    tx:%lu\n", (unsigned long)meshIpApTunTx());
-        display.setCursor(0, 56);
-        display.print(meshIpLinkUp() ? "tunnel UP" : "waiting peer");
-        display.display();
-        return;
-    }
-    #endif
     #ifdef SENSOR_NODE
     if (!screenOn) return;          // панель выключена — не тратим шину I2C впустую
     if (pingShowUntil != 0 && (long)(millis() - pingShowUntil) < 0) { drawPingResult(); return; }

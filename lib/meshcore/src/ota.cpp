@@ -97,46 +97,6 @@ int fwScanVerdict(const FwScan* s) {
     return 0;
 }
 
-// Сколько байт лога записано с загрузки — позиция для живого вывода на странице (/logs/tail)
-uint32_t logTotal = 0;
-
-// logTail/logTotal пишутся сетевой задачей (slog) и читаются веб-обработчиками в главном
-// цикле — но из разных контекстов ни одна пара операций не безопасна, поэтому вся работа
-// с ними идёт под мьютексом. Читатели должны брать снимок одним вызовом, а не читать
-// глобалы по отдельности: между чтением logTotal и logTail положение хвоста может сдвинуться,
-// и X-Log-Pos разойдётся с текстом.
-static SemaphoreHandle_t logLock = NULL;
-
-static void logEnsureLock() {
-    if (!logLock) logLock = xSemaphoreCreateMutex();
-}
-
-void logGetSnapshot(String& tailOut, uint32_t& totalOut) {
-    logEnsureLock();
-    xSemaphoreTake(logLock, portMAX_DELAY);
-    tailOut = logTail;
-    totalOut = logTotal;
-    xSemaphoreGive(logLock);
-}
-
-void slog(const char* fmt, ...) {
-    char tmp[512];
-    va_list ap;
-    va_start(ap, fmt);
-    int n = vsnprintf(tmp, sizeof(tmp), fmt, ap);
-    va_end(ap);
-    if (n <= 0) return;
-    size_t len = min((size_t)n, sizeof(tmp) - 1);   // vsnprintf возвращает длину без учёта обрезки
-    Serial.write((const uint8_t*)tmp, len);
-    logEnsureLock();
-    xSemaphoreTake(logLock, portMAX_DELAY);
-    logTail += tmp;
-    logTotal += len;
-    // logTail — точный хвост потока лога без вставок, иначе позиции /logs/tail разъедутся
-    if (logTail.length() > LOG_TAIL_MAX) logTail.remove(0, logTail.length() - LOG_TAIL_MAX);
-    xSemaphoreGive(logLock);
-}
-
 #ifdef MQTT_ENABLED
 uint32_t otaImgSize = 0;       // размер прошивки после распаковки
 static uint16_t otaWinAcked = 0;      // бит i — чанк otaSeq+i уже у сенсора
@@ -486,6 +446,46 @@ void otaBotTick() {
     if (otaPhase == OTA_PHASE_WAIT_START) otaSendStart();
     else if (otaPhase == OTA_PHASE_WAIT_END) otaSendEnd();
     otaDrawProgress();
+}
+
+// Сколько байт лога записано с загрузки — позиция для живого вывода на странице (/logs/tail)
+uint32_t logTotal = 0;
+
+// logTail/logTotal пишутся сетевой задачей (slog) и читаются веб-обработчиками в главном
+// цикле — но из разных контекстов ни одна пара операций не безопасна, поэтому вся работа
+// с ними идёт под мьютексом. Читатели должны брать снимок одним вызовом, а не читать
+// глобалы по отдельности: между чтением logTotal и logTail положение хвоста может сдвинуться,
+// и X-Log-Pos разойдётся с текстом.
+static SemaphoreHandle_t logLock = NULL;
+
+static void logEnsureLock() {
+    if (!logLock) logLock = xSemaphoreCreateMutex();
+}
+
+void logGetSnapshot(String& tailOut, uint32_t& totalOut) {
+    logEnsureLock();
+    xSemaphoreTake(logLock, portMAX_DELAY);
+    tailOut = logTail;
+    totalOut = logTotal;
+    xSemaphoreGive(logLock);
+}
+
+void slog(const char* fmt, ...) {
+    char tmp[512];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(tmp, sizeof(tmp), fmt, ap);
+    va_end(ap);
+    if (n <= 0) return;
+    size_t len = min((size_t)n, sizeof(tmp) - 1);   // vsnprintf возвращает длину без учёта обрезки
+    Serial.write((const uint8_t*)tmp, len);
+    logEnsureLock();
+    xSemaphoreTake(logLock, portMAX_DELAY);
+    logTail += tmp;
+    logTotal += len;
+    // logTail — точный хвост потока лога без вставок, иначе позиции /logs/tail разъедутся
+    if (logTail.length() > LOG_TAIL_MAX) logTail.remove(0, logTail.length() - LOG_TAIL_MAX);
+    xSemaphoreGive(logLock);
 }
 
 // Общий запуск сессии: используется и веб-обработчиком, и автообновлением

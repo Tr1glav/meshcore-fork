@@ -41,7 +41,6 @@ extern unsigned long lastDirectAdvertMs;
 extern unsigned long lastFloodAdvertMs;
 extern bool advertBootSent;
 extern bool otaFastMode;
-extern bool ipFastMode;
 extern volatile bool otaRawDidTx;   // rawTxFrame выставляет = true; main сбрасывает перед otaHandleRawFrame
 extern unsigned long lastReArmMs;
 extern uint32_t fastRxFrames;

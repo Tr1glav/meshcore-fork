@@ -42,7 +42,6 @@ unsigned long lastDirectAdvertMs = 0;
 unsigned long lastFloodAdvertMs = 0;
 bool advertBootSent = false;
 bool otaFastMode = false;
-bool ipFastMode = false;
 volatile bool otaRawDidTx = false;
 unsigned long lastReArmMs = 0;
 uint32_t fastRxFrames = 0;   // кадров mesh OTA, принятых на быстром канале с момента переключения

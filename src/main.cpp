@@ -14,7 +14,6 @@
 #include "mqtt.h"
 #include "fwupdate.h"
 #include "companion.h"
-#include "mesh_ip.h"   // туннель IP over MeshCore (FEATURE_MESH_IP)
 
 void initSystemClock() {
     struct timeval tv;
@@ -201,11 +200,6 @@ void setup() {
     setupOtaServer();       // HTTP OTA на :3232 (обновление прошивки по WiFi)
     #endif
 
-    #if FEATURE_MESH_IP
-    meshIpInit();           // IP over Mesh: на компаньоне AP включается кнопкой,
-                            // на координаторе сразу поднимает NAT-таблицу
-    #endif
-
     radio.startReceive();
     isListening = true;
     lastDirectAdvertMs = lastFloodAdvertMs = millis();
@@ -266,9 +260,8 @@ void loop() {
     cfgConsoleTick();   // настройка через USB-консоль, не блокирует радио
 
     // ===== ADVERT (периодический) =====
-    // без настроек в эфир не выходим: имя узла пустое, каналов нет;
-    // в fast-режиме IP-туннеля/прошивки канал занят — adverts не льём
-    if (isListening && !otaFastMode && !ipFastMode && cfgReady()) {
+    // без настроек в эфир не выходим: имя узла пустое, каналов нет
+    if (isListening && !otaFastMode && cfgReady()) {
         if (!advertBootSent && millis() > 6000) {   // стартовый beacon
             advertBootSent = true;
             sendAdvert(ADV_ROUTE_DIRECT);
@@ -284,14 +277,6 @@ void loop() {
     }
 
     radioRxTick();   // приём из эфира: опрос радио, разбор кадров, поддержание приёмника
-
-    #if FEATURE_MESH_IP
-    meshIpTick();    // IP-туннель: доставка в логику, дедупликация фрагментов,
-                     // отправка пачек и ретрансмиссий по сенсорному каналу
-    #if defined(MQTT_ENABLED)
-    meshIpNatTick();   // NAT-диагностика (счётчики из tcpip_thread печатаем здесь)
-    #endif
-    #endif
 
     statusScreenTick();   // статус на экране раз в полсекунды
 
