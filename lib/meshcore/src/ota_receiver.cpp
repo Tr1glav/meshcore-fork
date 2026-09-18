@@ -5,9 +5,6 @@
 #include "mesh.h"
 #include "ota.h"
 #include "display.h"
-#if OLED_DRIVER_ST7789
-#include "tdeck_ui.h"   // экран прошивки на цветной панели рисует проект платы
-#endif
 
 // ===== Приём прошивки по радио: сторона узла =====
 // Выделено из ota.cpp. Этот код не делит ни одной переменной с раздающей стороной и с
@@ -193,15 +190,6 @@ void otaSensorDraw() {
     static uint32_t lastDraw = 0;
     if (millis() - lastDraw < OTA_DRAW_MS) return;
     lastDraw = millis();
-    #if OLED_DRIVER_ST7789
-    // Ход прошивки на цветной панели рисует проект платы: раскладка ниже рассчитана на
-    // 128x64 и занимала бы ленту в углу экрана 320x240 — а это тот экран, на который
-    // смотрят все сорок секунд передачи образа. Состояние (otaActive, otaGot, otaTotal)
-    // проект читает сам.
-    tdeckDrawScreen();
-    display.display();
-    return;
-    #endif
     display.clearDisplay();
     display.setTextSize(1);
     display.setCursor(0, 0);
@@ -240,10 +228,6 @@ void otaSensorAbort(const char* why) {
         snprintf(msg, sizeof(msg), "ota:fail:%s", why);
         sensorSendMsg(msg);
     }
-    // Причина нужна и после выхода из этой функции: на цветной панели её показывает
-    // проект платы, у которого своя раскладка.
-    strlcpy(otaFailWhy, why, sizeof(otaFailWhy));
-    otaFailShowUntil = millis() + 8000;
     Update.abort();
     otaZFree();
     otaWinMask = 0;
@@ -252,7 +236,7 @@ void otaSensorAbort(const char* why) {
     otaAwaitEndMs = 0;
     otaCrcAcc = 0xFFFFFFFF;
     otaSeqExp = 0;
-    #if HAS_OLED && !OLED_DRIVER_ST7789
+    #if HAS_OLED
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println("OTA ABORT");

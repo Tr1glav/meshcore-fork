@@ -207,39 +207,15 @@ static void drawBtIcon(int x, int y) {
 }
 #endif
 
-#if OLED_DRIVER_ST7789
-// Экран панели ST7789 рисует проект платы целиком: 320x240 и телефонная раскладка со
-// строкой состояния не имеют ничего общего с монохромным 128x64 остальных плат, а делить
-// один набор координат на оба размера — верный способ испортить оба. Общий код знает
-// только имя функции; заголовок приходит из include-пути проекта платы (репозиторий tdeck).
-#include "tdeck_ui.h"
-#endif
-
 void drawIdleStatus() {
     #ifdef SENSOR_NODE
     if (!screenOn) return;          // панель выключена — не тратим шину I2C впустую
-    // Именно #if, а не #ifdef: OLED_DRIVER_ST7789 определён ВСЕГДА (board_config.h задаёт
-    // ему ноль для любой платы с экраном), поэтому #ifndef был ложен везде и выключал
-    // экран пинга заодно и на монохромных сенсорах.
-    #if !OLED_DRIVER_ST7789
-    // На T-Deck результат пинга рисует сам проект, в своей раскладке (tdeckDrawScreen
-    // видит pingActive в состоянии): монохромный 128x64 на панели 320x240 смотрелся бы
-    // мелким текстом в углу на чёрном.
     if (pingShowUntil != 0 && (long)(millis() - pingShowUntil) < 0) { drawPingResult(); return; }
-    #endif
     #endif
     #ifdef COMPANION_NODE
     // Пока телефон не подключился, экран занят кодом сопряжения: его вводят в приложении,
     // и код меняется при каждом запуске, так что подсмотреть его можно только здесь.
     if (!companionBleLinked()) { drawBlePin(); return; }
-    #endif
-    #if OLED_DRIVER_ST7789
-    // Дальше — раскладка для 128x64, ей на 320x240 делать нечего. Проект платы сам решает,
-    // нужно ли перерисовываться: вывод кадра на панель стоит 153 КБ по SPI (~31 мс на
-    // 40 МГц), и гнать его, когда на экране ничего не изменилось, незачем — тем более что
-    // шина общая с радио.
-    if (tdeckDrawScreen()) display.display();
-    return;
     #endif
     display.clearDisplay();
     display.setTextSize(1);
@@ -310,14 +286,7 @@ void drawIdleStatus() {
 // там своя картинка с ходом сессии.
 void statusScreenTick() {
     // Показать статус на экране (обновляем раз в 500мс)
-    int interval = 500;
-    #if OLED_DRIVER_ST7789
-    // Пока крутится стартовая заставка T-Deck, перерисовываем её часто (40 мс) — иначе
-    // надпись ехала бы и кольцо крутилось бы рывками раз в полсекунды. После заставки
-    // обычный ход в полсекунды.
-    if (tdeckBootFrameMs() > 0) interval = tdeckBootFrameMs();
-    #endif
-    if (isListening && (millis() - lastDisplayUpdate > interval)) {
+    if (isListening && (millis() - lastDisplayUpdate > 500)) {
         lastDisplayUpdate = millis();
         #ifdef SENSOR_NODE
         bool rxScreenHeld = false;   // сенсор входящие пакеты не рисует, статус не ждёт паузы после приёма

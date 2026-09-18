@@ -1,12 +1,8 @@
-// Общий запуск и главный цикл прошивки: то, что раньше лежало в src/main.cpp.
+// Общий запуск и главный цикл прошивки.
 //
-// Файл переехал сюда из проекта, потому что плат стало две: meshcore-fork собирает
-// координатор, сенсор и компаньон, а соседний репозиторий tdeck — прошивку T-Deck из
-// этой же библиотеки (lib_extra_dirs). Копировать главный цикл во второй проект значило
-// бы держать две копии и вносить каждую правку дважды.
-//
-// setup()/loop() остаются в src/main.cpp каждого проекта и состоят из одного вызова:
-// Arduino ищет эти символы в самом проекте, а не в библиотеке.
+// setup()/loop() остаются в src/main.cpp и состоят из одного вызова: Arduino ищет эти
+// символы в самом проекте, а не в библиотеке, поэтому пустой файл точки входа нужен, а
+// вся логика живёт здесь.
 #include "config.h"
 #include "globals.h"
 #include "crypto.h"
@@ -22,10 +18,6 @@
 #include "companion.h"
 #include "app_main.h"
 
-// Пустышки для плат, которым расширять нечего. Слабые: проект платы определяет свои
-// функции с теми же именами, и линковщик берёт их вместо этих.
-__attribute__((weak)) void boardSetup() {}
-__attribute__((weak)) void boardTick() {}
 
 static void initSystemClock() {
     struct timeval tv;
@@ -58,8 +50,8 @@ void appSetup() {
     initSystemClock();
     
     // ===== ПИТАНИЕ ПЕРИФЕРИИ (VEXT) =====
-    // Включается на любой плате, где задан PIN_VEXT_EN — даже без дисплея
-    // (например T-Deck: GPIO10 BOARD_POWERON питает и LoRa-модуль).
+    // Включается на любой плате, где задан PIN_VEXT_EN — даже без дисплея: на части
+    // плат этот же пин питает и LoRa-модуль.
     #if defined(VEXT_PIN)
     pinMode(VEXT_PIN, OUTPUT);
     digitalWrite(VEXT_PIN, cfg.vextOn ? HIGH : LOW);
@@ -86,29 +78,12 @@ void appSetup() {
     #endif
     
     // ===== SPI =====
-    // Идёт ДО инициализации дисплея: на T-Deck SX1262 и ST7789 делят одну шину
-    // (SCK40/MISO38/MOSI41), и панель должна увидеть уже настроенный бус.
+    // Идёт ДО инициализации дисплея: на платах, где панель сидит на той же шине, она
+    // должна увидеть уже настроенный бус.
     SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
     
-    // ===== OLED / TFT =====
+    // ===== OLED =====
     #if HAS_OLED
-    #if OLED_DRIVER_ST7789
-    // ST7789 — SPI-панель: никакого I2C, адреса и отдельного RESET нет (драйвер
-    // сбрасывает контроллер командой SWRESET). Подсветкой управляет сам драйвер.
-    Serial.println("TFT ST7789 init...");
-    if (!display.begin(SSD1306_SWITCHCAPVCC, 0)) {
-        Serial.println("TFT FAILED!");
-        while (1) delay(1000);
-    } else {
-        Serial.printf("TFT ok, %dx%d\n", (int)display.width(), (int)display.height());
-    }
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setCursor(0, 0);
-    display.println("MeshCore");
-    display.println("T-Deck init...");
-    display.display();
-    #else
     pinMode(OLED_RESET, OUTPUT);
     digitalWrite(OLED_RESET, LOW);
     delay(10);
@@ -170,7 +145,6 @@ void appSetup() {
     display.println("MeshCore");
     display.println("V4.3 init...");
     display.display();
-    #endif   // OLED_DRIVER_ST7789
     #endif   // HAS_OLED
     
     // ===== RESET =====
@@ -276,10 +250,6 @@ void appSetup() {
     display.setBrightness((uint8_t)cfg.dispBri);
     #endif
 
-    // Своё железо платы поднимаем последним: к этому моменту радио, экран и настройки
-    // уже готовы, и интерфейс может на них опираться.
-    boardSetup();
-
     Serial.printf("Listening on %s...\n", channelListStr().c_str());
 }
 
@@ -320,8 +290,6 @@ void appLoop() {
     #ifndef SENSOR_NODE
     meshReplyTick();   // ответ на пинг/личку, отложенный на случайную паузу
     #endif
-
-    boardTick();          // своё платы: у T-Deck — клавиатура, трекбол и меню
 
     statusScreenTick();   // статус на экране раз в полсекунды
 

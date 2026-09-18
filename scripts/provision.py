@@ -35,9 +35,6 @@ except ImportError:
     sys.exit("нужен pyserial: pip install pyserial")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-# Каталог проекта и файл настроек можно подменить: прошивка T-Deck собирается в соседнем
-# репозитории и свой secrets.json держит рядом с собой. Скрипт при этом остаётся один —
-# второй копии, которая начнёт отставать от этой, заводить незачем.
 PROJECT = ROOT
 SECRETS = ROOT / "secrets.json"
 BAUD = 115200
@@ -54,10 +51,6 @@ ROLE_FIELDS = {
     # Компаньон — сенсорный узел плюс BLE для телефонного приложения. Приватный канал
     # ему тоже нужен: в приложении это обычный чат, и без ключа его попросту не видно.
     "companion": ["name", "prv_name", "prv_key", "sns_name", "sns_key"] + RADIO_FIELDS,
-    # T-Deck: отдельное устройство, но по набору настроек это тот же сенсорный узел
-    # (окружение tdeck определяет SENSOR_NODE). Без этой строки скрипт отказывался
-    # настраивать плату, хотя она давно есть в secrets.json.
-    "tdeck": ["name", "prv_name", "prv_key", "sns_name", "sns_key"] + RADIO_FIELDS,
 }
 SECRET_FIELDS = {"wifi_pass", "mqtt_pass", "prv_key", "sns_key"}
 
