@@ -22,6 +22,11 @@
 #include "companion.h"
 #include "app_main.h"
 
+// Пустышки для плат, которым расширять нечего. Слабые: проект платы определяет свои
+// функции с теми же именами, и линковщик берёт их вместо этих.
+__attribute__((weak)) void boardSetup() {}
+__attribute__((weak)) void boardTick() {}
+
 static void initSystemClock() {
     struct timeval tv;
     tv.tv_sec = BUILD_UNIX_TIME;
@@ -271,6 +276,10 @@ void appSetup() {
     display.setBrightness((uint8_t)cfg.dispBri);
     #endif
 
+    // Своё железо платы поднимаем последним: к этому моменту радио, экран и настройки
+    // уже готовы, и интерфейс может на них опираться.
+    boardSetup();
+
     Serial.printf("Listening on %s...\n", channelListStr().c_str());
 }
 
@@ -311,6 +320,8 @@ void appLoop() {
     #ifndef SENSOR_NODE
     meshReplyTick();   // ответ на пинг/личку, отложенный на случайную паузу
     #endif
+
+    boardTick();          // своё платы: у T-Deck — клавиатура, трекбол и меню
 
     statusScreenTick();   // статус на экране раз в полсекунды
 
