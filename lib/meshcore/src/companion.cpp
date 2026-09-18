@@ -60,15 +60,25 @@ int contactFind(const uint8_t* pub) {
 
 
 #define CONTACTS_FILE "/contacts.bin"
+// Метка формата файла контактов: 4 байта подписи, размер записи и число записей.
+// Без неё смена раскладки Contact читалась бы как мусор, стоило длине файла совпасть.
+// Размер записи входит в заголовок именно потому, что он меняется вместе с раскладкой.
+#define CONTACTS_MAGIC "MCC1"
+#define CONTACTS_HDR   7
 
 // Контакты живут файлом, а не записью в NVS: раздел nvs — это 20 КБ на всё вместе с
 // настройками, а список на 200 узлов занимает уже сорок с лишним килобайт.
 void contactsSave() {
     File f = LittleFS.open(CONTACTS_FILE, "w");
     if (!f) { Serial.println("[BLE] файл контактов не открылся на запись"); return; }
-    f.write(&contactCount, 1);
+    uint8_t hdr[CONTACTS_HDR];
+    memcpy(hdr, CONTACTS_MAGIC, 4);
+    uint16_t rec = (uint16_t)sizeof(Contact);
+    memcpy(hdr + 4, &rec, 2);
+    hdr[6] = contactCount;
     size_t need = sizeof(Contact) * contactCount;
-    bool ok = (contactCount == 0) || (f.write((const uint8_t*)contacts, need) == need);
+    bool ok = f.write(hdr, sizeof(hdr)) == sizeof(hdr);
+    if (ok && contactCount > 0) ok = f.write((const uint8_t*)contacts, need) == need;
     f.close();
     if (!ok) { Serial.println("[BLE] список контактов записан не полностью"); return; }
     contactsDirty = false;
@@ -79,8 +89,19 @@ static void contactsLoad() {
     contactCount = 0;
     File f = LittleFS.open(CONTACTS_FILE, "r");
     if (!f) { Serial.println("[BLE] списка контактов ещё нет"); return; }
-    uint8_t n = 0;
-    if (f.read(&n, 1) != 1) { f.close(); return; }
+    uint8_t hdr[CONTACTS_HDR];
+    uint16_t rec = 0;
+    if (f.read(hdr, sizeof(hdr)) != (int)sizeof(hdr)) { f.close(); return; }
+    memcpy(&rec, hdr + 4, 2);
+    // Файл от другой версии записи (или совсем старый, без метки) не разбираем: пустой
+    // список приложение наполнит заново из адвертов, а мусор оно показать не сможет.
+    if (memcmp(hdr, CONTACTS_MAGIC, 4) != 0 || rec != sizeof(Contact)) {
+        f.close();
+        LittleFS.remove(CONTACTS_FILE);
+        Serial.println("[BLE] файл контактов другого формата — начинаем с пустого списка");
+        return;
+    }
+    uint8_t n = hdr[6];
     if (n > COMPANION_MAX_CONTACTS) n = COMPANION_MAX_CONTACTS;
     size_t need = sizeof(Contact) * n;
     // Прочиталось меньше обещанного — файл оборван или от другой версии записи:
@@ -198,7 +219,13 @@ static void appChannelsLoad() {
     uint8_t n = p.getUChar("chcount", 0);
     if (n > MAX_CHANNELS) n = MAX_CHANNELS;
     AppChanRec recs[MAX_CHANNELS];
-    if (n > 0) p.getBytes("chans", recs, sizeof(AppChanRec) * n);
+    size_t want = sizeof(AppChanRec) * n;
+    // getBytes при несовпадении длины возвращает 0 и буфер НЕ заполняет. Без этой проверки
+    // в список каналов уезжали бы имена и ключи из мусора на стеке.
+    if (n > 0 && p.getBytes("chans", recs, want) != want) {
+        Serial.println("[CH] запись каналов в NVS не той длины — список пропущен");
+        n = 0;
+    }
     p.end();
     for (uint8_t k = 0; k < n; k++) {
         recs[k].name[32] = 0;

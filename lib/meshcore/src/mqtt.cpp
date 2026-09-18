@@ -50,6 +50,15 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 void publishDiscovery() {
+    // Имя узла попадает и в JSON, и в имена топиков, и там от него нужно разное:
+    // в JSON — экранирование (кавычка или обратный слэш в имени ломают разбор конфига в
+    // Home Assistant, и датчик просто не появляется), в топике — slug (символы '/', '+'
+    // и '#' в именах топиков MQTT значат совсем другое). Для сенсоров это делалось с
+    // самого начала, а имя самого координатора подставлялось дословно.
+    char nameEsc[64], slug[48];
+    jsonEscape(cfg.name.c_str(), nameEsc, sizeof(nameEsc));
+    mqttSlug(cfg.name.c_str(), slug, sizeof(slug));
+
     // Device block общий для всех сущностей бота
     char devBlock[256];
     snprintf(devBlock, sizeof(devBlock),
@@ -58,12 +67,12 @@ void publishDiscovery() {
         "\"manufacturer\":\"MeshCore\","
         "\"model\":\"ESP32-S3 Listener\","
         "\"sw_version\":\"" FW_VERSION "\"",
-        cfg.name.c_str(), cfg.name.c_str());
+        slug, nameEsc);
 
     char topic[128], payload[512];
 
     // --- Sensor: последний отправитель (state = имя отправителя) ---
-    snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/last_sender/config", cfg.name.c_str());
+    snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/last_sender/config", slug);
     snprintf(payload, sizeof(payload),
         "{\"name\":\"%s LastSender\","
         "\"state_topic\":\"%s/state\","
@@ -71,11 +80,11 @@ void publishDiscovery() {
         "\"json_attributes_topic\":\"%s/state\","
         "\"unique_id\":\"meshcore_%s_lastsender\","
         "\"device\":{%s}}",
-        cfg.name.c_str(), mqttPrefix, mqttPrefix, cfg.name.c_str(), devBlock);
+        nameEsc, mqttPrefix, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Sensor: статус ---
-    snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/status/config", cfg.name.c_str());
+    snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/status/config", slug);
     snprintf(payload, sizeof(payload),
         "{\"name\":\"%s Status\","
         "\"state_topic\":\"%s/status\","
@@ -84,11 +93,11 @@ void publishDiscovery() {
         "\"unique_id\":\"meshcore_%s_stat\","
         "\"icon\":\"mdi:server\","
         "\"device\":{%s}}",
-        cfg.name.c_str(), mqttPrefix, mqttPrefix, cfg.name.c_str(), devBlock);
+        nameEsc, mqttPrefix, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Sensor: IP адрес _mqtt (атрибут ip из /status) ---
-    snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/ip/config", cfg.name.c_str());
+    snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/ip/config", slug);
     snprintf(payload, sizeof(payload),
         "{\"name\":\"%s IP\","
         "\"state_topic\":\"%s/status\","
@@ -96,11 +105,11 @@ void publishDiscovery() {
         "\"unique_id\":\"meshcore_%s_ip\","
         "\"icon\":\"mdi:ip-network\","
         "\"device\":{%s}}",
-        cfg.name.c_str(), mqttPrefix, cfg.name.c_str(), devBlock);
+        nameEsc, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Sensor: температура CPU (встроенный датчик ESP32-S3) ---
-    snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/temp/config", cfg.name.c_str());
+    snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/temp/config", slug);
     snprintf(payload, sizeof(payload),
         "{\"name\":\"%s Temp\","
         "\"state_topic\":\"%s/status\","
@@ -109,11 +118,11 @@ void publishDiscovery() {
         "\"unique_id\":\"meshcore_%s_temp\","
         "\"icon\":\"mdi:thermometer\","
         "\"device\":{%s}}",
-        cfg.name.c_str(), mqttPrefix, cfg.name.c_str(), devBlock);
+        nameEsc, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Sensor: версия прошивки (поле version из /status) ---
-    snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/version/config", cfg.name.c_str());
+    snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/version/config", slug);
     snprintf(payload, sizeof(payload),
         "{\"name\":\"%s Firmware\","
         "\"state_topic\":\"%s/status\","
@@ -122,11 +131,11 @@ void publishDiscovery() {
         "\"icon\":\"mdi:chip\","
         "\"entity_category\":\"diagnostic\","
         "\"device\":{%s}}",
-        cfg.name.c_str(), mqttPrefix, cfg.name.c_str(), devBlock);
+        nameEsc, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Sensor: last_msg выбранного канала (для триггеров) ---
-    snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/lastmsg/config", cfg.name.c_str());
+    snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/lastmsg/config", slug);
     snprintf(payload, sizeof(payload),
         "{\"name\":\"%s LastMsg\","
         "\"state_topic\":\"%s/lastmsg\","
@@ -134,22 +143,22 @@ void publishDiscovery() {
         "\"unique_id\":\"meshcore_%s_lastmsg\","
         "\"icon\":\"mdi:message-arrow-right\","
         "\"device\":{%s}}",
-        cfg.name.c_str(), mqttPrefix, cfg.name.c_str(), devBlock);
+        nameEsc, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Text: отправка сообщения ---
-    snprintf(topic, sizeof(topic), "homeassistant/text/meshcore_%s/send/config", cfg.name.c_str());
+    snprintf(topic, sizeof(topic), "homeassistant/text/meshcore_%s/send/config", slug);
     snprintf(payload, sizeof(payload),
         "{\"name\":\"%s Send\","
         "\"command_topic\":\"%s/cmd/send\","
         "\"unique_id\":\"meshcore_%s_send\","
         "\"icon\":\"mdi:message-text\","
         "\"device\":{%s}}",
-        cfg.name.c_str(), mqttPrefix, cfg.name.c_str(), devBlock);
+        nameEsc, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Switch: listening ---
-    snprintf(topic, sizeof(topic), "homeassistant/switch/meshcore_%s/listening/config", cfg.name.c_str());
+    snprintf(topic, sizeof(topic), "homeassistant/switch/meshcore_%s/listening/config", slug);
     snprintf(payload, sizeof(payload),
         "{\"name\":\"%s Listening\","
         "\"command_topic\":\"%s/cmd/listening\","
@@ -157,10 +166,10 @@ void publishDiscovery() {
         "\"unique_id\":\"meshcore_%s_sw\","
         "\"icon\":\"mdi:radio\","
         "\"device\":{%s}}",
-        cfg.name.c_str(), mqttPrefix, mqttPrefix, cfg.name.c_str(), devBlock);
+        nameEsc, mqttPrefix, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
-    Serial.printf("[MQTT] discovery published for <%s>\n", cfg.name.c_str());
+    Serial.printf("[MQTT] discovery published for <%s>\n", slug);
     discoveryPublished = true;
 }
 
@@ -171,13 +180,18 @@ void publishMessage() {
     jsonEscape(lastMessage.c_str(), escText, sizeof(escText));
     jsonEscape(lastChannelName.c_str(), escChan, sizeof(escChan));
     jsonEscape(lastPath[0] ? lastPath : "direct", escRoute, sizeof(escRoute));
+    // Числа — через fmtFix: float-printf тянет в образ ~35 КБ newlib (см. crypto.h),
+    // а ради него в проекте и появились fmtFix/parseFixed.
+    char rssiS[12], snrS[12];
+    fmtFix(lastRSSI, 1, rssiS, sizeof(rssiS));
+    fmtFix(lastSNR, 1, snrS, sizeof(snrS));
     char topic[96], payload[512];
     snprintf(topic, sizeof(topic), "%s/state", mqttPrefix);
     snprintf(payload, sizeof(payload),
         "{\"sender\":\"%s\",\"text\":\"%s\",\"channel\":\"%s\","
-        "\"rssi\":%.1f,\"snr\":%.1f,\"hops\":%d,\"route\":\"%s\"}",
+        "\"rssi\":%s,\"snr\":%s,\"hops\":%d,\"route\":\"%s\"}",
         escSender, escText, escChan,
-        lastRSSI, lastSNR, lastHopCount, escRoute);
+        rssiS, snrS, lastHopCount, escRoute);
     mqtt.publish(topic, payload);
     Serial.printf("[MQTT] message published\n");
 
@@ -218,13 +232,26 @@ void clearSensorBtnText() {
 }
 
 void mqttSlug(const char* name, char* out, int maxLen) {
+    if (maxLen <= 0) return;
     int n = 0;
+    bool lossy = false;
     for (int i = 0; name[i] && n < maxLen - 1; i++) {
         char c = name[i];
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') out[n++] = c;
-        else out[n++] = '_';
+        else { out[n++] = '_'; lossy = true; }
     }
     out[n] = 0;
+    // Кириллица (и любой другой не-ASCII) превращалась в вереницу подчёркиваний, поэтому
+    // два РАЗНЫХ имени из одинакового числа байт давали один и тот же slug — сущности
+    // таких узлов в Home Assistant затирали друг друга. Добавляем к slug хвост от хэша
+    // исходного имени. Для чисто латинских имён, где ничего не потерялось, slug остаётся
+    // прежним: уже созданные в HA сущности не переименовываются.
+    if (!lossy) return;
+    uint16_t h = crc16buf((const uint8_t*)name, strlen(name));
+    int room = maxLen - 1 - 5;            // место под "_xxxx" и завершающий ноль
+    if (room < 0) return;
+    if (n > room) n = room;
+    snprintf(out + n, maxLen - n, "_%04x", h);
 }
 
 // Роль узла для карточки в Home Assistant. Берётся из имени окружения сборки, которое
@@ -445,7 +472,7 @@ bool publishSensorMessage() {
     char tText[128], tRssi[128], rssiStr[24];
     snprintf(tText, sizeof(tText), "%s/sensor/%s/text", mqttPrefix, slug);
     snprintf(tRssi, sizeof(tRssi), "%s/sensor/%s/rssi", mqttPrefix, slug);
-    snprintf(rssiStr, sizeof(rssiStr), "%.1f", lastRSSI);
+    fmtFix(lastRSSI, 1, rssiStr, sizeof(rssiStr));
     mqtt.publish(tText, lastMessage.c_str());
     mqtt.publish(tRssi, rssiStr);
     // --- button: event entity trigger для автоматизаций ---
@@ -464,7 +491,7 @@ bool publishSensorMessage() {
         strlcpy(snsBtnSlug, slug, sizeof(snsBtnSlug));
         Serial.printf("[SNS] %s from %s — trigger published\n", lastMessage.c_str(), lastSender.c_str());
     } else {
-        Serial.printf("[SNS] %s: %s (rssi %.1f)\n", lastSender.c_str(), lastMessage.c_str(), lastRSSI);
+        Serial.printf("[SNS] %s: %s (rssi %s)\n", lastSender.c_str(), lastMessage.c_str(), rssiStr);
     }
     return true;
 }
@@ -480,16 +507,17 @@ void publishStatus() {
     jsonEscape(chName, chEsc, sizeof(chEsc));
     char topic[96], payload[384];
     unsigned long upSec = millis() / 1000;
-    float tempC = cpuTempC();
+    char tempS[12];
+    fmtFix(cpuTempC(), 1, tempS, sizeof(tempS));   // без float-printf
     snprintf(topic, sizeof(topic), "%s/status", mqttPrefix);
     snprintf(payload, sizeof(payload),
         "{\"version\":\"" FW_VERSION "\",\"board\":\"" BOARD_CODE "\",\"wifi\":true,\"mqtt\":true,\"lora_rx\":%s,"
         "\"uptime\":%lu,\"packets\":%d,\"duplicates\":%lu,"
-        "\"temp\":%.1f,\"ip\":\"%s\","
+        "\"temp\":%s,\"ip\":\"%s\","
         "\"channel\":\"%s\",\"private\":\"%s\"}",
         isListening ? "true" : "false",
         upSec, packetCount, duplicateCount,
-        tempC,
+        tempS,
         wifiConnected ? WiFi.localIP().toString().c_str() : "0.0.0.0",
         chEsc, prvEsc);
     mqtt.publish(topic, payload, true);
@@ -501,7 +529,12 @@ void publishStatus() {
 }
 
 void setupMQTT() {
-    snprintf(mqttPrefix, sizeof(mqttPrefix), "meshcore/bot/%s", cfg.name.c_str());
+    // Префикс — часть имени топика, поэтому имя приводим к slug: '/', '+' и '#' в именах
+    // топиков MQTT значат совсем другое. У латинских имён slug совпадает с именем, так
+    // что уже настроенные в Home Assistant сущности от этого не меняются.
+    char slug[48];
+    mqttSlug(cfg.name.c_str(), slug, sizeof(slug));
+    snprintf(mqttPrefix, sizeof(mqttPrefix), "meshcore/bot/%s", slug);
     mqtt.setServer(cfg.mqttHost.c_str(), cfg.mqttPort);
     mqtt.setCallback(mqttCallback);
     mqtt.setBufferSize(768);   // discovery-конфиг весит до ~600 Б

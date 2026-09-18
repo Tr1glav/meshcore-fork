@@ -6,7 +6,11 @@
 __pycache__
 secrets.ini
 secrets.json
+# Каждая успешная сборка делает git add -A и push в публичный репозиторий (release.py),
+# поэтому файл с таким именем не должен попасть в индекс даже пустым.
+.env
 firmware_output/*
 lib/meshcore/include/build_info.h
 lib/meshcore/include/web_assets.h
 compile_commands.json
+

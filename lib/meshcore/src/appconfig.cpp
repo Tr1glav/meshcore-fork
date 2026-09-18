@@ -4,15 +4,11 @@
 #include "crypto.h"    // fmtFix/parseFixed: печать и разбор чисел без float-printf
 #include "mesh.h"
 #include <Preferences.h>
+#include <esp_random.h>   // esp_fill_random: seed личности узла
 
 AppConfig cfg;
 
 static const char* NS = "meshcfg";
-
-// Имя узла: столько влезает в ADV-кадр (mesh_tx.cpp режет на 31) и в адресата OTA
-// (otaStartSession отвергает target длиннее 31). Больше задать нельзя — иначе обрезание
-// в одном месте и в другом даст совпавшие короткие имена у разных узлов.
-static const int CFG_NAME_MAX = 31;
 
 // Одна таблица описывает поле сразу для трёх вещей: чтения из NVS, записи и команды "set".
 // Добавить настройку — добавить строку. Значение по умолчанию берётся из макросов
@@ -65,11 +61,22 @@ static const CfgField FIELDS[] = {
     F_U16("disp_bri",  dispBri,   255, 0, 255),
     F_U16("vext_on",   vextOn,    VEXT_EN_ACTIVE, 0, 1),
     F_U16("auto_upd",  autoUpd,   1, 0, 1),
+    F_U16("tls_check", tlsCheck,  1, 0, 1),
 };
 static const size_t FIELD_COUNT = sizeof(FIELDS) / sizeof(FIELDS[0]);
 
 bool cfgReady() {
     return cfg.name.length() > 0;
+}
+
+// Допустимость числового значения. Правило lo == hi («диапазон не задан — не проверять»)
+// живёт здесь одной строкой: раньше оно было записано в комментарии к CfgField, а в трёх
+// местах кода работало наоборот — такое поле нельзя было задать вовсе.
+// Вынесено отдельной функцией ещё и затем, чтобы её проверял хостовый тест
+// (scripts/selftest.py).
+bool cfgRangeOk(double v, float lo, float hi) {
+    if (lo == hi) return true;
+    return v >= (double)lo && v <= (double)hi;
 }
 
 static void cfgSetDefault(const CfgField& fl) {
@@ -211,26 +218,27 @@ static bool cfgSetField(const CfgField& fl, const String& value) {
         // strtol с основанием 0 понимает и 18, и 0x12 — слово синхронизации привычнее в hex
         case CFG_U16: {
             unsigned long v = strtoul(value.c_str(), NULL, 0);   // до усечения: 70000 и 4464 — разные
-            if (fl.lo == fl.hi || v < fl.lo || v > fl.hi) { badNum = true; break; }
+            if (!cfgRangeOk((double)v, fl.lo, fl.hi)) { badNum = true; break; }
             cfg.*(fl.u) = (uint16_t)v;
             break;
         }
         case CFG_I16: {
             long v = strtol(value.c_str(), NULL, 0);
-            if (fl.lo == fl.hi || v < fl.lo || v > fl.hi) { badNum = true; break; }
+            if (!cfgRangeOk((double)v, fl.lo, fl.hi)) { badNum = true; break; }
             cfg.*(fl.i) = (int16_t)v;
             break;
         }
         case CFG_FLT: {
             float v = parseFixed(value.c_str());
-            if (fl.lo == fl.hi || v < fl.lo || v > fl.hi) { badNum = true; break; }
+            if (!cfgRangeOk((double)v, fl.lo, fl.hi)) { badNum = true; break; }
             cfg.*(fl.f) = v;
             break;
         }
     }
     if (badNum) {
-        Serial.printf("[CFG] %s: значение '%s' вне диапазона %.0f..%.0f\n",
-                      fl.cmd, value.c_str(), fl.lo, fl.hi);
+        char lo[16], hi[16];
+        Serial.printf("[CFG] %s: значение '%s' вне диапазона %s..%s\n", fl.cmd, value.c_str(),
+                      fmtFix(fl.lo, 0, lo, sizeof(lo)), fmtFix(fl.hi, 0, hi, sizeof(hi)));
         return false;
     }
     return true;
@@ -385,10 +393,33 @@ bool cfgFieldSecret(int idx) {
     return (idx >= 0 && idx < (int)FIELD_COUNT) ? FIELDS[idx].secret : false;
 }
 
-bool cfgApply(const String& field, const String& value) {
+int cfgApply(const String& field, const String& value) {
     const CfgField* fl = cfgFind(field);
-    if (!fl) return false;
-    cfgSetField(*fl, value);
+    if (!fl) return CFG_APPLY_UNKNOWN;
+    // Результат cfgSetField раньше отбрасывался, и страница сообщала об успехе, хотя
+    // значение вне диапазона не применялось.
+    if (!cfgSetField(*fl, value)) return CFG_APPLY_BAD_VALUE;
+    return CFG_APPLY_OK;
+}
+
+bool cfgIdentitySeed(uint8_t out[32]) {
+    // Личность узла (ключи адвертов и лички) больше не выводится из его имени: имя уходит
+    // в эфир открытым текстом, и SHA256(имя) отдавал приватный ключ любому, кто узел
+    // слышал. Seed случайный, лежит в NVS рядом с настройками и переживает и обновление
+    // прошивки, и переименование узла.
+    Preferences p;
+    if (!p.begin(NS, false)) return false;
+    size_t got = p.isKey("id_seed") ? p.getBytes("id_seed", out, 32) : 0;
+    if (got != 32) {
+        esp_fill_random(out, 32);
+        if (p.putBytes("id_seed", out, 32) != 32) {
+            p.end();
+            Serial.println("[ID] seed личности не записался в NVS");
+            return false;
+        }
+        Serial.println("[ID] создан новый seed личности узла (32 байта в NVS)");
+    }
+    p.end();
     return true;
 }
 

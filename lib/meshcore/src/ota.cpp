@@ -398,9 +398,10 @@ void otaBotTick() {
         otaPhase != OTA_PHASE_DATA &&
         otaPhase != OTA_PHASE_WAIT_END) return;
     // Сторона DATA ждёт ответ на пачку либо на POLL; строго один источник на эпизод.
+    // В фазе DATA срок один и тот же и для пачки, и для висящего POLL — различается
+    // только точка отсчёта (ниже), поэтому ветвления по otaPolledMs здесь нет.
     unsigned long wait = (otaPhase == OTA_PHASE_WAIT_START) ? OTA_START_TIMEOUT_MS
                        : (otaPhase == OTA_PHASE_WAIT_END)   ? OTA_END_TIMEOUT_MS
-                       : (otaPolledMs == 0)                 ? OTA_ACK_TIMEOUT_MS
                        : OTA_ACK_TIMEOUT_MS;
     unsigned long since = (otaPhase == OTA_PHASE_DATA && otaPolledMs != 0) ? otaPolledMs : otaSince;
     if (millis() - since < wait) return;
@@ -491,7 +492,17 @@ void slog(const char* fmt, ...) {
 // Общий запуск сессии: используется и веб-обработчиком, и автообновлением
 bool otaStartSession(const String& target) {
     if (otaPhase != OTA_PHASE_IDLE && otaPhase != OTA_PHASE_DONE) return false;
-    if (!otaFwReady || target.length() == 0 || target.length() > 31) return false;
+    // Единственное, чем прошивка узла защищена в эфире, — ключ канала сенсоров: маркер
+    // платы внутри образа подделывается тривиально, а подписи у образа нет. Если ключ
+    // выведен из имени канала, прислать узлу прошивку может любой, кто это имя угадал,
+    // поэтому на открытом канале сессию не начинаем вовсе.
+    if (channelKeyIsOpen(sensorChannelIdx)) {
+        strlcpy(otaLastErr, "канал сенсоров без своего ключа", sizeof(otaLastErr));
+        slog("[OTA] отказ: канал сенсоров не настроен или его ключ выведен из имени. "
+             "Задайте sns_key (16 байт в base64) на координаторе и на узлах\n");
+        return false;
+    }
+    if (!otaFwReady || target.length() == 0 || target.length() > CFG_NAME_MAX) return false;
     otaFile = LittleFS.open("/ota.bin", "r");
     if (!otaFile) { slog("[OTA] /ota.bin не открылся\n"); return false; }
     otaTarget = target;

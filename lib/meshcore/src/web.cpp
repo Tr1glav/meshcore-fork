@@ -145,15 +145,27 @@ void otaHandleConfigPost() {
         return;
     }
     int changed = 0;
-    String unknown;
+    String unknown, bad;
     for (int i = 0; i < otaServer.args(); i++) {
         String n = otaServer.argName(i);
         if (n == "reboot" || n == "plain") continue;
-        if (cfgApply(n, otaServer.arg(i))) { changed++; slog("[WEB] настройка %s изменена\n", n.c_str()); }
-        else unknown += " " + n;
+        int rc = cfgApply(n, otaServer.arg(i));
+        if (rc == CFG_APPLY_OK) { changed++; slog("[WEB] настройка %s изменена\n", n.c_str()); }
+        else if (rc == CFG_APPLY_UNKNOWN) unknown += " " + n;
+        else bad += " " + n;   // значение вне диапазона — в NVS не поедет
     }
-    if (unknown.length() > 0) {
-        otaServer.send(400, "text/plain; charset=utf-8", "неизвестные поля:" + unknown);
+    // Ничего не сохраняем: правки лежат только в памяти, и без save они пропадут сами.
+    // Раньше отказ cfgApply терялся, и страница отвечала «OK, изменено полей: N», хотя
+    // поле оставалось прежним.
+    if (unknown.length() > 0 || bad.length() > 0) {
+        String msg;
+        if (unknown.length() > 0) msg += "неизвестные поля:" + unknown;
+        if (bad.length() > 0) {
+            if (msg.length() > 0) msg += "; ";
+            msg += "значение вне допустимого диапазона:" + bad;
+        }
+        slog("[WEB] настройки не сохранены — %s\n", msg.c_str());
+        otaServer.send(400, "text/plain; charset=utf-8", msg);
         return;
     }
     if (changed == 0) {
@@ -174,16 +186,21 @@ void otaHandleConfigPost() {
 void otaHandleInfo() {
     char fwname[64];
     jsonEscape(otaFwName.c_str(), fwname, sizeof(fwname));
+    // Числа печатаем через fmtFix, а не %.1f: float-printf тянет в образ ~35 КБ newlib
+    // (см. crypto.h), и ради двух полей страницы это того не стоит.
+    char temp[12], volt[12];
+    fmtFix(cpuTempC(), 1, temp, sizeof(temp));
+    fmtFix(batteryVoltage(), 2, volt, sizeof(volt));
     char json[384];
     snprintf(json, sizeof(json),
-             "{\"up\":%lu,\"wifi\":%s,\"mqtt\":%s,\"heap\":%u,\"temp\":%.1f,"
-             "\"bat\":%d,\"volt\":%.2f,\"ip\":\"%s\",\"pkts\":%d,"
+             "{\"up\":%lu,\"wifi\":%s,\"mqtt\":%s,\"heap\":%u,\"temp\":%s,"
+             "\"bat\":%d,\"volt\":%s,\"ip\":\"%s\",\"pkts\":%d,"
              "\"env\":\"" FW_ENV "\",\"ver\":\"" FW_VERSION "\","
              "\"fwready\":%s,\"fwname\":\"%s\",\"fwsize\":%u,\"fwimg\":%u}",
              (unsigned long)(millis() / 1000),
              wifiConnected ? "true" : "false", mqttConnected ? "true" : "false",
-             (unsigned)ESP.getFreeHeap(), cpuTempC(),
-             batteryPercent(), batteryVoltage(),
+             (unsigned)ESP.getFreeHeap(), temp,
+             batteryPercent(), volt,
              wifiConnected ? WiFi.localIP().toString().c_str() : "-", packetCount,
              otaFwReady ? "true" : "false", fwname,
              (unsigned)otaFwSize, (unsigned)otaImgSize);
@@ -214,15 +231,16 @@ void otaHandleSensors() {
         // Имя окружения показываем вместо кода платы: в нём уже есть и плата, и тип
         // прошивки, а по нему же автообновление выбирает файл релиза. Пустое значение —
         // прошивка узла старая, и файл подберётся по коду платы (он остаётся в hello).
-        char name[48], ver[32], env[40], item[300];
+        char name[48], ver[32], env[40], rssi[12], item[300];
         jsonEscape(sensorDeviceDisc[i].c_str(), name, sizeof(name));
         jsonEscape(sensorFwVersion[i].c_str(), ver, sizeof(ver));
         jsonEscape(sensorEnv[i].c_str(), env, sizeof(env));
+        fmtFix(sensorRssi[i], 0, rssi, sizeof(rssi));   // без float-printf, как и везде
         snprintf(item, sizeof(item),
                  "%s{\"name\":\"%s\",\"ver\":\"%s\",\"env\":\"%s\","
-                 "\"online\":%s,\"seen_s\":%lu,\"bat\":%d,\"rssi\":%.0f}",
+                 "\"online\":%s,\"seen_s\":%lu,\"bat\":%d,\"rssi\":%s}",
                  i ? "," : "", name, ver, env, sensorOnlineNow[i] ? "true" : "false",
-                 (millis() - sensorLastActive[i]) / 1000, sensorBattery[i], sensorRssi[i]);
+                 (millis() - sensorLastActive[i]) / 1000, sensorBattery[i], rssi);
         json += item;
     }
     json += "]";
@@ -233,7 +251,36 @@ void otaHandleSensors() {
 // сенсор отвечает подтверждением, а оно шлётся тройным флудом и занимает эфир около
 // полутора секунд. Радио полудуплексное — пока сенсор передаёт, он не слышит ничего,
 // поэтому следующая команда, посланная раньше, просто пропадёт.
+//
+// Пауза выдерживается очередью, которую разбирает главный цикл (webTick). Раньше
+// обработчик запроса просто спал delay() между полями, и на десятке полей координатор
+// замолкал на полминуты: не обслуживал ни радио, ни MQTT, ни саму страницу.
 #define CFG_MSG_GAP_MS 2000
+#define CFG_QUEUE_MAX 24
+static String cfgQueue[CFG_QUEUE_MAX];
+static uint8_t cfgQHead = 0, cfgQCount = 0;
+static unsigned long cfgQNextMs = 0;
+
+static bool cfgQueuePush(const String& msg) {
+    if (cfgQCount >= CFG_QUEUE_MAX) return false;
+    cfgQueue[(cfgQHead + cfgQCount) % CFG_QUEUE_MAX] = msg;
+    cfgQCount++;
+    return true;
+}
+
+void webTick() {
+    if (cfgQCount == 0) return;
+    if (otaSessionActive()) return;      // идёт прошивка — эфир занят целиком, очередь ждёт
+    if (cfgQNextMs != 0 && (long)(millis() - cfgQNextMs) < 0) return;
+    String msg = cfgQueue[cfgQHead];
+    cfgQueue[cfgQHead] = String();       // не держим текст в очереди дольше нужного
+    cfgQHead = (cfgQHead + 1) % CFG_QUEUE_MAX;
+    cfgQCount--;
+    slog("[CFG] -> %s\n", msg.c_str());
+    otaTxGroup(msg);
+    cfgQNextMs = millis() + CFG_MSG_GAP_MS;
+}
+
 void otaHandleSensorsConfig() {
     if (otaSessionActive()) { otaServer.send(409, "text/plain; charset=utf-8", "идёт прошивка сенсора"); return; }
     if (sensorChannelIdx < 0) { otaServer.send(503, "text/plain; charset=utf-8", "канал сенсоров не настроен"); return; }
@@ -243,32 +290,27 @@ void otaHandleSensorsConfig() {
         return;
     }
     if (otaServer.arg("get") == "1") {
-        slog("[CFG] -> %s: get\n", target.c_str());
-        otaTxGroup("cfg:" + target + ":get");
+        cfgQueuePush("cfg:" + target + ":get");
         otaServer.send(200, "text/plain; charset=utf-8", "запрошены настройки, ответ в журнале");
         return;
     }
-    int sent = 0;
+    // Порядок важен: сначала поля, потом save, и только потом reboot — очередь его и
+    // сохраняет, а уходят сообщения по одному с паузой CFG_MSG_GAP_MS.
+    int sent = 0, lost = 0;
     for (int i = 0; i < otaServer.args(); i++) {
         String n = otaServer.argName(i);
         if (n == "target" || n == "save" || n == "reboot" || n == "get" || n == "plain") continue;
-        String msg = "cfg:" + target + ":" + n + "=" + otaServer.arg(i);
-        slog("[CFG] -> %s: %s\n", target.c_str(), n.c_str());
-        otaTxGroup(msg);
-        sent++;
-        delay(CFG_MSG_GAP_MS);
+        if (cfgQueuePush("cfg:" + target + ":" + n + "=" + otaServer.arg(i))) sent++;
+        else lost++;
     }
-    if (otaServer.arg("save") == "1") {
-        slog("[CFG] -> %s: save\n", target.c_str());
-        otaTxGroup("cfg:" + target + ":save");
-        delay(CFG_MSG_GAP_MS);
-    }
-    if (otaServer.arg("reboot") == "1") {
-        slog("[CFG] -> %s: reboot\n", target.c_str());
-        otaTxGroup("cfg:" + target + ":reboot");
-    }
-    otaServer.send(200, "text/plain; charset=utf-8",
-                   String("отправлено полей: ") + sent + ", ответы смотрите в журнале");
+    if (otaServer.arg("save") == "1" && !cfgQueuePush("cfg:" + target + ":save")) lost++;
+    if (otaServer.arg("reboot") == "1" && !cfgQueuePush("cfg:" + target + ":reboot")) lost++;
+    String answer = String("в очереди полей: ") + sent + ", уходят по одному раз в "
+                  + (CFG_MSG_GAP_MS / 1000) + " с, ответы смотрите в журнале";
+    if (lost > 0) answer += ", НЕ поместилось: " + String(lost);
+    slog("[CFG] -> %s: в очередь поставлено %d сообщений%s\n", target.c_str(), sent,
+         lost > 0 ? " (часть не поместилась)" : "");
+    otaServer.send(200, "text/plain; charset=utf-8", answer);
 }
 
 // Кнопка «Проверить обновления»: тот же ход, что у автообновления по расписанию, но
@@ -613,27 +655,20 @@ void otaHandleStartOta() {
         otaServer.send(400, "text/plain", "нет .otaz на боте");
         return;
     }
-    if (target.length() == 0 || target.length() > 31) {
+    if (target.length() == 0 || target.length() > CFG_NAME_MAX) {
         slog("[WEB] /ota/start bad target: '%s'\n", target.c_str());
         otaServer.send(400, "text/plain", "bad target");
         return;
     }
-    otaFile = LittleFS.open("/ota.bin", "r");
-    if (!otaFile) { slog("[WEB] /ota/start: fs open fail\n"); otaServer.send(500, "text/plain", "fs open fail"); return; }
-    otaTarget = target;
-    otaLastErr[0] = 0;
-    otaSessionMs = millis();
-    otaPolls = 0;
-    otaRetrTotal = 0;
-    otaUsBuild = otaUsTx = otaChunksSent = 0;
-    otaPhase = OTA_PHASE_WAIT_START;
-    otaSeq = 0;
-    otaSentBytes = 0;
-    otaRetries = 0;
-    slog("[WEB] /ota/start -> '%s' (%u байт, crc=%08X)\n",
-         otaTarget.c_str(), (unsigned)otaFwSize, (unsigned)otaFwCrc);
-    otaSendStart();
-    otaDrawProgress();
+    // Запуск сессии — целиком в otaStartSession: здесь он раньше был выписан второй раз,
+    // и одно поле (otaPolledMs) в копии не сбрасывалось — висящий POLL от прошлой сессии
+    // сразу записывал новой первый повтор.
+    if (!otaStartSession(target)) {
+        slog("[WEB] /ota/start отклонён: %s\n", otaLastErr[0] ? otaLastErr : "нельзя начать сессию");
+        otaServer.send(409, "text/plain; charset=utf-8",
+                       otaLastErr[0] ? otaLastErr : "сессию начать нельзя");
+        return;
+    }
     otaServer.send(200, "text/plain", "started");
 }
 

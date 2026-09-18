@@ -96,7 +96,10 @@ int decryptRaw(const uint8_t* secret32, const uint8_t* mac, const uint8_t* ciphe
     mbedtls_aes_context aes;
     mbedtls_aes_init(&aes);
     mbedtls_aes_setkey_dec(&aes, secret32, 128);
-    int n = min(len, out_size);
+    // Расшифровка идёт блоками по 16 байт, поэтому в out влезает только целое число
+    // блоков: при out_size, не кратном 16, последний блок вышел бы за буфер на до 15 байт.
+    int n = min(len, out_size & ~15);
+    if (n <= 0) return 0;
     for (int i = 0; i < n; i += 16) {
         mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, ciphertext + i, out + i);
     }

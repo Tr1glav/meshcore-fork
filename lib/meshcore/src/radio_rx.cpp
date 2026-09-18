@@ -41,7 +41,9 @@ void radioRxTick() {
                     for (int i = 0; i < min(pktLen, 24); i++) Serial.printf("%02X", buffer[i]);
                     Serial.println();
                 }
-                if (pktLen > 0 && otaFastMode &&
+                // 9 байт — минимальный сырой кадр (заголовок 7 + crc16). Меньше — читать
+                // buffer[1] значило бы смотреть в мусор от предыдущего пакета.
+                if (pktLen >= 9 && otaFastMode &&
                     buffer[0] == RAW_MAGIC0 && buffer[1] == RAW_MAGIC1) {
                     // mesh OTA: сырые кадры вне meshcore
                     fastRxFrames++;

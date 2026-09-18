@@ -247,12 +247,15 @@ static void handleFrame(const uint8_t* f, size_t len) {
             break;
         }
         String nn;
-        for (size_t k = 1; k < len && k < 33; k++) nn += (char)f[k];
+        // Лимит тот же, что у консоли и страницы (CFG_NAME_MAX). Раньше здесь брались 32
+        // символа, а cfgLoad при следующем старте обрезал имя до 31 — узел возвращался в
+        // сеть под другим именем, а вместе с именем менялась и его личность.
+        for (size_t k = 1; k < len && (int)nn.length() < CFG_NAME_MAX; k++) nn += (char)f[k];
         cfg.name = nn;
         cfgSave();
-        // Личность узла выводится из имени, поэтому после переименования её надо
-        // пересчитать: иначе адверты уйдут со старым ключом.
-        initAdvertIdentity();
+        // Личность к имени больше не привязана (seed лежит в NVS), пересчитывать нечего.
+        // А вот сети о новом имени сказать стоит сразу, не дожидаясь планового адверта.
+        sendAdvert(ADV_ROUTE_FLOOD);
         Serial.printf("[BLE] имя узла изменено на «%s»\n", cfg.name.c_str());
         out[i++] = RESP_CODE_OK;
         sendFrameToApp(out, i);

@@ -37,6 +37,11 @@ bool otaStartSession(const String& target);
 String buildDiagReport();
 void setupOtaServer();
 #endif
+#if FEATURE_WEB
+// Очередь сообщений настройки узла: страница ставит их в очередь и сразу отвечает,
+// а в эфир они уходят по одному отсюда, из главного цикла.
+void webTick();
+#endif
 #if FEATURE_MESH_OTA_RECEIVER
 void otaSensorDraw();
 void otaSensorAbort(const char* why);

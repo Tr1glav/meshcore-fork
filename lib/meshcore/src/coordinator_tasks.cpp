@@ -65,6 +65,9 @@ void coordinatorTasksTick() {
         sendSensorTimeSync();
     }
     fwUpdateTick();   // новые версии из релизов GitHub
+    #if FEATURE_WEB
+    webTick();        // очередь настроек узла: по одному сообщению раз в CFG_MSG_GAP_MS
+    #endif
 
     // ===== Сброс lastmsg после паузы (чтобы повторный одинаковый текст триггерил HA) =====
     clearLastMsg();

@@ -282,6 +282,14 @@ void otaSensorHandle() {
         if (p <= 0) return;
         String target = rest.substring(0, p);
         if (target != cfg.name) return;
+        // Прошивку принимаем только с канала, ключ которого задан нами, а не выведен из
+        // его имени: иначе образ смог бы прислать любой, кто угадал имя канала, — а
+        // проверка маркера платы от подделки не спасает, это просто строка в образе.
+        if (channelKeyIsOpen(sensorChannelIdx)) {
+            Serial.println("[OTA] отказ: у канала сенсоров нет своего ключа (sns_key)");
+            sensorSendMsg("ota:fail:no psk");
+            return;
+        }
         rest = rest.substring(p + 1);
         int p2 = rest.indexOf(':');
         if (p2 <= 0) return;

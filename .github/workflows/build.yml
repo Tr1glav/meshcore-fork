@@ -43,7 +43,14 @@ jobs:
       - name: Проверки на ПК
         run: python3 scripts/selftest.py
 
+      # NOGIT=1 обязателен: post-скрипт сборки (scripts/copy_firmware.py) иначе зовёт
+      # scripts/release.py, а тот делает git add -A, коммит и push. У Actions есть и права
+      # (contents: write), и сохранённые checkout'ом учётные данные, так что push проходит —
+      # и запускает этот же workflow заново. Коммиты в репозиторий делает сборка на машине
+      # разработчика, а не CI.
       - name: Сборка прошивок
+        env:
+          NOGIT: '1'
         run: pio run -e heltec_v3_coordinator -e heltec_v4_3_sensors -e heltec_v4_3_companion
 
       - name: Версия из version.txt

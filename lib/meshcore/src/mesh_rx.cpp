@@ -28,6 +28,71 @@ void buildPingReply(char* out, size_t outlen, const uint8_t* path, uint8_t hop_c
     }
 }
 
+#ifndef SENSOR_NODE
+// Ответ на пинг и на личку уходит не сразу: пока отправитель доканчивает свои повторы, он
+// нас не слышит (радио полудуплексное), а при одинаковой у всех паузе несколько узлов
+// отвечают разом и глушат друг друга. Раньше эта пауза была обычным delay() прямо здесь,
+// в разборе пакета: до 3.5 с координатор не обслуживал ни радио, ни MQTT, ни страницу, ни
+// сессию прошивки — и лавина direct-пакетов держала его в этом состоянии сколь угодно
+// долго. Теперь ответ откладывается заявкой, а отправляет его главный цикл.
+static struct {
+    unsigned long dueMs;        // 0 — заявки нет
+    bool dm;                    // отвечаем в личку, а не в канал
+    uint8_t dmSrc;              // адресат лички (его короткий хэш)
+    int chIdx;                  // канал для группового ответа
+    char text[100];
+} pendingReply;
+
+static void scheduleReply(bool dm, uint8_t dmSrc, int chIdx, const char* text) {
+    // Заявка ровно одна. Ответить на лавину пакетов мы всё равно не сможем — эфир один, —
+    // а очередь ответов заняла бы его надолго и превратилась бы в ту же остановку цикла.
+    if (pendingReply.dueMs != 0) {
+        Serial.println("[PING] предыдущий ответ ещё не ушёл — этот пропускаем");
+        return;
+    }
+    pendingReply.dm = dm;
+    pendingReply.dmSrc = dmSrc;
+    pendingReply.chIdx = chIdx;
+    strlcpy(pendingReply.text, text, sizeof(pendingReply.text));
+    pendingReply.dueMs = millis() + random(PING_REPLY_DELAY_MIN_MS, PING_REPLY_DELAY_MAX_MS);
+    if (pendingReply.dueMs == 0) pendingReply.dueMs = 1;   // 0 занято признаком «нет заявки»
+}
+
+void meshReplyTick() {
+    if (pendingReply.dueMs == 0) return;
+    if ((long)(millis() - pendingReply.dueMs) < 0) return;
+    pendingReply.dueMs = 0;
+    uint8_t frame[256];
+
+    // === Личное сообщение: ответ уходит В ЛИЧКУ (TXT_MSG), а не в канал ===
+    if (pendingReply.dm) {
+        // Ключ ищем сейчас, а не при постановке заявки: за время паузы адверт узла мог
+        // как раз прийти.
+        uint8_t* peerPub = findPeerPub(pendingReply.dmSrc);
+        if (peerPub == NULL) {
+            Serial.printf("[DM] pubkey <%02X> неизвестен (нет advert) — ответ не отправлен\n",
+                          pendingReply.dmSrc);
+            return;
+        }
+        int dl = buildPrivateTextFrame(pendingReply.dmSrc, peerPub, pendingReply.text,
+                                       frame, sizeof(frame));
+        if (dl > 0) {
+            Serial.printf("\n[TX DM] to <%02X>: %s (%dB, флудом)\n",
+                          pendingReply.dmSrc, pendingReply.text, dl);
+            floodSend(-1, frame, dl);
+        }
+        return;
+    }
+
+    int f = buildGroupFrameFlood(pendingReply.chIdx, pendingReply.text, frame, sizeof(frame));
+    if (f > 0) {
+        Serial.printf("\n[TX] %s: %s: %s (%dB, флудом)\n", channels[pendingReply.chIdx].name,
+                      cfg.name.c_str(), pendingReply.text, f);
+        floodSend(pendingReply.chIdx, frame, f);
+    }
+}
+#endif  // !SENSOR_NODE
+
 bool parseMeshCorePacket(uint8_t* data, int len) {
     if (len < 6) return false;
 
@@ -359,36 +424,11 @@ bool parseMeshCorePacket(uint8_t* data, int len) {
     //   DIRECT-сообщение, адресованное устройству.
     bool isDirect = (route_type == 0x02 || route_type == 0x03);
     if (personalDm || (chIdx == 1 && lastMessage == "/ping") || isDirect) {
-        // Ждём, пока отправитель закончит свои повторы: пока он передаёт, он нас не
-        // слышит, и ответ, посланный раньше, до него просто не дойдёт. Задержка
-        // случайная — иначе несколько узлов отвечают разом и глушат друг друга.
-        delay(random(PING_REPLY_DELAY_MIN_MS, PING_REPLY_DELAY_MAX_MS));
-
         char reply[100];
         buildPingReply(reply, sizeof(reply), replyPath, replyHops, path_hash_size);
         Serial.printf("[PING] reply: %s\n", reply);
-        uint8_t frame[256];
-
-        // === Личное сообщение: ответ уходит В ЛИЧКУ (TXT_MSG), а не в канал ===
-        if (personalDm) {
-            uint8_t* peerPub = findPeerPub(dmSrc);
-            if (peerPub == NULL) {
-                Serial.printf("[DM] pubkey <%02X> неизвестен (нет advert) — ответ не отправлен\n", dmSrc);
-                return true;
-            }
-            int dl = buildPrivateTextFrame(dmSrc, peerPub, reply, frame, sizeof(frame));
-            if (dl > 0) {
-                Serial.printf("\n[TX DM] to <%02X>: %s (%dB, флудом)\n", dmSrc, reply, dl);
-                floodSend(-1, frame, dl);
-            }
-            return true;
-        }
-
-        int f = buildGroupFrameFlood(chIdx, reply, frame, sizeof(frame));
-        if (f > 0) {
-            Serial.printf("\n[TX] %s: %s: %s (%dB, флудом)\n", channels[chIdx].name, cfg.name.c_str(), reply, f);
-            floodSend(chIdx, frame, f);
-        }
+        // Сам ответ уйдёт из главного цикла, когда истечёт пауза (см. meshReplyTick).
+        scheduleReply(personalDm, dmSrc, chIdx, reply);
     }
     #endif  // !SENSOR_NODE (ответ на пинг/DM — только MQTT-бот)
 

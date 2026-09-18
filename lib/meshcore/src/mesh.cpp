@@ -6,6 +6,7 @@
 #include "display.h"
 #include "ota.h"   // slog: журнал бота, он же виден на странице
 #include "companion.h"   // очередь сообщений для телефонного приложения
+#include <esp_random.h>  // esp_fill_random: запасная личность, если NVS не отвечает
 
 uint8_t* findPeerPub(uint8_t hash) {
     for (int i = 0; i < PEER_CACHE_MAX; i++) {
@@ -27,8 +28,16 @@ void rememberPeerPub(uint8_t hash, const uint8_t* pub) {
 }
 
 void initAdvertIdentity() {
-    mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
-               (const uint8_t*)cfg.name.c_str(), cfg.name.length(), bot_priv);
+    // Seed — случайные 32 байта, которые лежат в NVS (cfgIdentitySeed). Раньше здесь
+    // стоял SHA256(cfg.name): имя узла открытым текстом уходит в каждом адверте, поэтому
+    // приватный ключ мог вычислить любой, кто узел слышал, — и подделать его адверты, и
+    // прочитать переписку в личке (общий секрет X25519 считается из этого же seed).
+    if (!cfgIdentitySeed(bot_priv)) {
+        // NVS недоступна. Случайная личность на один запуск лучше предсказуемой: сеть
+        // увидит узел как новый, но ключ хотя бы не выводится из публичного имени.
+        esp_fill_random(bot_priv, 32);
+        Serial.println("[ADV] ВНИМАНИЕ: seed не из NVS — личность узла только до перезагрузки");
+    }
     Ed25519::derivePublicKey(bot_pub, bot_priv);
 
     // Ed25519 private key (64 Б) для X25519-обмена при ответе в личку.

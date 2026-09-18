@@ -37,7 +37,17 @@ struct AppConfig {
     uint16_t dispBri;   // яркость экрана 0..255
     uint16_t vextOn;    // уровень на пине питания периферии, включающий его: 1 = HIGH, 0 = LOW
     uint16_t autoUpd;   // 1 — сам ставить новые версии из релизов GitHub
+    // 1 — проверять сертификат сервера при загрузке прошивок (по умолчанию). Ноль оставлен
+    // как аварийный выход: если GitHub сменит корневой сертификат, обновления встанут, и
+    // вернуть их можно будет без перепрошивки — "set tls_check 0" в консоли.
+    uint16_t tlsCheck;
 };
+
+// Столько символов влезает в ADV-кадр (mesh_tx.cpp режет на 31) и в адресата mesh OTA
+// (otaStartSession отвергает target длиннее 31). Лимит один на все входы: консоль,
+// страницу и команду приложения — иначе обрезание в одном месте и в другом даёт разным
+// узлам совпавшие короткие имена.
+#define CFG_NAME_MAX 31
 
 extern AppConfig cfg;
 
@@ -57,8 +67,22 @@ int cfgFieldCount();
 const char* cfgFieldName(int idx);
 String cfgFieldValue(int idx, bool secrets);
 bool cfgFieldSecret(int idx);
-// Присваивает значение полю по имени; false — поля с таким именем нет
-bool cfgApply(const String& field, const String& value);
+// Присваивает значение полю по имени. Значение вне диапазона НЕ применяется, и об этом
+// нужно сообщить пользователю: раньше страница отвечала «сохранено», а поле оставалось
+// прежним.
+enum {
+    CFG_APPLY_OK = 0,
+    CFG_APPLY_UNKNOWN = -1,     // поля с таким именем нет
+    CFG_APPLY_BAD_VALUE = -2,   // поле есть, значение недопустимо
+};
+int cfgApply(const String& field, const String& value);
+
+// Годность числового значения для поля с диапазоном lo..hi (lo == hi — без проверки)
+bool cfgRangeOk(double v, float lo, float hi);
+
+// Seed личности узла (32 байта) из NVS; создаётся при первом обращении.
+// false — NVS недоступна, вызывающий решает, что делать.
+bool cfgIdentitySeed(uint8_t out[32]);
 
 #ifdef SENSOR_NODE
 // Команда настройки, пришедшая по радио: часть сообщения после "cfg:<имя узла>:".

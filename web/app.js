@@ -12,6 +12,16 @@ const isSelf=()=>target=='__self__';
 function st(t,c){$('st').textContent=t;$('st').className=c||'';vErr=false}
 function bar(p,l,r){$('prog').hidden=false;$('pctv').textContent=Math.round(p);$('fill').style.width=p+'%';$('pl').textContent=l;$('pr').textContent=r||''}
 function batHtml(p){return '<span class="bat'+(p<20?' low':'')+'"><i style="width:'+Math.max(0,Math.min(100,p))+'%"></i></span>'}
+// Узел сообщает своё имя и окружение по радио, то есть это данные от постороннего.
+// В разметку они уходят только текстом: через innerHTML имя вида <img onerror=...>
+// исполнилось бы прямо на странице координатора — а с неё прошивается и сам
+// координатор, и любой узел. batHtml остаётся для чисел, там подставлять нечего.
+function el(tag,cls,text){
+  const e=document.createElement(tag);
+  if(cls)e.className=cls;
+  if(text!=null)e.textContent=text;
+  return e;
+}
 function refresh(){
   const need=isSelf()?'bin':'otaz';
   $('hint').textContent=file?'':'Перетащи .'+need+' сюда или нажми';
@@ -34,25 +44,33 @@ function setFile(f){
   $('fver').textContent=m?'версия '+m[1]:'';
   refresh();
 }
-function addTarget(id,name,meta,online,bat){
-  const d=document.createElement('div');
-  d.className='tgt'+(target==id?' sel':'');
-  d.innerHTML='<span class="dot'+(online?' on':'')+'"></span>'
-    +'<span class="grow"><span class="nm">'+name+'</span><div class="meta">'+meta+'</div></span>'
-    +(bat>=0?batHtml(bat):'');
+// parts — массив {t:'текст', b:1 если жирным}; между частями ставится разделитель
+function addTarget(id,name,parts,online,bat){
+  const d=el('div','tgt'+(target==id?' sel':''));
+  d.appendChild(el('span','dot'+(online?' on':'')));
+  const grow=el('span','grow');
+  grow.appendChild(el('span','nm',name));
+  const meta=el('div','meta');
+  parts.forEach((p,i)=>{
+    if(i)meta.appendChild(document.createTextNode(' · '));
+    meta.appendChild(p.b?el('b',null,p.t):document.createTextNode(p.t));
+  });
+  grow.appendChild(meta);
+  d.appendChild(grow);
+  if(bat>=0)d.insertAdjacentHTML('beforeend',batHtml(bat));   // bat — число
   d.onclick=()=>{target=id;renderTargets();refresh()};
   $('targets').appendChild(d);
 }
 function renderTargets(){
   $('targets').innerHTML='';
   addTarget('__self__',$('dev').textContent+' — этот бот',
-            '<b>'+(info.env||'?')+'</b> · v'+(info.ver||'?')+' · файл .bin',true,
+            [{t:info.env||'?',b:1},{t:'v'+(info.ver||'?')},{t:'файл .bin'}],true,
             info.bat>=0?info.bat:-1);
   for(const s of sensors){
-    const meta='<b>'+(s.env||'?')+'</b> · '+(s.ver?'v'+s.ver:'версия ?')
-      +' · '+(s.online?'онлайн':'был '+ago(s.seen_s)+' назад')
-      +(s.rssi?' · '+s.rssi+' dBm':'');
-    addTarget(s.name,s.name,meta,s.online,s.bat);
+    const parts=[{t:s.env||'?',b:1},{t:s.ver?'v'+s.ver:'версия ?'},
+                 {t:s.online?'онлайн':'был '+ago(s.seen_s)+' назад'}];
+    if(s.rssi)parts.push({t:s.rssi+' dBm'});
+    addTarget(s.name,s.name,parts,s.online,s.bat);
   }
   if(!sensors.length){
     const d=document.createElement('div');
@@ -76,10 +94,17 @@ async function loadInfo(){
     const fw=$('fw');
     if(info.fwready){
       fw.hidden=false;
-      fw.innerHTML='На боте: <b>'+(info.fwname||'файл .otaz')+'</b><br>'+kb(info.fwsize)
-        +' сжато, образ '+kb(info.fwimg)
-        +' <button id="fwgo" class="sec sm" style="margin-top:6px">Прошить сохранённым</button>';
-      $('fwgo').onclick=flashStored;
+      // Имя файла приходит из релиза или от загрузившего — тоже только текстом
+      fw.textContent='На боте: ';
+      fw.appendChild(el('b',null,info.fwname||'файл .otaz'));
+      fw.appendChild(document.createElement('br'));
+      fw.appendChild(document.createTextNode(
+        kb(info.fwsize)+' сжато, образ '+kb(info.fwimg)+' '));
+      const go=el('button','sec sm','Прошить сохранённым');
+      go.id='fwgo';
+      go.style.marginTop='6px';
+      go.onclick=flashStored;
+      fw.appendChild(go);
     }else fw.hidden=true;
     renderTargets();refresh();
   }catch(e){$('info').textContent='нет связи с ботом'}

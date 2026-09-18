@@ -55,7 +55,9 @@ void sensorTasksTick() {
             sensorSendHello();
         }
     }
+    #if FEATURE_BUTTON
     buttonTick();   // кнопка: счёт нажатий и переключение экрана, без блокировки
+    #endif
 }
 
 #endif // FEATURE_SENSOR

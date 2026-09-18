@@ -50,6 +50,10 @@ ROLE_FIELDS = {
     # Компаньон — сенсорный узел плюс BLE для телефонного приложения. Приватный канал
     # ему тоже нужен: в приложении это обычный чат, и без ключа его попросту не видно.
     "companion": ["name", "prv_name", "prv_key", "sns_name", "sns_key"] + RADIO_FIELDS,
+    # T-Deck: отдельное устройство, но по набору настроек это тот же сенсорный узел
+    # (окружение tdeck определяет SENSOR_NODE). Без этой строки скрипт отказывался
+    # настраивать плату, хотя она давно есть в secrets.json.
+    "tdeck": ["name", "prv_name", "prv_key", "sns_name", "sns_key"] + RADIO_FIELDS,
 }
 SECRET_FIELDS = {"wifi_pass", "mqtt_pass", "prv_key", "sns_key"}
 
@@ -98,7 +102,8 @@ def device_config(data, key):
                  + ", ".join(sorted(devices)))
     role = dev.get("role")
     if role not in ROLE_FIELDS:
-        sys.exit(f"у устройства '{key}' роль должна быть bot, sensor или companion")
+        sys.exit(f"у устройства '{key}' роль должна быть одной из: "
+                 + ", ".join(sorted(ROLE_FIELDS)))
     merged = dict(data.get("common", {}))
     merged["name"] = dev.get("name", key)   # имя узла = ключ, если явно не задано иное
     merged.update({k: v for k, v in dev.items() if k not in ("role", "env", "port")})
@@ -219,7 +224,8 @@ def talk(ser, line, expect, timeout=4.0, echo_field=None):
         buf += chunk
         if expect in buf:
             return True, buf
-        if "неизвестн" in buf or "нужно:" in buf:
+        # Ранний выход по явному отказу: иначе ждали бы весь таймаут на каждую ошибку
+        if "неизвестн" in buf or "нужно:" in buf or "вне диапазона" in buf:
             return False, buf
     return False, buf
 
@@ -275,10 +281,13 @@ def do_config(port, values, quiet=False, force=False):
         for field, value in pending.items():
             value = "" if value is None else str(value)
             if value == "":
-                ok, buf = talk(ser, f"clear {field}", "очищено")
+                ok, buf = talk(ser, f"clear {field}", "очищено (нужен save)")
                 action = "очищено"
             else:
-                ok, buf = talk(ser, f"set {field} {value}", "задано")
+                # Ждём именно "задано (нужен save)": подстрока "задано" есть и в отказе
+                # "<поле> не задано: значение вне диапазона", и такой ответ засчитывался
+                # как успех — скрипт сообщал, что всё записано, а поле оставалось прежним.
+                ok, buf = talk(ser, f"set {field} {value}", "задано (нужен save)")
                 action = "задано"
             if not ok:
                 print(f"  {field}: ОШИБКА — устройство не подтвердило ({action})")

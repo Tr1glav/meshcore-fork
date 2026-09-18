@@ -4,7 +4,6 @@
 #include "display.h"
 #include "companion.h"   // код сопряжения BLE на экране компаньона
 
-#include <math.h>        // cos/sin/sqrt для радиографии фона (ST7789)
 
 #ifdef SENSOR_NODE
 // "12m05s" / "3h07m" — сколько прошло с момента sinceMs
@@ -23,8 +22,14 @@ static String agoStr(unsigned long sinceMs) {
 
 float batteryVoltage() {
     static unsigned long lastMs = 0;
+    static bool measured = false;
     static float volts = 0;
-    if (volts > 0 && millis() - lastMs < BAT_READ_MS) return volts;
+    // Кеш по времени, а не по значению: на плате без аккумулятора делитель даёт около
+    // нуля, условие volts > 0 не выполнялось никогда, и каждый вызов делал delay(10) плюс
+    // восемь замеров ADC. А зовут эту функцию и с экрана (раз в полсекунды, по три-четыре
+    // раза), и из обработчика /info на каждый опрос страницы.
+    if (measured && millis() - lastMs < BAT_READ_MS) return volts;
+    measured = true;
     lastMs = millis();
     pinMode(VBAT_CTRL_PIN, OUTPUT);
     digitalWrite(VBAT_CTRL_PIN, VBAT_CTRL_ACTIVE);
@@ -172,60 +177,10 @@ static void drawBtIcon(int x, int y) {
 #endif
 
 #if OLED_DRIVER_ST7789
-// ===== Радио-графика на фоне (ST7789) =====
-// Полноцветный TFT позволяет не просто выводить текст, а иметь декоративный фон.
-// Рисуем «радар»: тёмное поле, концентрические дуги вокруг антенны и линию
-// развёртки, которая поворачивается со временем. Текст статуса печатается
-// поверх — шрифт 6x8 на 320x240 оставляет фон почти нетронутым.
-#define RADAR_BG     0x0841   // тёмно-синий «ночной» фон
-#define RADAR_GRID   0x3186   // серо-синие дуги
-#define RADAR_SWEEP  0x7BEF   // линия развёртки
-
-// Центр развёртки: слева внизу, чтобы текст не перекрывался дугами справа
-#define RADAR_CX 150
-#define RADAR_CY (SCREEN_HEIGHT - 30)
-
-static void drawRadarBackdrop() {
-    display.fillScreen(RADAR_BG);
-    // Концентрические дуги (полуокружности в верхней полусфере)
-    const int radii[] = { 60, 90, 120, 150 };
-    for (int i = 0; i < 4; i++) {
-        int r = radii[i];
-        // полуокружность в верхней полусфере: для каждого шага x — один пиксель y
-        for (int x = -r; x <= r; x++) {
-            int y = RADAR_CY - (int)sqrt((float)(r * r - x * x));
-            display.drawPixel(RADAR_CX + x, y, RADAR_GRID);
-        }
-    }
-    // Азимутальные отметки (спицы через 45°)
-    for (int a = 0; a < 360; a += 45) {
-        for (float t = 20; t < 150; t += 20) {
-            int x = (int)(RADAR_CX + t * cos(a * 3.14159f / 180.0f));
-            int y = (int)(RADAR_CY - t * sin(a * 3.14159f / 180.0f));
-            if (y < 5 || y >= SCREEN_HEIGHT) break;
-            display.drawPixel(x, y, RADAR_GRID);
-        }
-    }
-    // Линия развёртки — медленно поворачивается
-    static unsigned long lastAngleMs = 0;
-    static int sweepAngle = 0;
-    if (millis() - lastAngleMs > 250) {
-        lastAngleMs = millis();
-        sweepAngle = (sweepAngle + 5) % 360;
-    }
-    for (float t = 20; t < 150; t += 6) {
-        int x = (int)(RADAR_CX + t * cos(sweepAngle * 3.14159f / 180.0f));
-        int y = (int)(RADAR_CY - t * sin(sweepAngle * 3.14159f / 180.0f));
-        if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT)
-            display.drawPixel(x, y, RADAR_SWEEP);
-    }
-    display.drawLine(RADAR_CX, RADAR_CY, RADAR_CX + 6, RADAR_CY, RADAR_SWEEP);
-    display.drawLine(RADAR_CX, RADAR_CY, RADAR_CX - 6, RADAR_CY, RADAR_SWEEP);
-    display.drawLine(RADAR_CX, RADAR_CY, RADAR_CX, RADAR_CY + 6, RADAR_SWEEP);
-    display.drawLine(RADAR_CX, RADAR_CY, RADAR_CX, RADAR_CY - 6, RADAR_SWEEP);
-    // Антенна — точка в центре развёртки
-    display.drawCircle(RADAR_CX, RADAR_CY, 2, RADAR_SWEEP);
-}
+// Фон экрана для панелей ST7789 рисует проект платы: у T-Deck это «радар» в репозитории
+// tdeck (src/tdeck_backdrop.cpp). Общий код знает только, что фон кто-то нарисует, —
+// заголовок приходит из include-пути того проекта.
+#include "tdeck_backdrop.h"
 #endif
 
 void drawIdleStatus() {
@@ -239,7 +194,7 @@ void drawIdleStatus() {
     if (!companionBleLinked()) { drawBlePin(); return; }
     #endif
     #if OLED_DRIVER_ST7789
-    drawRadarBackdrop();             // фон: радиография, текст печатаем поверх
+    tdeckDrawBackdrop();             // фон рисует проект платы, текст печатаем поверх
     #else
     display.clearDisplay();
     #endif

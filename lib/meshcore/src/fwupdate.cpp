@@ -37,12 +37,48 @@ const char* fwSensorEnvForBoard(const String& board) {
     return "";
 }
 
-// Один HTTPS-запрос. Сертификаты не проверяем: корневые сертификаты пришлось бы носить
-// в прошивке и обновлять при их смене. Защита здесь другая — маркер платы в образе и
-// CRC32, которые проверяются перед записью.
+// Проверка сертификата сервера. Раньше здесь стояло безусловное setInsecure() с
+// пояснением, что защита якобы обеспечивается маркером платы и CRC32. Это неверно:
+// маркер — обычная строка внутри образа, а CRC32 считает тот же, кто образ отдал, так что
+// подменить прошивку по пути мог кто угодно на маршруте — и она бы установилась.
+//
+// Набор корневых сертификатов лежит в ca_bundle.h, который создаёт scripts/gen_ca_bundle.py
+// на машине разработчика (в прошивку попадают только корни тех хостов, откуда мы качаем —
+// это несколько килобайт). Файла нет — проверять нечем, и об этом надо сказать прямо, а не
+// делать вид, что защита есть. Настройка tls_check=0 отключает проверку: она нужна, если
+// GitHub сменит корневой сертификат, — обновления тогда встанут, и вернуть их можно будет
+// без перепрошивки.
+#if __has_include("ca_bundle.h")
+#include "ca_bundle.h"
+#define HAVE_CA_BUNDLE 1
+#else
+#define HAVE_CA_BUNDLE 0
+#endif
+
+static void fwSetupTls(WiFiClientSecure& cl) {
+    static bool warned = false;
+#if HAVE_CA_BUNDLE
+    if (cfg.tlsCheck) {
+        cl.setCACert(CA_BUNDLE_PEM);
+        return;
+    }
+    if (!warned) {
+        warned = true;
+        slog("[FW] ВНИМАНИЕ: tls_check=0 — сертификат сервера не проверяется\n");
+    }
+#else
+    if (!warned) {
+        warned = true;
+        slog("[FW] ВНИМАНИЕ: сертификат сервера не проверяется — в прошивке нет набора "
+             "корней. Создайте его: python3 scripts/gen_ca_bundle.py, затем пересоберите\n");
+    }
+#endif
+    cl.setInsecure();
+}
+
 static bool httpGetString(const String& url, String& out, size_t limit) {
     WiFiClientSecure cl;
-    cl.setInsecure();
+    fwSetupTls(cl);
     HTTPClient http;
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setTimeout(15000);
@@ -115,7 +151,7 @@ static String fwResolveUrl(const String& url) {
     String cur = url;
     for (int hop = 0; hop < 4; hop++) {
         WiFiClientSecure cl;
-        cl.setInsecure();
+        fwSetupTls(cl);
         HTTPClient http;
         http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
         http.setTimeout(15000);
@@ -150,7 +186,7 @@ template <typename Sink>
 static bool httpStream(const String& url, Sink sink, uint32_t* gotOut = nullptr) {
     String real = fwResolveUrl(url);
     WiFiClientSecure cl;
-    cl.setInsecure();
+    fwSetupTls(cl);
     HTTPClient http;
     http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
     http.setTimeout(20000);

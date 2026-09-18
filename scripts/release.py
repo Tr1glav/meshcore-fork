@@ -33,7 +33,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Пути, которых в коммите быть не должно ни при каких обстоятельствах. .gitignore их и так
 # исключает, но цена ошибки — пароли и ключи каналов в истории публичного репозитория,
 # поэтому проверяем ещё раз перед фиксацией.
-FORBIDDEN = ("secrets.ini", "secrets.json", "firmware_output/", "build_info.h")
+FORBIDDEN = ("secrets.ini", "secrets.json", ".env", "firmware_output/", "build_info.h")
 
 
 def git(*args, check=True):
@@ -102,9 +102,14 @@ def main():
     rel_branch = f"release/v{ver}"
 
     git("add", "-A")
-    files = [l for l in git("diff", "--cached", "--name-only").splitlines() if l]
+    # Статусы, а не только имена: удаление закрытого файла из репозитория — это ровно то,
+    # что нужно разрешить, а вот добавление такого файла останавливает коммит. Раньше
+    # проверка смотрела только имена и не давала удалить лишний файл вовсе.
+    entries = [l.split("\t") for l in git("diff", "--cached", "--name-status").splitlines() if l]
+    files = [e[-1] for e in entries]
+    added = [e[-1] for e in entries if not e[0].startswith("D")]
 
-    bad = [f for f in files if any(f.startswith(p) or f.endswith(p) for p in FORBIDDEN)]
+    bad = [f for f in added if any(f.startswith(p) or f.endswith(p) for p in FORBIDDEN)]
     if bad:
         git("reset", check=False)
         sys.exit("[release] в коммит попали закрытые файлы, остановлено: " + ", ".join(bad))

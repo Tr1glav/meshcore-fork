@@ -69,8 +69,16 @@
 #endif
 
 // --- железо ---
+// Кнопка есть не у каждого узла: у T-Deck вместо неё клавиатура, и PIN_USER_BTN там не
+// задан. Поэтому признак выводится не только из роли, но и из наличия пина — иначе
+// buttonTick каждый проход цикла опрашивал бы пин -1 (digitalRead отдаёт на нём LOW,
+// то есть «кнопка нажата навсегда»).
 #ifndef FEATURE_BUTTON
-  #define FEATURE_BUTTON FEATURE_SENSOR
+  #if BUTTON_PIN >= 0
+    #define FEATURE_BUTTON FEATURE_SENSOR
+  #else
+    #define FEATURE_BUTTON 0
+  #endif
 #endif
 
 // Проверки сочетаний: молча собрать бессмысленную прошивку хуже, чем не собрать вовсе.
@@ -85,6 +93,24 @@
 #endif
 #if FEATURE_COMPANION && !FEATURE_SENSOR
   #error "Компаньон собирается поверх сенсорного узла: нужен FEATURE_SENSOR"
+#endif
+// Код признаков узла лежит под старыми ролевыми флагами (кнопка трогает otaActive и
+// sensorSendMsg, экран — screenTick, компаньон — весь companion.cpp). Без этих проверок
+// признак без своего ролевого флага давал невнятную ошибку линковки вместо внятной здесь.
+#if FEATURE_SENSOR && !defined(SENSOR_NODE)
+  #error "FEATURE_SENSOR требует SENSOR_NODE (задаётся в platformio.ini)"
+#endif
+#if FEATURE_BUTTON && !FEATURE_SENSOR
+  #error "FEATURE_BUTTON требует FEATURE_SENSOR: кнопка шлёт сообщения узла"
+#endif
+#if FEATURE_MESH_OTA_RECEIVER && !defined(SENSOR_NODE)
+  #error "FEATURE_MESH_OTA_RECEIVER требует SENSOR_NODE"
+#endif
+#if FEATURE_COMPANION && !defined(COMPANION_NODE)
+  #error "FEATURE_COMPANION требует COMPANION_NODE"
+#endif
+#if FEATURE_BUTTON && BUTTON_PIN < 0
+  #error "FEATURE_BUTTON требует -DPIN_USER_BTN: на этой плате кнопки нет"
 #endif
 // Код пока ветвится и по старому флагу MQTT_ENABLED, который задаёт platformio.ini: под ним
 // лежат wifi/mqtt/fwupdate/ota.cpp целиком. Если новый признак включён, а старого флага нет,
