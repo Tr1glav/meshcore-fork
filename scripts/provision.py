@@ -35,6 +35,10 @@ except ImportError:
     sys.exit("нужен pyserial: pip install pyserial")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# Каталог проекта и файл настроек можно подменить: прошивка T-Deck собирается в соседнем
+# репозитории и свой secrets.json держит рядом с собой. Скрипт при этом остаётся один —
+# второй копии, которая начнёт отставать от этой, заводить незачем.
+PROJECT = ROOT
 SECRETS = ROOT / "secrets.json"
 BAUD = 115200
 
@@ -434,9 +438,9 @@ def cmd_flash(args):
     if not env:
         sys.exit(f"у устройства '{args.device}' не задано окружение (env)")
     port = pick_port(dev, args)
-    print(f"[сборка] {env} -> {port}")
+    print(f"[сборка] {env} -> {port} (проект {PROJECT})")
     rc = subprocess.call(["pio", "run", "-e", env, "-t", "upload", "--upload-port", port],
-                         cwd=str(ROOT))
+                         cwd=str(PROJECT))
     if rc != 0:
         sys.exit("прошивка не удалась")
     print("[ожидание] порт возвращается после перезагрузки...")
@@ -459,8 +463,11 @@ def cmd_verify(args):
 
 
 def main():
+    global PROJECT, SECRETS
     ap = argparse.ArgumentParser(description="прошивка и настройка устройства из secrets.json")
     ap.add_argument("--port", help="последовательный порт (иначе из secrets.json или автоопределение)")
+    ap.add_argument("--project", help="каталог проекта PlatformIO (по умолчанию этот репозиторий)")
+    ap.add_argument("--secrets", help="файл настроек (по умолчанию secrets.json проекта)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list", help="показать порты").set_defaults(func=cmd_list)
     p = sub.add_parser("import-ini", help="создать secrets.json из secrets.ini")
@@ -477,6 +484,11 @@ def main():
                            help="записать все поля, даже совпадающие")
         p.set_defaults(func=fn)
     args = ap.parse_args()
+    if args.project:
+        PROJECT = pathlib.Path(args.project).resolve()
+        SECRETS = PROJECT / "secrets.json"
+    if args.secrets:
+        SECRETS = pathlib.Path(args.secrets).resolve()
     args.func(args)
 
 
