@@ -129,11 +129,23 @@ static void drawBlePin() {
 static bool screenOn = true;
 static unsigned long screenWakeMs = 0;
 
+// Приглушена ли подсветка сторожем простоя (см. screenTick)
+static bool screenDimmed = false;
+
+static void screenSetFull() {
+    screenDimmed = false;
+    #if HAS_OLED
+    display.setBrightness((uint8_t)cfg.dispBri);
+    #endif
+}
+
 void screenWake() {
     screenWakeMs = millis();
+    if (screenDimmed) screenSetFull();
     if (screenOn) return;
     screenOn = true;
     display.setPower(true);
+    screenSetFull();
 }
 
 bool screenIsOn() { return screenOn; }
@@ -141,6 +153,7 @@ bool screenIsOn() { return screenOn; }
 // Длинное нажатие кнопки: горит — гасим, погас — зажигаем. Ручное решение сильнее
 // сторожа простоя: выключенный вручную экран сам не загорится.
 void screenToggle() {
+    if (screenOn && screenDimmed) { screenSetFull(); return; }   // сначала вернём яркость
     if (screenOn) {
         screenOn = false;
         display.setPower(false);
@@ -161,8 +174,21 @@ void screenTick() {
     // иначе подключиться будет нечем.
     if (!companionBleLinked()) { screenWakeMs = millis(); return; }
     #endif
-    if (millis() - screenWakeMs < SCREEN_IDLE_OFF_MS) return;
+    unsigned long idle = millis() - screenWakeMs;
+    if (idle < SCREEN_DIM_MS) return;
+    if (idle < SCREEN_IDLE_OFF_MS) {
+        // Ступень между «горит» и «погас»: читать ещё можно, а ток уже меньше
+        if (!screenDimmed) {
+            screenDimmed = true;
+            #if HAS_OLED
+            display.setBrightness((uint8_t)((uint32_t)cfg.dispBri * SCREEN_DIM_PERCENT / 100));
+            #endif
+            Serial.println("[SCR] подсветка приглушена (простой)");
+        }
+        return;
+    }
     screenOn = false;
+    screenDimmed = false;
     display.setPower(false);
     Serial.println("[SCR] экран погашен (простой)");
 }
@@ -208,9 +234,11 @@ void drawIdleStatus() {
     if (!companionBleLinked()) { drawBlePin(); return; }
     #endif
     #if OLED_DRIVER_ST7789
-    // Дальше — раскладка для 128x64, ей на 320x240 делать нечего
-    tdeckDrawScreen();
-    display.display();
+    // Дальше — раскладка для 128x64, ей на 320x240 делать нечего. Проект платы сам решает,
+    // нужно ли перерисовываться: вывод кадра на панель стоит 153 КБ по SPI (~31 мс на
+    // 40 МГц), и гнать его, когда на экране ничего не изменилось, незачем — тем более что
+    // шина общая с радио.
+    if (tdeckDrawScreen()) display.display();
     return;
     #endif
     display.clearDisplay();

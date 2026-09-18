@@ -107,6 +107,10 @@ extern uint32_t otaCrcAcc;
 extern uint32_t otaSeqExp;
 extern unsigned long otaLastActivity;
 extern unsigned long otaAwaitEndMs;   // таймер «образ принят, жду DONE» (0 — не вошло)
+// Почему прервалась прошивка и до какого времени об этом сообщать. Нужны проекту платы:
+// на цветной панели этот текст показывает он сам, своей раскладкой.
+extern char otaFailWhy[24];
+extern unsigned long otaFailShowUntil;
 extern String sensorLastSent;
 extern unsigned long sensorLastSentMs;
 extern unsigned long sensorHelloDueMs;
