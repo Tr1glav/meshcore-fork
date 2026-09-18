@@ -98,6 +98,14 @@
 #define SENSOR_OFFLINE_MS (15UL * 60 * 1000)
 #endif
 
+// Как часто координатор рассылает узлам время. Это сетевой тайминг, а не настройка MQTT:
+// координатор по нему шлёт, а узел по нему же понимает, когда молчание станции перестало
+// быть случайным (экран T-Deck показывает по этим пакетам качество связи со станцией).
+// Раньше макрос лежал под #ifdef MQTT_ENABLED и узлам был не виден.
+#ifndef SENSOR_TIME_SYNC_INTERVAL_MS
+#define SENSOR_TIME_SYNC_INTERVAL_MS (5UL * 60 * 1000)
+#endif
+
 // ===== ТЕМПЕРАТУРА =====
 #ifndef TEMP_SENSOR_OFFSET
 #define TEMP_SENSOR_OFFSET 0
@@ -137,7 +145,6 @@ struct PeerEntry {
 #define MQTT_STATUS_INTERVAL_MS  60000
 #define MQTT_RECONNECT_INTERVAL_MS 5000
 #define NTP_RESYNC_INTERVAL_MS (60UL * 60 * 1000)
-#define SENSOR_TIME_SYNC_INTERVAL_MS (5UL * 60 * 1000)
 #define LASTMSG_RESET_MS 4000
 #define SNS_BTN_CLEAR_MS 500
 #endif
