@@ -22,6 +22,10 @@ extern String sensorEnv[SENSOR_DEV_CACHE_MAX];   // окружение сбор�
 extern int sensorBattery[SENSOR_DEV_CACHE_MAX];
 extern float sensorRssi[SENSOR_DEV_CACHE_MAX];
 extern unsigned long timeSyncMs;
+// Качество последнего пакета синхронизации времени. Такие пакеты шлёт в сенсорный канал
+// именно координатор, поэтому их RSSI/SNR — это измерение связи С НИМ, а не со случайным
+// соседом, чей пакет просто пришёл последним. По ним узел и показывает качество сети.
+extern float timeSyncRssi, timeSyncSnr;
 extern bool isListening;
 extern int packetCount;
 extern String lastMessage;

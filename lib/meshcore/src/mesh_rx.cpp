@@ -380,6 +380,12 @@ bool parseMeshCorePacket(uint8_t* data, int len) {
 
         // === Синхронизация времени: бот шлёт "time:<epoch>:<версия бота>" от NTP ===
         if (lastMessage.startsWith("time:")) {
+            // Качество приёма запоминаем независимо от того, годен ли epoch: пакет всё
+            // равно пришёл от координатора, а значит меряет связь именно с ним. Узел
+            // показывает по этим числам качество сети (см. экран T-Deck).
+            timeSyncMs = millis();
+            timeSyncRssi = lastRSSI;
+            timeSyncSnr = lastSNR;
             char* end = NULL;
             uint64_t epoch = (uint64_t)strtoull(lastMessage.c_str() + 5, &end, 10);
             #ifdef SENSOR_NODE
@@ -391,7 +397,6 @@ bool parseMeshCorePacket(uint8_t* data, int len) {
                 tv.tv_sec = (time_t)epoch;
                 tv.tv_usec = 0;
                 settimeofday(&tv, NULL);
-                timeSyncMs = millis();
                 time_t local = (time_t)epoch + (time_t)cfg.tzOffset * 3600;
                 struct tm tm_now;
                 gmtime_r(&local, &tm_now);

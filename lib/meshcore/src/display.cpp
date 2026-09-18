@@ -31,13 +31,18 @@ float batteryVoltage() {
     if (measured && millis() - lastMs < BAT_READ_MS) return volts;
     measured = true;
     lastMs = millis();
+    #ifdef VBAT_CTRL_PIN
     pinMode(VBAT_CTRL_PIN, OUTPUT);
     digitalWrite(VBAT_CTRL_PIN, VBAT_CTRL_ACTIVE);
     delay(10);                                   // делителю нужно установиться
+    #endif
     analogSetPinAttenuation(VBAT_PIN, ADC_11db); // на делителе ~0.85 В при полной батарее
     uint32_t mv = 0;
     for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(VBAT_PIN);
+    #ifdef VBAT_CTRL_PIN
+    // Гасим делитель: на платах с управляющим пином он иначе течёт постоянно
     digitalWrite(VBAT_CTRL_PIN, VBAT_CTRL_ACTIVE == HIGH ? LOW : HIGH);
+    #endif
     volts = (mv / 8.0f) * VBAT_DIVIDER / 1000.0f;
     return volts;
 }
@@ -177,10 +182,11 @@ static void drawBtIcon(int x, int y) {
 #endif
 
 #if OLED_DRIVER_ST7789
-// Фон экрана для панелей ST7789 рисует проект платы: у T-Deck это «радар» в репозитории
-// tdeck (src/tdeck_backdrop.cpp). Общий код знает только, что фон кто-то нарисует, —
-// заголовок приходит из include-пути того проекта.
-#include "tdeck_backdrop.h"
+// Экран панели ST7789 рисует проект платы целиком: 320x240 и телефонная раскладка со
+// строкой состояния не имеют ничего общего с монохромным 128x64 остальных плат, а делить
+// один набор координат на оба размера — верный способ испортить оба. Общий код знает
+// только имя функции; заголовок приходит из include-пути проекта платы (репозиторий tdeck).
+#include "tdeck_ui.h"
 #endif
 
 void drawIdleStatus() {
@@ -194,10 +200,12 @@ void drawIdleStatus() {
     if (!companionBleLinked()) { drawBlePin(); return; }
     #endif
     #if OLED_DRIVER_ST7789
-    tdeckDrawBackdrop();             // фон рисует проект платы, текст печатаем поверх
-    #else
-    display.clearDisplay();
+    // Дальше — раскладка для 128x64, ей на 320x240 делать нечего
+    tdeckDrawScreen();
+    display.display();
+    return;
     #endif
+    display.clearDisplay();
     display.setTextSize(1);
     display.setCursor(0, 0);
     // часы из системного времени (обновляются каждые 500 мс вместе с экраном)

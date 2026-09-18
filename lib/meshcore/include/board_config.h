@@ -156,18 +156,23 @@
 #endif
 
 // ---------------------------------------------------------------------------
-// Батарея: VBAT через делитель 390k/100k на ADC1_CH0 (GPIO1), делитель включается
-// управляющим пином ADC_CTRL (GPIO37). Полярность разная: на V4 его тянут в HIGH,
-// на V3 — в LOW (см. datasheet платы), поэтому задаётся build-флагом.
+// Батарея: VBAT через делитель на АЦП. У Heltec делитель 390k/100k на ADC1_CH0 (GPIO1)
+// и включается управляющим пином ADC_CTRL (GPIO37) — полярность разная: на V4 его тянут
+// в HIGH, на V3 в LOW (см. datasheet платы), поэтому задаётся build-флагом.
+//
+// Управляющий пин необязателен: у T-Deck делитель припаян намертво и меряется всегда.
+// Достаточно -DPIN_VBAT_READ (и -DPIN_VBAT_DIVIDER, если делитель не 4.9).
 // ---------------------------------------------------------------------------
-#if defined(PIN_VBAT_READ) && defined(PIN_VBAT_CTRL)
+#if defined(PIN_VBAT_READ)
   #define HAS_BATTERY 1
   #define VBAT_PIN PIN_VBAT_READ
-  #define VBAT_CTRL_PIN PIN_VBAT_CTRL
-  #ifndef PIN_VBAT_CTRL_ACTIVE
-    #define PIN_VBAT_CTRL_ACTIVE HIGH
+  #ifdef PIN_VBAT_CTRL
+    #define VBAT_CTRL_PIN PIN_VBAT_CTRL
+    #ifndef PIN_VBAT_CTRL_ACTIVE
+      #define PIN_VBAT_CTRL_ACTIVE HIGH
+    #endif
+    #define VBAT_CTRL_ACTIVE PIN_VBAT_CTRL_ACTIVE
   #endif
-  #define VBAT_CTRL_ACTIVE PIN_VBAT_CTRL_ACTIVE
   #ifndef PIN_VBAT_DIVIDER
     #define PIN_VBAT_DIVIDER 4.9f      // (390k + 100k) / 100k
   #endif

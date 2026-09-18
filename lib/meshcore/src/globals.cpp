@@ -23,6 +23,7 @@ String sensorEnv[SENSOR_DEV_CACHE_MAX];         // окружение сборк
 int sensorBattery[SENSOR_DEV_CACHE_MAX];        // заряд % из hello; -1 — сенсор его не шлёт
 float sensorRssi[SENSOR_DEV_CACHE_MAX];         // RSSI последнего пакета от сенсора
 unsigned long timeSyncMs = 0;                   // millis() последнего "time:" из канала сенсоров
+float timeSyncRssi = 0, timeSyncSnr = 0;        // и качество приёма этого пакета
 bool isListening = false;
 int packetCount = 0;
 String lastMessage = "";
