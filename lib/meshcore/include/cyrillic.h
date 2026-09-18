@@ -71,7 +71,12 @@ struct Decoder {
 inline void drawCp866Glyph(Adafruit_GFX &g, int16_t x, int16_t y, uint8_t cp866,
                            uint16_t color, uint8_t sx, uint8_t sy) {
   if (cp866 < 0x80) {
-    g.drawChar(x, y, (unsigned char)cp866, color, 0, sx, sy);
+    // Фон передаём равным цвету: при bg == color drawChar рисует только точки глифа и не
+    // закрашивает прямоугольник под буквой. С нулём латиница выводилась по чёрному полю, а
+    // кириллица ниже — попиксельно и прозрачно, то есть один и тот же текст выглядел
+    // по-разному. На монохромных платах видно не было (под текстом и так чёрное), а на
+    // цветной панели буквы вырезали чёрные прямоугольники в фоне.
+    g.drawChar(x, y, (unsigned char)cp866, color, color, sx, sy);
     return;
   }
   uint8_t rows[8];

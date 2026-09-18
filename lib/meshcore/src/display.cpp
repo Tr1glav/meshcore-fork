@@ -192,7 +192,15 @@ static void drawBtIcon(int x, int y) {
 void drawIdleStatus() {
     #ifdef SENSOR_NODE
     if (!screenOn) return;          // панель выключена — не тратим шину I2C впустую
+    // Именно #if, а не #ifdef: OLED_DRIVER_ST7789 определён ВСЕГДА (board_config.h задаёт
+    // ему ноль для любой платы с экраном), поэтому #ifndef был ложен везде и выключал
+    // экран пинга заодно и на монохромных сенсорах.
+    #if !OLED_DRIVER_ST7789
+    // На T-Deck результат пинга рисует сам проект, в своей раскладке (tdeckDrawScreen
+    // видит pingActive в состоянии): монохромный 128x64 на панели 320x240 смотрелся бы
+    // мелким текстом в углу на чёрном.
     if (pingShowUntil != 0 && (long)(millis() - pingShowUntil) < 0) { drawPingResult(); return; }
+    #endif
     #endif
     #ifdef COMPANION_NODE
     // Пока телефон не подключился, экран занят кодом сопряжения: его вводят в приложении,
@@ -274,7 +282,14 @@ void drawIdleStatus() {
 // там своя картинка с ходом сессии.
 void statusScreenTick() {
     // Показать статус на экране (обновляем раз в 500мс)
-    if (isListening && (millis() - lastDisplayUpdate > 500)) {
+    int interval = 500;
+    #if OLED_DRIVER_ST7789
+    // Пока крутится стартовая заставка T-Deck, перерисовываем её часто (40 мс) — иначе
+    // надпись ехала бы и кольцо крутилось бы рывками раз в полсекунды. После заставки
+    // обычный ход в полсекунды.
+    if (tdeckBootFrameMs() > 0) interval = tdeckBootFrameMs();
+    #endif
+    if (isListening && (millis() - lastDisplayUpdate > interval)) {
         lastDisplayUpdate = millis();
         #ifdef SENSOR_NODE
         bool rxScreenHeld = false;   // сенсор входящие пакеты не рисует, статус не ждёт паузы после приёма
