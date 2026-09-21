@@ -22,6 +22,7 @@ String sensorFwVersion[SENSOR_DEV_CACHE_MAX];   // версия прошивки
 String sensorEnv[SENSOR_DEV_CACHE_MAX];         // окружение сборки: по нему берётся файл релиза
 int sensorBattery[SENSOR_DEV_CACHE_MAX];        // заряд % из hello; -1 — сенсор его не шлёт
 float sensorRssi[SENSOR_DEV_CACHE_MAX];         // RSSI последнего пакета от сенсора
+uint8_t sensorHops[SENSOR_DEV_CACHE_MAX];       // хопов до узла; 0 — напрямую, 0xFF — неизвестно
 unsigned long timeSyncMs = 0;                   // millis() последнего "time:" из канала сенсоров
 float timeSyncRssi = 0, timeSyncSnr = 0;        // и качество приёма этого пакета
 bool isListening = false;

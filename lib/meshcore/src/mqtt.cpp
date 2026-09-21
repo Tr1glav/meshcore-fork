@@ -414,6 +414,7 @@ static int sensorIndex(const String& name) {
     sensorDiscPublished[sensorDeviceDiscCount] = false;
     sensorPosPublished[sensorDeviceDiscCount] = false;
     sensorBattery[sensorDeviceDiscCount] = -1;
+    sensorHops[sensorDeviceDiscCount] = 0xFF;    // пока не услышали — не «напрямую», а «неизвестно»
     return sensorDeviceDiscCount++;
 }
 
@@ -431,6 +432,7 @@ bool publishSensorMessage() {
     if (idx >= 0) {
         sensorLastActive[idx] = millis();
         sensorRssi[idx] = lastRSSI;
+        sensorHops[idx] = lastHopCount;      // сколько ретрансляторов прошёл этот пакет
         cameOnline = !sensorOnlineNow[idx];
         sensorOnlineNow[idx] = true;
     }

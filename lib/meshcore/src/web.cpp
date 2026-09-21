@@ -231,16 +231,18 @@ void otaHandleSensors() {
         // Имя окружения показываем вместо кода платы: в нём уже есть и плата, и тип
         // прошивки, а по нему же автообновление выбирает файл релиза. Пустое значение —
         // прошивка узла старая, и файл подберётся по коду платы (он остаётся в hello).
-        char name[48], ver[32], env[40], rssi[12], item[300];
+        char name[48], ver[32], env[40], rssi[12], item[320];
         jsonEscape(sensorDeviceDisc[i].c_str(), name, sizeof(name));
         jsonEscape(sensorFwVersion[i].c_str(), ver, sizeof(ver));
         jsonEscape(sensorEnv[i].c_str(), env, sizeof(env));
         fmtFix(sensorRssi[i], 0, rssi, sizeof(rssi));   // без float-printf, как и везде
+        // Хопы: по ним видно, можно ли узел прошить. -1 — ещё ни разу не слышали.
+        const int hops = (sensorHops[i] == 0xFF) ? -1 : (int)sensorHops[i];
         snprintf(item, sizeof(item),
                  "%s{\"name\":\"%s\",\"ver\":\"%s\",\"env\":\"%s\","
-                 "\"online\":%s,\"seen_s\":%lu,\"bat\":%d,\"rssi\":%s}",
+                 "\"online\":%s,\"seen_s\":%lu,\"bat\":%d,\"rssi\":%s,\"hops\":%d}",
                  i ? "," : "", name, ver, env, sensorOnlineNow[i] ? "true" : "false",
-                 (millis() - sensorLastActive[i]) / 1000, sensorBattery[i], rssi);
+                 (millis() - sensorLastActive[i]) / 1000, sensorBattery[i], rssi, hops);
         json += item;
     }
     json += "]";

@@ -24,6 +24,9 @@ extern String sensorFwVersion[SENSOR_DEV_CACHE_MAX];
 extern String sensorEnv[SENSOR_DEV_CACHE_MAX];   // окружение сборки из hello
 extern int sensorBattery[SENSOR_DEV_CACHE_MAX];
 extern float sensorRssi[SENSOR_DEV_CACHE_MAX];
+// Через сколько ретрансляторов пришёл последний пакет от узла. 0 — слышим напрямую,
+// 0xFF — ещё не слышали. По нему решается, можно ли прошивать узел по радио.
+extern uint8_t sensorHops[SENSOR_DEV_CACHE_MAX];
 extern unsigned long timeSyncMs;
 // Качество последнего пакета синхронизации времени. Такие пакеты шлёт в сенсорный канал
 // именно координатор, поэтому их RSSI/SNR — это измерение связи С НИМ, а не со случайным

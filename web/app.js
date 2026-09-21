@@ -70,6 +70,12 @@ function renderTargets(){
     const parts=[{t:s.env||'?',b:1},{t:s.ver?'v'+s.ver:'версия ?'},
                  {t:s.online?'онлайн':'был '+ago(s.seen_s)+' назад'}];
     if(s.rssi)parts.push({t:s.rssi+' dBm'});
+    // Хопы решают, можно ли узел прошить: сессия идёт сырыми кадрами на быстром канале,
+    // и ретрансляторы их не переносят. Показываем это рядом с узлом, а не только в
+    // отказе после нажатия.
+    if(s.hops===0)parts.push({t:'напрямую'});
+    else if(s.hops>0)parts.push({t:s.hops+' хоп — не прошить'});
+    else parts.push({t:'не слышали'});
     addTarget(s.name,s.name,parts,s.online,s.bat);
   }
   if(!sensors.length){

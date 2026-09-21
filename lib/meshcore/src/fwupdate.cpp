@@ -432,6 +432,14 @@ static void fwAfterCheck() {
         // отправить ему чужой образ хуже, чем не обновить.
         const String& envName = sensorEnv[i];
         if (envName.length() == 0) continue;
+        // Узел за ретранслятором прошить нельзя (см. otaStartSession): проверяем здесь
+        // же, до скачивания, иначе координатор качал бы мегабайтный образ каждый цикл
+        // проверки и выбрасывал его на старте сессии.
+        if (sensorHops[i] != 0) {
+            slog("[FW] узел %s пропущен: %u хоп(ов), прошивка идёт только напрямую\n",
+                 sensorDeviceDisc[i].c_str(), sensorHops[i]);
+            continue;
+        }
         fwFetchTarget = sensorDeviceDisc[i];
         fwFetchUrl = String(FW_RELEASE_DL) + "v" + fwLatest.version + "/"
                    + envName + "_v" + fwLatest.version + ".otaz";

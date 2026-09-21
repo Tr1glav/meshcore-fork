@@ -503,6 +503,34 @@ bool otaStartSession(const String& target) {
         return false;
     }
     if (!otaFwReady || target.length() == 0 || target.length() > CFG_NAME_MAX) return false;
+
+    // Прошиваем только те узлы, которых слышим НАПРЯМУЮ.
+    //
+    // Сессия идёт не обычными пакетами, а сырыми кадрами на отдельном быстром канале
+    // (FSK), и ретрансляторы их не переносят: они умеют пересылать mesh-пакеты, а не
+    // эти. Узел за ретранслятором просто не получит ни одного чанка — сессия займёт
+    // эфир на минуту и кончится таймаутом. Отказать сразу честнее.
+    //
+    // Хопы берём из последнего пакета узла: 0xFF означает, что мы его ещё не слышали, и
+    // это тоже не повод начинать — пути к нему мы не знаем.
+    {
+        int hi = -1;
+        for (int i = 0; i < sensorDeviceDiscCount; i++)
+            if (sensorDeviceDisc[i] == target) { hi = i; break; }
+        const uint8_t hops = (hi >= 0) ? sensorHops[hi] : 0xFF;
+        if (hops == 0xFF) {
+            snprintf(otaLastErr, sizeof(otaLastErr), "узел ещё не выходил в эфир");
+            slog("[OTA] отказ '%s': узел не слышали ни разу, путь до него неизвестен\n",
+                 target.c_str());
+            return false;
+        }
+        if (hops > 0) {
+            snprintf(otaLastErr, sizeof(otaLastErr), "узел за %u ретранслятором(ами)", hops);
+            slog("[OTA] отказ '%s': %u хоп(ов) до узла, прошивка идёт только напрямую\n",
+                 target.c_str(), hops);
+            return false;
+        }
+    }
     otaFile = LittleFS.open("/ota.bin", "r");
     if (!otaFile) { slog("[OTA] /ota.bin не открылся\n"); return false; }
     otaTarget = target;
