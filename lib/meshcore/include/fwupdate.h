@@ -29,7 +29,6 @@ int fwVersionCmp(const String& a, const String& b);
 bool fwCheckLatest();                      // опросить GitHub, заполнить fwLatest
 bool fwSelfUpdate(const String& url);      // скачать и прошить себя
 bool fwFetchNodeImage(const String& url);  // скачать .otaz узла в /ota.bin.part
-const char* fwSensorEnvForBoard(const String& board);
 void fwUpdateTick();                       // периодическая проверка и автообновление
 // Идёт ли сетевая задача (проверка релиза, скачивание образа или финализация). Пока
 // занято, веб-страница не должна ни начинать сессию, ни писать /ota.bin: они делят одни

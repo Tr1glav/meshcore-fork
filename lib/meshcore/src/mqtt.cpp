@@ -436,15 +436,19 @@ bool publishSensorMessage() {
     }
     // heartbeat "hello:<версия>[:<заряд %>:<напряжение>]"; сенсоры постарше шлют просто "hello"
     bool hello = lastMessage == SENSOR_MSG_HELLO || lastMessage.startsWith(SENSOR_MSG_HELLO ":");
-    // hello:<версия>:<заряд %>:<напряжение>:<код платы>:<окружение>[:<широта>:<долгота>]
-    // "-" = поля нет. Полей может быть меньше: у старых сенсоров их четыре, координаты
-    // шлют только узлы с приёмником и только когда решение есть, — цикл сам остановится
-    // на конце строки, и ни один узел из-за этого не станет разбираться хуже.
-    String ver, batPct, batVolt, board, envName, lat, lon;
+    // hello:<версия>:<заряд %>:<напряжение>:<окружение>[:<широта>:<долгота>]
+    // "-" = поля нет. Полей может быть меньше: координаты шлют только узлы с приёмником
+    // и только когда решение есть, — цикл сам остановится на конце строки.
+    //
+    // Кода платы в heartbeat больше нет: окружение и так называет плату, причём точнее
+    // (сенсор и компаньон живут на одной h43). Узел со старой прошивкой шлёт его пятым
+    // полем, и здесь оно прочтётся как окружение — такой узел нужно обновить один раз
+    // вручную или по USB, дальше он снова понятен.
+    String ver, batPct, batVolt, envName, lat, lon;
     if (hello) {
         String rest = lastMessage.substring(strlen(SENSOR_MSG_HELLO) + 1);
-        String* fields[] = { &ver, &batPct, &batVolt, &board, &envName, &lat, &lon };
-        for (int i = 0; i < 7 && rest.length() > 0; i++) {
+        String* fields[] = { &ver, &batPct, &batVolt, &envName, &lat, &lon };
+        for (int i = 0; i < 6 && rest.length() > 0; i++) {
             int p = rest.indexOf(':');
             *fields[i] = (p < 0) ? rest : rest.substring(0, p);
             rest = (p < 0) ? String() : rest.substring(p + 1);
@@ -452,7 +456,6 @@ bool publishSensorMessage() {
         }
     }
     if (idx >= 0 && ver.length() > 0) sensorFwVersion[idx] = ver;
-    if (idx >= 0 && board.length() > 0) sensorBoard[idx] = board;
     if (idx >= 0 && envName.length() > 0) sensorEnv[idx] = envName;
     if (idx >= 0 && batPct.length() > 0) sensorBattery[idx] = batPct.toInt();
 
@@ -498,14 +501,11 @@ bool publishSensorMessage() {
             snprintf(t, sizeof(t), "%s/sensor/%s/voltage", mqttPrefix, slug);
             mqtt.publish(t, batVolt.c_str(), true);
         }
-        if (envName.length() > 0 || board.length() > 0) {
-            // В поле «плата» публикуем имя окружения сборки: в нём есть и плата, и тип
+        if (envName.length() > 0) {
+            // В поле «плата» уходит имя окружения сборки: в нём есть и плата, и тип
             // прошивки, тогда как короткий код («h43») одинаков у сенсора и компаньона.
-            // Сам код остаётся запасным вариантом для узлов, чья прошивка окружение ещё
-            // не передаёт.
-            const String& what = envName.length() > 0 ? envName : board;
             snprintf(t, sizeof(t), "%s/sensor/%s/board", mqttPrefix, slug);
-            mqtt.publish(t, what.c_str(), true);
+            mqtt.publish(t, envName.c_str(), true);
         }
         // Координаты. Приходят из эфира, поэтому перед тем как вклеить их в JSON,
         // проверяем, что это действительно числа: кадр мог прийти битым или подделанным,

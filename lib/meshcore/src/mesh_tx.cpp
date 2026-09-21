@@ -150,25 +150,24 @@ void sensorSendMsg(const char* msg, unsigned int gapMs, int repeats) {
 
 // "time:<epoch>:<версия бота>" — сенсор выставляет часы и сверяет свою версию с ботом
 #ifdef SENSOR_NODE
-// hello:<версия>:<заряд %>:<напряжение>:<код платы> — бот публикует эти поля в MQTT.
-// Без измерения батареи вместо значений идёт "-", чтобы позиция кода платы не съезжала.
+// hello:<версия>:<заряд %>:<напряжение>:<окружение> — бот публикует эти поля в MQTT.
+// Без измерения батареи вместо значений идёт "-", чтобы позиции полей не съезжали.
 void sensorSendHello() {
-    // Пятым полем идёт окружение сборки: код платы больше не определяет прошивку —
-    // сенсор и компаньон живут на одной h43, а образы у них разные.
+    // Четвёртое поле — окружение сборки. Кода платы в heartbeat больше нет: окружение
+    // и так называет плату («heltec_v4_3_sensors»), причём точнее — сенсор и компаньон
+    // живут на одной h43, а образы у них разные. Два поля об одном и том же значат, что
+    // однажды они разойдутся.
     char msg[96];
     #if HAS_BATTERY
     if (batteryPresent()) {
         char bv[12];
-        snprintf(msg, sizeof(msg), "%s:%s:%d:%s:%s:%s", SENSOR_MSG_HELLO, FW_VERSION,
-                 batteryPercent(), fmtFix(batteryVoltage(), 2, bv, sizeof(bv)),
-                 BOARD_CODE, FW_ENV);
+        snprintf(msg, sizeof(msg), "%s:%s:%d:%s:%s", SENSOR_MSG_HELLO, FW_VERSION,
+                 batteryPercent(), fmtFix(batteryVoltage(), 2, bv, sizeof(bv)), FW_ENV);
     } else {
-        snprintf(msg, sizeof(msg), "%s:%s:-:-:%s:%s", SENSOR_MSG_HELLO, FW_VERSION,
-                 BOARD_CODE, FW_ENV);
+        snprintf(msg, sizeof(msg), "%s:%s:-:-:%s", SENSOR_MSG_HELLO, FW_VERSION, FW_ENV);
     }
     #else
-    snprintf(msg, sizeof(msg), "%s:%s:-:-:%s:%s", SENSOR_MSG_HELLO, FW_VERSION,
-             BOARD_CODE, FW_ENV);
+    snprintf(msg, sizeof(msg), "%s:%s:-:-:%s", SENSOR_MSG_HELLO, FW_VERSION, FW_ENV);
     #endif
     sensorSendMsg(msg);
 }

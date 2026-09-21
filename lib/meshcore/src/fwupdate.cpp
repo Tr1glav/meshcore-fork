@@ -31,12 +31,6 @@ int fwVersionCmp(const String& a, const String& b) {
     return 0;
 }
 
-const char* fwSensorEnvForBoard(const String& board) {
-    if (board == "h43") return "heltec_v4_3_sensors";
-    if (board == "h3")  return "heltec_v3_sensors";
-    return "";
-}
-
 // Проверка сертификата сервера. Раньше здесь стояло безусловное setInsecure() с
 // пояснением, что защита якобы обеспечивается маркером платы и CRC32. Это неверно:
 // маркер — обычная строка внутри образа, а CRC32 считает тот же, кто образ отдал, так что
@@ -432,9 +426,11 @@ static void fwAfterCheck() {
     for (int i = 0; i < sensorDeviceDiscCount; i++) {
         if (!sensorOnlineNow[i] || sensorFwVersion[i].length() == 0) continue;
         if (fwVersionCmp(fwLatest.version, sensorFwVersion[i]) <= 0) continue;
-        // Окружение берём из hello; у прошивок постарше его нет — тогда по плате
-        String envName = sensorEnv[i];
-        if (envName.length() == 0) envName = fwSensorEnvForBoard(sensorBoard[i]);
+        // Окружение берём из hello: по нему и подбирается файл релиза. Запасного пути
+        // через код платы больше нет — он выбирал образ сенсора и для компаньона, потому
+        // что плата у них одна. Узел, который окружения не прислал, пропускаем: молча
+        // отправить ему чужой образ хуже, чем не обновить.
+        const String& envName = sensorEnv[i];
         if (envName.length() == 0) continue;
         fwFetchTarget = sensorDeviceDisc[i];
         fwFetchUrl = String(FW_RELEASE_DL) + "v" + fwLatest.version + "/"
