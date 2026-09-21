@@ -264,6 +264,47 @@ static const char* roleFromEnv(const String& env) {
     return "Sensor";
 }
 
+// Похоже ли поле на координату. Текст пришёл из эфира и уедет прямо в JSON-атрибуты
+// Home Assistant, поэтому проверка тут не формальность: кавычка или скобка в «координате»
+// сломала бы разбор, а буквы молча превратили бы точку на карте в мусор. Формат ровно
+// тот, что шлёт узел, — необязательный минус, цифры, одна точка.
+static bool isCoordText(const String& v) {
+    int len = v.length();
+    if (len < 3 || len > 12) return false;
+    int i = 0, dots = 0, digits = 0;
+    if (v[0] == '-') i = 1;
+    for (; i < len; i++) {
+        char c = v[i];
+        if (c == '.') { if (++dots > 1) return false; }
+        else if (c >= '0' && c <= '9') digits++;
+        else return false;
+    }
+    return dots == 1 && digits >= 2;
+}
+
+// Точка узла на карте. Отдельной функцией, а не строкой в publishSensorDisc: сущность
+// заводится не при появлении узла, а при первых пришедших координатах.
+static void publishSensorPosDisc(const String& sender, const char* slug, const String& env) {
+    const char* role = roleFromEnv(env);
+    char senderEsc[64];
+    jsonEscape(sender.c_str(), senderEsc, sizeof(senderEsc));
+    char devBlock[192];
+    snprintf(devBlock, sizeof(devBlock),
+        "\"identifiers\":[\"meshcore_sensor_%s\"],\"name\":\"MeshBot %s %s\","
+        "\"manufacturer\":\"MeshCore\",\"model\":\"%s node\"",
+        slug, role, slug, role);
+    char topic[128], payload[512];
+    snprintf(topic, sizeof(topic), "homeassistant/device_tracker/meshcore_sensor_%s/config", slug);
+    snprintf(payload, sizeof(payload),
+        "{\"name\":\"%s position\",\"json_attributes_topic\":\"%s/sensor/%s/position\","
+        "\"source_type\":\"gps\",\"icon\":\"mdi:map-marker\","
+        "\"unique_id\":\"meshcore_sensor_%s_position\","
+        "\"device\":{%s}}",
+        senderEsc, mqttPrefix, slug, slug, devBlock);
+    mqtt.publish(topic, payload, true);
+    Serial.printf("[MQTT] карта: %s\n", slug);
+}
+
 void publishSensorDisc(const String& sender, const char* slug, const String& env) {
     const char* role = roleFromEnv(env);
     // Имя узла вставляется в discovery-конфиг дословно. Имя может содержать кавычки,
@@ -371,6 +412,7 @@ static int sensorIndex(const String& name) {
     if (sensorDeviceDiscCount >= SENSOR_DEV_CACHE_MAX) return -1;
     sensorDeviceDisc[sensorDeviceDiscCount] = name;
     sensorDiscPublished[sensorDeviceDiscCount] = false;
+    sensorPosPublished[sensorDeviceDiscCount] = false;
     sensorBattery[sensorDeviceDiscCount] = -1;
     return sensorDeviceDiscCount++;
 }
@@ -394,13 +436,15 @@ bool publishSensorMessage() {
     }
     // heartbeat "hello:<версия>[:<заряд %>:<напряжение>]"; сенсоры постарше шлют просто "hello"
     bool hello = lastMessage == SENSOR_MSG_HELLO || lastMessage.startsWith(SENSOR_MSG_HELLO ":");
-    // hello:<версия>:<заряд %>:<напряжение>:<код платы>; "-" = поля нет, у старых сенсоров
-    // полей меньше
-    String ver, batPct, batVolt, board, envName;
+    // hello:<версия>:<заряд %>:<напряжение>:<код платы>:<окружение>[:<широта>:<долгота>]
+    // "-" = поля нет. Полей может быть меньше: у старых сенсоров их четыре, координаты
+    // шлют только узлы с приёмником и только когда решение есть, — цикл сам остановится
+    // на конце строки, и ни один узел из-за этого не станет разбираться хуже.
+    String ver, batPct, batVolt, board, envName, lat, lon;
     if (hello) {
         String rest = lastMessage.substring(strlen(SENSOR_MSG_HELLO) + 1);
-        String* fields[] = { &ver, &batPct, &batVolt, &board, &envName };
-        for (int i = 0; i < 5 && rest.length() > 0; i++) {
+        String* fields[] = { &ver, &batPct, &batVolt, &board, &envName, &lat, &lon };
+        for (int i = 0; i < 7 && rest.length() > 0; i++) {
             int p = rest.indexOf(':');
             *fields[i] = (p < 0) ? rest : rest.substring(0, p);
             rest = (p < 0) ? String() : rest.substring(p + 1);
@@ -463,9 +507,33 @@ bool publishSensorMessage() {
             snprintf(t, sizeof(t), "%s/sensor/%s/board", mqttPrefix, slug);
             mqtt.publish(t, what.c_str(), true);
         }
-        Serial.printf("[SNS] heartbeat from %s: v%s, батарея %s%%\n", lastSender.c_str(),
+        // Координаты. Приходят из эфира, поэтому перед тем как вклеить их в JSON,
+        // проверяем, что это действительно числа: кадр мог прийти битым или подделанным,
+        // а кавычка в «координате» сломала бы разбор атрибутов в Home Assistant.
+        if (idx >= 0 && isCoordText(lat) && isCoordText(lon)) {
+            snprintf(t, sizeof(t), "%s/sensor/%s/latitude", mqttPrefix, slug);
+            mqtt.publish(t, lat.c_str(), true);
+            snprintf(t, sizeof(t), "%s/sensor/%s/longitude", mqttPrefix, slug);
+            mqtt.publish(t, lon.c_str(), true);
+            // Точка на карте: Home Assistant берёт широту и долготу из атрибутов
+            // device_tracker и сам определяет зону.
+            char pos[96];
+            snprintf(pos, sizeof(pos), "{\"latitude\":%s,\"longitude\":%s}",
+                     lat.c_str(), lon.c_str());
+            snprintf(t, sizeof(t), "%s/sensor/%s/position", mqttPrefix, slug);
+            mqtt.publish(t, pos, true);
+            // Сущность карты заводится при ПЕРВЫХ координатах, а не вместе с остальными:
+            // у узла без приёмника её быть не должно — она висела бы «неизвестно» вечно.
+            if (!sensorPosPublished[idx]) {
+                publishSensorPosDisc(lastSender, slug, sensorEnv[idx]);
+                sensorPosPublished[idx] = true;
+            }
+        }
+        Serial.printf("[SNS] heartbeat from %s: v%s, батарея %s%%%s%s\n", lastSender.c_str(),
                       ver.length() ? ver.c_str() : "?",
-                      batPct.length() ? batPct.c_str() : "?");
+                      batPct.length() ? batPct.c_str() : "?",
+                      lat.length() ? ", координаты " : "",
+                      lat.length() ? lat.c_str() : "");
         return true;
     }
     // --- данные: text + rssi ---
@@ -605,6 +673,7 @@ void tickRetryConnections() {
         // уйдёт с их следующим сообщением, availability — сразу
         for (int i = 0; i < sensorDeviceDiscCount; i++) {
             sensorDiscPublished[i] = false;
+            sensorPosPublished[i] = false;
             publishSensorAvailability(i);
         }
     } else {

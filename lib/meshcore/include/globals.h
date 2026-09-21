@@ -16,6 +16,10 @@ extern int sensorDeviceDiscCount;
 extern unsigned long sensorLastActive[SENSOR_DEV_CACHE_MAX];
 extern bool sensorOnlineNow[SENSOR_DEV_CACHE_MAX];
 extern bool sensorDiscPublished[SENSOR_DEV_CACHE_MAX];
+// Сущность device_tracker публикуется не вместе с остальными, а при первых пришедших
+// координатах: у узла без приёмника её быть не должно — иначе в Home Assistant висела бы
+// точка на карте, которая никогда не обновится.
+extern bool sensorPosPublished[SENSOR_DEV_CACHE_MAX];
 extern String sensorFwVersion[SENSOR_DEV_CACHE_MAX];
 extern String sensorBoard[SENSOR_DEV_CACHE_MAX];
 extern String sensorEnv[SENSOR_DEV_CACHE_MAX];   // окружение сборки из hello
