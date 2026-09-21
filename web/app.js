@@ -61,6 +61,14 @@ function addTarget(id,name,parts,online,bat){
   d.onclick=()=>{target=id;renderTargets();refresh()};
   $('targets').appendChild(d);
 }
+// 1 хоп, 2 хопа, 5 хопов: без этого строка читается как машинный вывод
+function hopw(n){
+  const t=n%10, h=n%100;
+  if(t===1&&h!==11)return 'хоп';
+  if(t>=2&&t<=4&&(h<12||h>14))return 'хопа';
+  return 'хопов';
+}
+
 function renderTargets(){
   $('targets').innerHTML='';
   addTarget('__self__',$('dev').textContent+' — этот бот',
@@ -72,10 +80,10 @@ function renderTargets(){
     if(s.rssi)parts.push({t:s.rssi+' dBm'});
     // Хопы решают, можно ли узел прошить: сессия идёт сырыми кадрами на быстром канале,
     // и ретрансляторы их не переносят. Показываем это рядом с узлом, а не только в
-    // отказе после нажатия.
-    if(s.hops===0)parts.push({t:'напрямую'});
-    else if(s.hops>0)parts.push({t:s.hops+' хоп — не прошить'});
-    else parts.push({t:'не слышали'});
+    // отказе после нажатия. Число выводим всегда, в том числе ноль: «напрямую» словом
+    // отвечает на вопрос «можно ли прошить», но не на вопрос «сколько хопов».
+    if(s.hops>=0)parts.push({t:s.hops+' '+hopw(s.hops)+(s.hops?' — не прошить':' · напрямую')});
+    else parts.push({t:'хопы: ?'});
     addTarget(s.name,s.name,parts,s.online,s.bat);
   }
   if(!sensors.length){
