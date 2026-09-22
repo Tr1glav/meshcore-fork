@@ -50,6 +50,38 @@ bool supportPresent() {
     return supportIp.length() > 0 && (millis() - supportSeenMs) < SUPPORT_STALE_MS;
 }
 
+// Чтение ответа: строка состояния, заголовки и, если просят, тело. У всех трёх циклов
+// один общий срок, и это здесь главное.
+//
+// Без срока чтение могло не кончиться никогда. После /update прошивальщик перезагружается
+// через ESP.restart(): сокет закрывается не по-человечески, FIN не приходит, и у нас
+// connected() ещё долго отвечает true, а read() — -1. Цикл «не connected — выходим, иначе
+// ждём миллисекунду» в такой паре крутится вечно. Задача передачи переставала завершаться
+// совсем, и страница до перезагрузки координатора показывала «шью…», хотя узел давно
+// прошит и уже вышел на связь с новой версией.
+static bool supReadResponse(WiFiClient& c, uint32_t waitMs, String* body, size_t bodyMax,
+                            bool* answered = nullptr) {
+    const unsigned long deadline = millis() + waitMs;
+    while (!c.available() && (long)(millis() - deadline) < 0) delay(10);
+    String status = c.readStringUntil('\n');
+    if (answered) *answered = status.length() > 0;
+    // Заголовки пропускаем: нас интересует только код ответа и тело
+    while ((c.connected() || c.available()) && (long)(millis() - deadline) < 0) {
+        String line = c.readStringUntil('\n');
+        if (line.length() <= 1) break;          // пустая строка — конец заголовков
+    }
+    if (body) {
+        body->reserve(256);
+        while ((c.connected() || c.available()) && body->length() < bodyMax &&
+               (long)(millis() - deadline) < 0) {
+            int ch = c.read();
+            if (ch < 0) { if (!c.connected()) break; delay(1); continue; }
+            *body += (char)ch;
+        }
+    }
+    return status.indexOf("200") > 0;
+}
+
 // Один запрос и ответ строкой. Тело ответа нужно целиком только для /sensors — он
 // короткий (имена узлов), поэтому ограничиваем и его, и время ожидания.
 static bool supportRequest(const String& req, String* body, size_t bodyMax = 2048,
@@ -61,24 +93,9 @@ static bool supportRequest(const String& req, String* body, size_t bodyMax = 204
     }
     c.setTimeout((waitMs + 999) / 1000);
     c.print(req);
-    unsigned long t0 = millis();
-    while (!c.available() && millis() - t0 < waitMs) delay(10);
-    String status = c.readStringUntil('\n');
-    // Заголовки пропускаем: нас интересует только код ответа и тело
-    while (c.connected() || c.available()) {
-        String line = c.readStringUntil('\n');
-        if (line.length() <= 1) break;          // пустая строка — конец заголовков
-    }
-    if (body) {
-        body->reserve(256);
-        while ((c.connected() || c.available()) && body->length() < bodyMax) {
-            int ch = c.read();
-            if (ch < 0) { if (!c.connected()) break; delay(1); continue; }
-            *body += (char)ch;
-        }
-    }
+    bool ok = supReadResponse(c, waitMs, body, bodyMax);
     c.stop();
-    return status.indexOf("200") > 0;
+    return ok;
 }
 
 // Слышит ли прошивальщик этот узел напрямую. Спрашиваем у него самого: его /sensors
@@ -145,6 +162,7 @@ bool supportFlashSelf() {
         slog("[SUP] %s недоступен для прошивки\n", supportIp.c_str());
         goto done;
     }
+    c.setTimeout(SUPPORT_HTTP_TIMEOUT_MS / 1000);
     {
         const char* BND = "----meshcoreself";
         String head = String("--") + BND + "\r\n"
@@ -192,21 +210,23 @@ bool supportFlashSelf() {
         c.print(tail);
 
         if (sent == imgSize) {
-            unsigned long t0 = millis();
-            while (!c.available() && millis() - t0 < SUPPORT_HTTP_TIMEOUT_MS) delay(10);
-            String status = c.readStringUntil('\n');
+            // Ответ прошивальщик отправляет ДО перезагрузки, поэтому код состояния мы
+            // обычно успеваем прочитать; тело может оборваться на середине — это не
+            // отказ, а ребут, и решает код ответа.
             String body;
-            while (c.connected() || c.available()) {
-                String line = c.readStringUntil('\n');
-                if (line.length() <= 1) break;
+            bool answered = false;
+            bool got200 = supReadResponse(c, SUPPORT_HTTP_TIMEOUT_MS, &body, 128, &answered);
+            if (!answered) {
+                // Ответа не было вовсе. Образ ушёл целиком, а применяет и проверяет его
+                // сам Updater — он перезагружает узел сразу, и ответ может не успеть
+                // дойти. Считать это отказом нельзя: прошивка на самом деле прошла, и
+                // новую версию покажет его же объявление в эфире.
+                slog("[SUP] образ передан целиком, ответа нет — узел перезагружается\n");
+                ok = true;
+            } else {
+                ok = got200 && body.indexOf("FAIL") < 0;
+                if (!ok) slog("[SUP] прошивальщик отказал: %s\n", body.c_str());
             }
-            while ((c.connected() || c.available()) && body.length() < 128) {
-                int ch = c.read();
-                if (ch < 0) { if (!c.connected()) break; delay(1); continue; }
-                body += (char)ch;
-            }
-            ok = status.indexOf("200") > 0 && body.indexOf("FAIL") < 0;
-            if (!ok) slog("[SUP] прошивальщик отказал: %s\n", body.c_str());
         }
     }
     c.stop();
@@ -254,6 +274,7 @@ bool supportHandOff(const String& target) {
         slog("[SUP] %s недоступен для передачи образа\n", supportIp.c_str());
         return false;
     }
+    c.setTimeout(SUPPORT_HTTP_TIMEOUT_MS / 1000);
     c.print(String("POST /savefw HTTP/1.1\r\nHost: ") + supportIp +
             "\r\nContent-Type: multipart/form-data; boundary=" + BND +
             "\r\nContent-Length: " + String(head.length() + fsize + tail.length()) +
@@ -273,13 +294,7 @@ bool supportHandOff(const String& target) {
     f.close();
     c.print(tail);
 
-    bool ok = false;
-    if (sent == fsize) {
-        unsigned long t0 = millis();
-        while (!c.available() && millis() - t0 < SUPPORT_HTTP_TIMEOUT_MS) delay(10);
-        String status = c.readStringUntil('\n');
-        ok = status.indexOf("200") > 0;
-    }
+    bool ok = (sent == fsize) && supReadResponse(c, SUPPORT_HTTP_TIMEOUT_MS, nullptr, 0);
     c.stop();
     if (!ok) {
         slog("[SUP] образ не передан (%u из %u байт)\n", (unsigned)sent, (unsigned)fsize);
@@ -307,20 +322,36 @@ bool supportHandOff(const String& target) {
 //
 // Итог задача не применяет сама: otaDelegate и otaNote читает веб-обработчик, и менять
 // их должен один поток. Задача лишь поднимает флаг, а разбирает его главный цикл.
+//
+// Сроком сверху накрыта и сама задача. Внутри у неё сроки на каждом ожидании, но цена
+// ошибки тут слишком велика: одна не кончившаяся задача навсегда оставляла бы страницу в
+// состоянии «шью», а новую передачу — запрещённой, и лечилось бы это только
+// перезагрузкой координатора. Поэтому зависшую задачу мы бросаем: результат её больше не
+// принимается (сверяем поколение), но пока она жива, новую не заводим — иначе две задачи
+// читали бы один /ota.bin и слали бы образ одновременно.
+#define SUPPORT_JOB_MAX_MS 180000UL
+
 static volatile uint8_t supJobKind = SUP_JOB_NONE;
 static volatile bool supJobDone = false;
 static volatile bool supJobOk = false;
+static volatile bool supJobAlive = false;
+static volatile uint32_t supJobGen = 0;
+static unsigned long supJobStartMs = 0;
 static String supJobTarget;
 // Сколько байт уже ушло — чтобы на странице двигалась полоса, а не висела надпись.
 // Мегабайт по сети идёт полминуты, и без этого прошивка выглядит зависшей.
 volatile uint32_t supJobSent = 0;
 volatile uint32_t supJobTotal = 0;
 
-static void supJobTask(void*) {
+static void supJobTask(void* arg) {
+    const uint32_t gen = (uint32_t)(uintptr_t)arg;
     bool ok = (supJobKind == SUP_JOB_SELF) ? supportFlashSelf() : supportHandOff(supJobTarget);
     slog("[SUP] запас стека задачи: %u Б\n", (unsigned)uxTaskGetStackHighWaterMark(NULL));
-    supJobOk = ok;
-    supJobDone = true;
+    if (gen == supJobGen) {          // нас не успели бросить по сроку
+        supJobOk = ok;
+        supJobDone = true;
+    }
+    supJobAlive = false;
     vTaskDelete(NULL);
 }
 
@@ -334,23 +365,37 @@ uint32_t supportJobTotal() { return supJobTotal; }
 
 bool supportJobStart(uint8_t kind, const String& target) {
     if (supJobKind != SUP_JOB_NONE) return false;
+    if (supJobAlive) {               // брошенная задача ещё не вышла — второй такой не надо
+        slog("[SUP] прошлая передача ещё не завершилась\n");
+        return false;
+    }
     supJobTarget = target;
     supJobDone = false;
     supJobOk = false;
     supJobSent = 0;
     supJobTotal = 0;
+    supJobStartMs = millis();
+    supJobAlive = true;
     supJobKind = kind;
     // 8 КБ хватает: шифрования здесь нет (свой узел в локальной сети, обычный HTTP), а
     // словарь распаковки и буфер чтения берутся из кучи. Запас печатается на выходе из
     // задачи — по нему видно, не подошли ли мы к краю.
-    if (xTaskCreate(supJobTask, "supjob", 8192, nullptr, 1, nullptr) == pdPASS) return true;
+    if (xTaskCreate(supJobTask, "supjob", 8192, (void*)(uintptr_t)supJobGen, 1, nullptr) == pdPASS)
+        return true;
     supJobKind = SUP_JOB_NONE;
+    supJobAlive = false;
     slog("[SUP] не удалось создать задачу передачи\n");
     return false;
 }
 
 bool supportJobFinished(uint8_t& kind, bool& ok, String& target) {
-    if (supJobKind == SUP_JOB_NONE || !supJobDone) return false;
+    if (supJobKind == SUP_JOB_NONE) return false;
+    if (!supJobDone) {
+        if (millis() - supJobStartMs < SUPPORT_JOB_MAX_MS) return false;
+        slog("[SUP] передача не завершилась за %lu с — бросаем\n", SUPPORT_JOB_MAX_MS / 1000);
+        supJobGen++;                 // результат брошенной задачи больше не принимаем
+        supJobOk = false;
+    }
     kind = supJobKind;
     ok = supJobOk;
     target = supJobTarget;
