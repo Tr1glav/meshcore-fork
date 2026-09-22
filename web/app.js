@@ -45,8 +45,10 @@ function setFile(f){
   refresh();
 }
 // parts — массив {t:'текст', b:1 если жирным}; между частями ставится разделитель
-function addTarget(id,name,parts,online,bat){
-  const d=el('div','tgt'+(target==id?' sel':''));
+function addTarget(id,name,parts,online,bat,sub){
+  // sub — строка второго уровня: прошивальщик показан подпунктом координатора, потому
+  // что он часть того же узла сети по смыслу (кто ведёт сессии), а не очередная цель.
+  const d=el('div','tgt'+(target==id?' sel':'')+(sub?' sub':''));
   d.appendChild(el('span','dot'+(online?' on':'')));
   const grow=el('span','grow');
   grow.appendChild(el('span','nm',name));
@@ -74,7 +76,24 @@ function renderTargets(){
   addTarget('__self__',$('dev').textContent+' — этот бот',
             [{t:info.env||'?',b:1},{t:'v'+(info.ver||'?')},{t:'файл .bin'}],true,
             info.bat>=0?info.bat:-1);
+  // Прошивальщик идёт сразу за координатором и с отступом: сессии ведёт он, поэтому
+  // стоять ему среди обычных целей неправильно — но целью он тоже бывает (себя он не
+  // прошьёт, его шьёт координатор), поэтому строка остаётся выбираемой.
+  const supName=info.sup||'';
+  if(supName){
+    const sp=sensors.find(x=>x.name==supName);
+    const parts=[{t:'прошивальщик',b:1}];
+    if(sp){
+      parts.push({t:sp.env||'?'},{t:sp.ver?'v'+sp.ver:'версия ?'},
+                 {t:sp.online?'онлайн':'был '+ago(sp.seen_s)+' назад'});
+    }else{
+      parts.push({t:'объявился по радио, в списке узлов ещё нет'});
+    }
+    addTarget(supName,supName,parts,sp?sp.online:true,sp?sp.bat:-1,true);
+  }
+
   for(const s of sensors){
+    if(s.name==supName)continue;             // уже показан подпунктом выше
     const parts=[{t:s.env||'?',b:1},{t:s.ver?'v'+s.ver:'версия ?'},
                  {t:s.online?'онлайн':'был '+ago(s.seen_s)+' назад'}];
     if(s.rssi)parts.push({t:s.rssi+' dBm'});
