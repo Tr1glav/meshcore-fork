@@ -259,6 +259,9 @@ void appLoop() {
     #ifdef MQTT_ENABLED
     otaServer.handleClient();   // HTTP OTA: принимаем реквесты не блокируя радио
     otaBotTick();               // mesh OTA: таймауты повтора чанков
+    #if FEATURE_MESH_OTA_SENDER
+    otaSupportTick();           // итог передачи образа прошивальщику (идёт фоновой задачей)
+    #endif
 
     // ===== MQTT RECONNECT (неблокирующий, раз в 5 с) =====
     if (millis() - lastMqttReconnectMs > MQTT_RECONNECT_INTERVAL_MS) {

@@ -542,7 +542,11 @@ void otaHandleSaveFw() {
         // Идёт сетевая загрузка образа (задача fwFetch): она пишет /ota.bin.part, и её
         // финализация в главном цикле держит общие флаги. Свою заливку начинать нельзя —
         // обе писали бы /ota.bin и otaFwReady/otaFwName, и результат смешался бы.
-        if (fwNetBusy()) {
+        bool busy = fwNetBusy();
+        #if FEATURE_MESH_OTA_SENDER
+        busy = busy || supportBusy();   // передача прошивальщику читает тот же /ota.bin
+        #endif
+        if (busy) {
             otaSaving = false;
             otaSaveOk = false;
             slog("[OTA-SAVE] отклонено: идёт сетевая загрузка образа\n");
@@ -716,18 +720,30 @@ void otaHandleStatus() {
     char note[80];
     jsonEscape(otaNote, note, sizeof(note));
     jsonEscape(idx >= 0 ? sensorFwVersion[idx].c_str() : "", ver, sizeof(ver));
+    // Передача прошивальщику идёт фоновой задачей: фазы сессии у неё нет, но байты есть,
+    // и страница рисует по ним ту же полосу. Без этого прошивка прошивальщика выглядела
+    // бы зависшей на всю минуту.
+    uint8_t sup = 0;
+    uint32_t sent = otaSentBytes, total = otaFwSize;
+    #if FEATURE_MESH_OTA_SENDER
+    if (supportBusy()) {
+        sup = supportJobKind();
+        sent = supportJobSent();
+        total = supportJobTotal();
+    }
+    #endif
     unsigned long endMs = (otaPhase == OTA_PHASE_DONE) ? otaDoneMs : millis();
     // back: сенсор прислал hello уже после подтверждения прошивки — значит, загрузился с неё
     bool back = otaPhase == OTA_PHASE_DONE && idx >= 0 && sensorLastActive[idx] > otaDoneMs;
-    char json[480];
+    char json[512];
     snprintf(json, sizeof(json),
              "{\"phase\":%u,\"fw\":%s,\"sent\":%u,\"total\":%u,\"elapsed_ms\":%lu,\"retr\":%u,"
-             "\"polls\":%u,\"retrs\":%u,"
+             "\"polls\":%u,\"retrs\":%u,\"sup\":%u,"
              "\"err\":\"%s\",\"note\":\"%s\",\"target\":\"%s\",\"ver\":\"%s\",\"back\":%s}",
              (unsigned)otaPhase, otaFwReady ? "true" : "false",
-             (unsigned)otaSentBytes, (unsigned)otaFwSize,
+             (unsigned)sent, (unsigned)total,
              otaSessionMs ? endMs - otaSessionMs : 0UL, (unsigned)otaRetries,
-             (unsigned)otaPolls, (unsigned)otaRetrTotal,
+             (unsigned)otaPolls, (unsigned)otaRetrTotal, (unsigned)sup,
              err, note, tgt, ver, back ? "true" : "false");
     otaServer.send(200, "application/json", json);
 }

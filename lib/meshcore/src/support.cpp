@@ -33,6 +33,18 @@ extern "C" {
 #define SUPPORT_STALE_MS (3UL * SENSOR_HEARTBEAT_MS)
 #define SUPPORT_PORT 3232
 #define SUPPORT_HTTP_TIMEOUT_MS 15000
+// Сколько ждём само соединение. Прошивальщик — узел в той же локальной сети: он либо
+// отвечает сразу, либо его нет (перезагружается после прошивки, например). Ждать его
+// по умолчанию несколько десятков секунд нельзя: этот вызов стоит в обработчике
+// страницы, и всё это время координатор не отвечает вообще ни на что.
+#define SUPPORT_CONNECT_MS 3000
+// Короткие опросы — состояние сессии и список узлов — спрашивают у него на каждом
+// обновлении страницы. Им общий пятнадцатисекундный срок не годится по той же причине.
+#define SUPPORT_SHORT_MS 2000
+
+// Ход текущей передачи; определены ниже вместе с задачей.
+extern volatile uint32_t supJobSent;
+extern volatile uint32_t supJobTotal;
 
 bool supportPresent() {
     return supportIp.length() > 0 && (millis() - supportSeenMs) < SUPPORT_STALE_MS;
@@ -40,16 +52,17 @@ bool supportPresent() {
 
 // Один запрос и ответ строкой. Тело ответа нужно целиком только для /sensors — он
 // короткий (имена узлов), поэтому ограничиваем и его, и время ожидания.
-static bool supportRequest(const String& req, String* body, size_t bodyMax = 2048) {
+static bool supportRequest(const String& req, String* body, size_t bodyMax = 2048,
+                           uint32_t waitMs = SUPPORT_HTTP_TIMEOUT_MS) {
     WiFiClient c;
-    if (!c.connect(supportIp.c_str(), SUPPORT_PORT)) {
+    if (!c.connect(supportIp.c_str(), SUPPORT_PORT, SUPPORT_CONNECT_MS)) {
         slog("[SUP] %s недоступен\n", supportIp.c_str());
         return false;
     }
-    c.setTimeout(SUPPORT_HTTP_TIMEOUT_MS / 1000);
+    c.setTimeout((waitMs + 999) / 1000);
     c.print(req);
     unsigned long t0 = millis();
-    while (!c.available() && millis() - t0 < SUPPORT_HTTP_TIMEOUT_MS) delay(10);
+    while (!c.available() && millis() - t0 < waitMs) delay(10);
     String status = c.readStringUntil('\n');
     // Заголовки пропускаем: нас интересует только код ответа и тело
     while (c.connected() || c.available()) {
@@ -77,7 +90,7 @@ bool supportHearsDirect(const String& target) {
     String body;
     String req = String("GET /sensors HTTP/1.1\r\nHost: ") + supportIp +
                  "\r\nConnection: close\r\n\r\n";
-    if (!supportRequest(req, &body, 4096)) return false;
+    if (!supportRequest(req, &body, 4096, SUPPORT_SHORT_MS)) return false;
 
     String key = String("\"name\":\"") + target + "\"";
     int at = body.indexOf(key);
@@ -114,6 +127,8 @@ bool supportFlashSelf() {
     }
     memcpy(&imgSize, hdr + 4, 4);
     if (imgSize == 0) { f.close(); return false; }
+    supJobTotal = imgSize;
+    supJobSent = 0;
 
     tinfl_decompressor* inf = (tinfl_decompressor*)malloc(sizeof(tinfl_decompressor));
     uint8_t* dict = (uint8_t*)malloc(TINFL_LZ_DICT_SIZE);
@@ -126,7 +141,7 @@ bool supportFlashSelf() {
     if (!inf || !dict || !chunk) { slog("[SUP] не хватило памяти на распаковку\n"); goto done; }
     tinfl_init(inf);
 
-    if (!c.connect(supportIp.c_str(), SUPPORT_PORT)) {
+    if (!c.connect(supportIp.c_str(), SUPPORT_PORT, SUPPORT_CONNECT_MS)) {
         slog("[SUP] %s недоступен для прошивки\n", supportIp.c_str());
         goto done;
     }
@@ -165,6 +180,7 @@ bool supportFlashSelf() {
                     if (sent + take > imgSize) take = imgSize - sent;
                     if (take && c.write(dict + dictOfs, take) != take) { sent = 0; break; }
                     sent += take;
+                    supJobSent = sent;
                     dictOfs = (dictOfs + outBytes) & (TINFL_LZ_DICT_SIZE - 1);
                 }
                 if (st < 0) { slog("[SUP] образ не распаковался (%d)\n", (int)st); sent = 0; break; }
@@ -211,7 +227,7 @@ bool supportStatus(String& out) {
     String req = String("GET /ota/status HTTP/1.1\r\nHost: ") + supportIp +
                  "\r\nConnection: close\r\n\r\n";
     out = "";
-    return supportRequest(req, &out, 512) && out.indexOf('{') >= 0;
+    return supportRequest(req, &out, 512, SUPPORT_SHORT_MS) && out.indexOf('{') >= 0;
 }
 
 // Отдать образ и команду. Образ уходит multipart-ом — ровно тем, что ждёт /savefw:
@@ -223,6 +239,8 @@ bool supportHandOff(const String& target) {
     File f = LittleFS.open("/ota.bin", "r");
     if (!f) { slog("[SUP] /ota.bin не открылся\n"); return false; }
     const size_t fsize = f.size();
+    supJobTotal = fsize;
+    supJobSent = 0;
 
     const char* BND = "----meshcoreota";
     String head = String("--") + BND + "\r\n"
@@ -231,7 +249,7 @@ bool supportHandOff(const String& target) {
     String tail = String("\r\n--") + BND + "--\r\n";
 
     WiFiClient c;
-    if (!c.connect(supportIp.c_str(), SUPPORT_PORT)) {
+    if (!c.connect(supportIp.c_str(), SUPPORT_PORT, SUPPORT_CONNECT_MS)) {
         f.close();
         slog("[SUP] %s недоступен для передачи образа\n", supportIp.c_str());
         return false;
@@ -250,6 +268,7 @@ bool supportHandOff(const String& target) {
         if (n <= 0) break;
         if (c.write(buf, n) != (size_t)n) { sent = 0; break; }
         sent += n;
+        supJobSent = sent;
     }
     f.close();
     c.print(tail);
@@ -275,6 +294,68 @@ bool supportHandOff(const String& target) {
         return false;
     }
     slog("[SUP] сессию к '%s' ведёт %s\n", target.c_str(), supportName.c_str());
+    return true;
+}
+
+// ===== Фоновая передача =====
+//
+// Образ — это мегабайт по сети, десятки секунд. Раньше это делалось прямо в обработчике
+// /ota/start, и пока он не вернётся, веб-сервер координатора не принимал НИ ОДНОГО
+// соединения: страница у пользователя просто умирала на всё время прошивки. Сетевая
+// работа вынесена в отдельную задачу — ровно так же, как загрузка образа из релизов
+// (fwStartNetTask в fwupdate.cpp), и по той же причине.
+//
+// Итог задача не применяет сама: otaDelegate и otaNote читает веб-обработчик, и менять
+// их должен один поток. Задача лишь поднимает флаг, а разбирает его главный цикл.
+static volatile uint8_t supJobKind = SUP_JOB_NONE;
+static volatile bool supJobDone = false;
+static volatile bool supJobOk = false;
+static String supJobTarget;
+// Сколько байт уже ушло — чтобы на странице двигалась полоса, а не висела надпись.
+// Мегабайт по сети идёт полминуты, и без этого прошивка выглядит зависшей.
+volatile uint32_t supJobSent = 0;
+volatile uint32_t supJobTotal = 0;
+
+static void supJobTask(void*) {
+    bool ok = (supJobKind == SUP_JOB_SELF) ? supportFlashSelf() : supportHandOff(supJobTarget);
+    slog("[SUP] запас стека задачи: %u Б\n", (unsigned)uxTaskGetStackHighWaterMark(NULL));
+    supJobOk = ok;
+    supJobDone = true;
+    vTaskDelete(NULL);
+}
+
+bool supportBusy() {
+    return supJobKind != SUP_JOB_NONE;
+}
+
+uint8_t supportJobKind() { return supJobKind; }
+uint32_t supportJobSent() { return supJobSent; }
+uint32_t supportJobTotal() { return supJobTotal; }
+
+bool supportJobStart(uint8_t kind, const String& target) {
+    if (supJobKind != SUP_JOB_NONE) return false;
+    supJobTarget = target;
+    supJobDone = false;
+    supJobOk = false;
+    supJobSent = 0;
+    supJobTotal = 0;
+    supJobKind = kind;
+    // 8 КБ хватает: шифрования здесь нет (свой узел в локальной сети, обычный HTTP), а
+    // словарь распаковки и буфер чтения берутся из кучи. Запас печатается на выходе из
+    // задачи — по нему видно, не подошли ли мы к краю.
+    if (xTaskCreate(supJobTask, "supjob", 8192, nullptr, 1, nullptr) == pdPASS) return true;
+    supJobKind = SUP_JOB_NONE;
+    slog("[SUP] не удалось создать задачу передачи\n");
+    return false;
+}
+
+bool supportJobFinished(uint8_t& kind, bool& ok, String& target) {
+    if (supJobKind == SUP_JOB_NONE || !supJobDone) return false;
+    kind = supJobKind;
+    ok = supJobOk;
+    target = supJobTarget;
+    supJobDone = false;
+    supJobKind = SUP_JOB_NONE;
     return true;
 }
 

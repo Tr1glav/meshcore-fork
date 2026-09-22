@@ -34,6 +34,8 @@ void otaInspectStoredFw();
 bool otaSessionActive();
 // Запуск прошивки сенсора без участия веб-запроса — нужен автообновлению
 bool otaStartSession(const String& target);
+// Итог фоновой передачи образа прошивальщику: зовётся из главного цикла
+void otaSupportTick();
 String buildDiagReport();
 void setupOtaServer();
 #endif

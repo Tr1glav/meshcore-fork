@@ -30,4 +30,24 @@ bool supportStatus(String& out);
 // Отдать сессию: образ уходит к нему по сети, следом команда начать.
 bool supportHandOff(const String& target);
 
+// Обе передачи идут фоновой задачей: в них мегабайт по сети, а обработчик страницы
+// на это время заблокировал бы веб-сервер целиком.
+enum : uint8_t { SUP_JOB_NONE = 0, SUP_JOB_SELF, SUP_JOB_HANDOFF };
+
+// Идёт ли передача прямо сейчас. Пока идёт, новую сессию начинать нельзя: обе писали бы
+// один и тот же /ota.bin.
+bool supportBusy();
+
+// Завести передачу. false — задача не создалась.
+bool supportJobStart(uint8_t kind, const String& target);
+
+// Что именно передаётся и сколько уже ушло — для полосы на странице.
+uint8_t supportJobKind();
+uint32_t supportJobSent();
+uint32_t supportJobTotal();
+
+// Забрать итог завершённой передачи (и освободить место под следующую). Зовётся из
+// главного цикла: результат ложится в поля, которые читает страница.
+bool supportJobFinished(uint8_t& kind, bool& ok, String& target);
+
 #endif // FEATURE_MESH_OTA_SENDER

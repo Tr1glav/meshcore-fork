@@ -289,6 +289,12 @@ function track(){
         else st('Прошивка принята, ждём перезагрузку сенсора…','ok');
       }
     }
+    else if(j.sup){
+      const p=j.total?j.sent*100/j.total:0,rate=sec>0?j.sent/sec:0;
+      bar(p,j.sup==1?'Шью прошивальщика по сети':'Передаю образ прошивальщику',
+          j.total?kb(j.sent)+' из '+kb(j.total):'');
+      st('','');
+    }
     else if(j.note){st(j.note,'ok');finish()}
     else{st(j.err?'Ошибка: '+errText(j.err)+' ('+stats+')':'Сессия завершена','err');finish()}
   },1000);
@@ -439,4 +445,4 @@ initLog();
 fwTrack();
 setInterval(loadInfo,5000);
 setInterval(loadSensors,20000);
-fetch('/ota/status').then(r=>r.json()).then(j=>{if(j.phase>=1&&j.phase<=3){busy=true;$('ab').hidden=false;$('prog').hidden=false;refresh();track()}}).catch(()=>{});
+fetch('/ota/status').then(r=>r.json()).then(j=>{if((j.phase>=1&&j.phase<=3)||j.sup){busy=true;$('ab').hidden=false;$('prog').hidden=false;refresh();track()}}).catch(()=>{});
