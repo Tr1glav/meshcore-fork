@@ -371,6 +371,21 @@ bool parseMeshCorePacket(uint8_t* data, int len) {
 
         // === Опрос со страницы OTA: каждый сенсор ответит hello:<версия> со случайной задержкой,
         //     чтобы ответы нескольких сенсоров не столкнулись в эфире ===
+        // Узел-прошивальщик объявил себя: запоминаем адрес, по нему уйдёт образ
+        if (lastMessage.startsWith(SENSOR_MSG_SUPPORT)) {
+            #if FEATURE_MESH_OTA_SENDER
+            String ip = lastMessage.substring(strlen(SENSOR_MSG_SUPPORT));
+            ip.trim();
+            if (ip.length() >= 7 && ip.length() <= 15) {
+                supportName = lastSender;
+                supportIp = ip;
+                supportSeenMs = millis();
+                slog("[SUP] прошивальщик %s на %s\n", supportName.c_str(), supportIp.c_str());
+            }
+            #endif
+            return true;
+        }
+
         if (lastMessage == SENSOR_MSG_HELLO_REQ) {
             #ifdef SENSOR_NODE
             sensorHelloDueMs = millis() + random(HELLO_REPLY_DELAY_MIN_MS, HELLO_REPLY_DELAY_MAX_MS);

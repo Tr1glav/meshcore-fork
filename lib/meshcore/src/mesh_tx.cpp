@@ -171,6 +171,18 @@ void sensorSendHello() {
     #endif
     sensorSendMsg(msg);
 }
+
+#if FEATURE_SUPPORT
+// Адрес нужен координатору, чтобы передать образ по сети: по радио мегабайт не уедет.
+// Пока адреса нет (WiFi ещё не поднялся), молчим — объявление без адреса бесполезно.
+void supportAnnounce() {
+    if (WiFi.status() != WL_CONNECTED) return;
+    char msg[48];
+    snprintf(msg, sizeof(msg), "%s%s", SENSOR_MSG_SUPPORT,
+             WiFi.localIP().toString().c_str());
+    sensorSendMsg(msg);
+}
+#endif
 #endif
 
 #ifdef SENSOR_NODE

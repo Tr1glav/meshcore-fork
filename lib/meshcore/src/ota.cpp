@@ -5,6 +5,7 @@
 #include "mesh.h"
 #include "ota.h"
 #include "fwupdate.h"   // проверка обновлений по кнопке
+#include "support.h"   // сессию может вести узел-прошивальщик
 #include "display.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -97,7 +98,10 @@ int fwScanVerdict(const FwScan* s) {
     return 0;
 }
 
-#ifdef MQTT_ENABLED
+// Раздающая сторона нужна не только координатору: узел-прошивальщик (support) делает то
+// же самое, но без MQTT и без автообновления — он берёт образ у координатора по сети и
+// ведёт сессию сам. Поэтому признак, а не роль.
+#if FEATURE_MESH_OTA_SENDER
 uint32_t otaImgSize = 0;       // размер прошивки после распаковки
 static uint16_t otaWinAcked = 0;      // бит i — чанк otaSeq+i уже у сенсора
 static unsigned long otaBurstMs = 0;  // когда ушёл последний кадр пачки
@@ -525,6 +529,14 @@ bool otaStartSession(const String& target) {
             return false;
         }
         if (hops > 0) {
+            // Сами не дотянемся — но, возможно, дотянется прошивальщик. Он стоит там, где
+            // эти узлы слышно, и спросить его дешевле, чем отказать: один HTTP-запрос
+            // против несостоявшегося обновления.
+            if (supportPresent() && supportHearsDirect(target) && supportHandOff(target)) {
+                snprintf(otaLastErr, sizeof(otaLastErr), "сессию ведёт %s",
+                         supportName.c_str());
+                return true;
+            }
             snprintf(otaLastErr, sizeof(otaLastErr), "узел за %u ретранслятором(ами)", hops);
             slog("[OTA] отказ '%s': %u хоп(ов) до узла, прошивка идёт только напрямую\n",
                  target.c_str(), hops);
@@ -551,7 +563,7 @@ bool otaStartSession(const String& target) {
     return true;
 }
 
-#endif // MQTT_ENABLED
+#endif // FEATURE_MESH_OTA_SENDER
 
 
 // Диспетчер: main loop зовёт это, когда поймал raw-фрейм (магия 0xBE 0xEF)

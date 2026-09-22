@@ -51,6 +51,19 @@
   #endif
 #endif
 
+// Узел-прошивальщик: берёт на себя сессии OTA вместо координатора. Он стоит там, где
+// слышно узлы, до которых координатору не дотянуться напрямую, — а прошивать можно только
+// напрямую (сырые кадры быстрого канала ретрансляторы не переносят). Образ он получает от
+// координатора по сети, поэтому ему нужны WiFi и своя страница, но не нужны ни MQTT, ни
+// проверка релизов: решает по-прежнему координатор.
+#ifndef FEATURE_SUPPORT
+  #ifdef SUPPORT_NODE
+    #define FEATURE_SUPPORT 1
+  #else
+    #define FEATURE_SUPPORT 0
+  #endif
+#endif
+
 // --- поведение узла ---
 #ifndef FEATURE_SENSOR        // heartbeat, кнопка, проверка связи, настройка по радио
   #ifdef SENSOR_NODE
@@ -104,6 +117,15 @@
 #endif
 #if FEATURE_MESH_OTA_RECEIVER && !defined(SENSOR_NODE)
   #error "FEATURE_MESH_OTA_RECEIVER требует SENSOR_NODE"
+#endif
+#if FEATURE_SUPPORT && !FEATURE_MESH_OTA_SENDER
+  #error "FEATURE_SUPPORT требует FEATURE_MESH_OTA_SENDER: прошивальщик тем и занят"
+#endif
+#if FEATURE_SUPPORT && !FEATURE_WEB
+  #error "FEATURE_SUPPORT требует FEATURE_WEB: образ приходит к нему по сети"
+#endif
+#if FEATURE_SUPPORT && !FEATURE_SENSOR
+  #error "FEATURE_SUPPORT требует FEATURE_SENSOR: он отвечает на hello как обычный узел"
 #endif
 #if FEATURE_COMPANION && !defined(COMPANION_NODE)
   #error "FEATURE_COMPANION требует COMPANION_NODE"

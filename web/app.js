@@ -104,7 +104,10 @@ async function loadInfo(){
     $('info').innerHTML='<span class="dot'+(info.wifi?' on':'')+'"></span>WiFi'
       +' <span class="dot'+(info.mqtt?' on':'')+'"></span>MQTT · '+info.ip
       +' · '+upfmt(info.up)+' · '+info.temp.toFixed(0)+'°C · heap '+Math.round(info.heap/1024)+' КБ'
-      +(info.bat>=0?' · '+batHtml(info.bat)+' '+info.bat+'% ('+info.volt.toFixed(2)+' V)':'');
+      +(info.bat>=0?' · '+batHtml(info.bat)+' '+info.bat+'% ('+info.volt.toFixed(2)+' V)':'')
+      // Прошивальщик берёт на себя сессии к узлам, до которых координатору не дотянуться
+      // напрямую. Показываем и адрес: ход такой сессии виден на его странице.
+      +(info.sup?' · прошивальщик <a href="http://'+info.supip+':3232/">'+info.sup+'</a>':'');
     const fw=$('fw');
     if(info.fwready){
       fw.hidden=false;

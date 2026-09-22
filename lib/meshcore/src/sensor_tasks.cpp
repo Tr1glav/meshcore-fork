@@ -43,6 +43,9 @@ void sensorTasksTick() {
         if (!bootHelloSent) {
             bootHelloSent = true;
             sensorSendHello();   // стартовый hello сразу после включения
+            #if FEATURE_SUPPORT
+            supportAnnounce();   // следом за heartbeat: координатор узнаёт адрес прошивальщика
+            #endif
             // не упреждать первый периодический heartbeat после boot-привета
             lastHeartbeat = millis();
         } else if (sensorHelloDueMs != 0 && millis() >= sensorHelloDueMs) {
@@ -50,9 +53,15 @@ void sensorTasksTick() {
             sensorHelloDueMs = 0;
             lastHeartbeat = millis();
             sensorSendHello();
+            #if FEATURE_SUPPORT
+            supportAnnounce();   // следом за heartbeat: координатор узнаёт адрес прошивальщика
+            #endif
         } else if (millis() - lastHeartbeat >= SENSOR_HEARTBEAT_MS) {
             lastHeartbeat = millis();
             sensorSendHello();
+            #if FEATURE_SUPPORT
+            supportAnnounce();   // следом за heartbeat: координатор узнаёт адрес прошивальщика
+            #endif
         }
     }
     #if FEATURE_BUTTON

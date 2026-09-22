@@ -648,6 +648,10 @@ void tickRetryConnections() {
     }
 
     // ===== MQTT =====
+    // Брокера может не быть вовсе: узлу-прошивальщику (support) сеть нужна, а MQTT нет —
+    // он ничего не публикует и ни на что не подписан. WiFi выше поднимается в любом
+    // случае, здесь же кончается всё, что относится к брокеру.
+#if FEATURE_MQTT
     if (cfg.mqttHost.length() == 0) return;
     if (mqttConnected && mqtt.connected()) return;
     if (mqttConnected) mqttConnected = false;
@@ -682,6 +686,7 @@ void tickRetryConnections() {
         mqttConnected = false;
         Serial.printf(" FAILED (rc=%d)\n", mqtt.state());
     }
+#endif // FEATURE_MQTT
 }
 
 #endif // MQTT_ENABLED

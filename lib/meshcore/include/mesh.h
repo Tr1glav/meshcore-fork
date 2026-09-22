@@ -36,6 +36,10 @@ void floodSend(int chIdx, const uint8_t* frame, int f, unsigned int gapMs = FLOO
 void sensorSendMsg(const char* msg, unsigned int gapMs = FLOOD_RETRY_MS, int repeats = 2);
 #ifdef SENSOR_NODE
 void sensorSendHello();
+#if FEATURE_SUPPORT
+// Объявить себя прошивальщиком: уходит следом за heartbeat и в ответ на "hello?".
+void supportAnnounce();
+#endif
 void sensorPingSend();   // эхо-запрос к координатору (тройное нажатие)
 void sensorPingTick();   // сторож ожидания ответа
 #endif

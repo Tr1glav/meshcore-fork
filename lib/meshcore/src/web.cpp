@@ -5,6 +5,7 @@
 #include "mesh.h"
 #include "ota.h"
 #include "ota_internal.h"
+#include "support.h"   // прошивальщик: показываем его на странице
 #include "fwupdate.h"   // проверка обновлений по кнопке
 #include "display.h"
 #include <esp_system.h>
@@ -191,17 +192,23 @@ void otaHandleInfo() {
     char temp[12], volt[12];
     fmtFix(cpuTempC(), 1, temp, sizeof(temp));
     fmtFix(batteryVoltage(), 2, volt, sizeof(volt));
-    char json[384];
+    // Прошивальщик, если он объявился: по его адресу видно, куда смотреть за ходом
+    // сессии, которую координатор отдал ему.
+    char supName[48];
+    jsonEscape(supportPresent() ? supportName.c_str() : "", supName, sizeof(supName));
+    char json[448];
     snprintf(json, sizeof(json),
              "{\"up\":%lu,\"wifi\":%s,\"mqtt\":%s,\"heap\":%u,\"temp\":%s,"
              "\"bat\":%d,\"volt\":%s,\"ip\":\"%s\",\"pkts\":%d,"
              "\"env\":\"" FW_ENV "\",\"ver\":\"" FW_VERSION "\","
+             "\"sup\":\"%s\",\"supip\":\"%s\","
              "\"fwready\":%s,\"fwname\":\"%s\",\"fwsize\":%u,\"fwimg\":%u}",
              (unsigned long)(millis() / 1000),
              wifiConnected ? "true" : "false", mqttConnected ? "true" : "false",
              (unsigned)ESP.getFreeHeap(), temp,
              batteryPercent(), volt,
              wifiConnected ? WiFi.localIP().toString().c_str() : "-", packetCount,
+             supName, supportPresent() ? supportIp.c_str() : "",
              otaFwReady ? "true" : "false", fwname,
              (unsigned)otaFwSize, (unsigned)otaImgSize);
     otaServer.send(200, "application/json", json);

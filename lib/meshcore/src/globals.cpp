@@ -23,6 +23,9 @@ String sensorEnv[SENSOR_DEV_CACHE_MAX];         // окружение сборк
 int sensorBattery[SENSOR_DEV_CACHE_MAX];        // заряд % из hello; -1 — сенсор его не шлёт
 float sensorRssi[SENSOR_DEV_CACHE_MAX];         // RSSI последнего пакета от сенсора
 uint8_t sensorHops[SENSOR_DEV_CACHE_MAX];       // хопов до узла; 0 — напрямую, 0xFF — неизвестно
+String supportName = "";        // узел-прошивальщик: имя из эфира
+String supportIp = "";          // и его адрес в сети; пусто — прошивальщика нет
+unsigned long supportSeenMs = 0;
 unsigned long timeSyncMs = 0;                   // millis() последнего "time:" из канала сенсоров
 float timeSyncRssi = 0, timeSyncSnr = 0;        // и качество приёма этого пакета
 bool isListening = false;

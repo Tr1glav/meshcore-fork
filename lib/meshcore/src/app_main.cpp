@@ -204,7 +204,9 @@ void appSetup() {
         slog("[OTA] /ota.bin: %u байт (mesh OTA ready=%d)\n",
              (unsigned)otaFwSize, (int)otaFwReady);
     }
+#if FEATURE_MQTT
     setupMQTT();            // только конфиг (префиксы/сервер/коллбэк)
+#endif
     setupOtaServer();       // HTTP OTA на :3232 (обновление прошивки по WiFi)
     #endif
 
@@ -263,7 +265,9 @@ void appLoop() {
         lastMqttReconnectMs = millis();
         tickRetryConnections();
     }
+#if FEATURE_MQTT
     if (mqttConnected) mqtt.loop();
+#endif
     #endif
 
     cfgConsoleTick();   // настройка через USB-консоль, не блокирует радио
@@ -293,7 +297,9 @@ void appLoop() {
 
     statusScreenTick();   // статус на экране раз в полсекунды
 
-    #ifdef MQTT_ENABLED
+    // Условие то же, что у самой функции (coordinator_tasks.h): у узла-прошивальщика
+    // сеть есть, а этих задач нет — ни брокера, ни NTP, ни проверки релизов.
+    #if FEATURE_MQTT || FEATURE_AUTOUPDATE || FEATURE_NTP
     coordinatorTasksTick();   // MQTT, время, доступность узлов, проверка обновлений
     #endif
 
