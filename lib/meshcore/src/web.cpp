@@ -687,6 +687,27 @@ void otaHandleAbort() {
 }
 
 void otaHandleStatus() {
+    // Сессию ведёт прошивальщик — показываем ЕГО ход, а не свой простой. Ответ у него в
+    // том же формате, поэтому страница разбирает его теми же полями; добавляем только имя
+    // ведущего, чтобы подпись говорила, чья это прошивка.
+    if (otaDelegate.length() > 0) {
+        String st;
+        if (supportStatus(st)) {
+            char who[48];
+            jsonEscape(otaDelegate.c_str(), who, sizeof(who));
+            int brace = st.lastIndexOf('}');
+            if (brace > 0) st = st.substring(0, brace) + ",\"deleg\":\"" + who + "\"}";
+            // Сессия у него кончилась — дальше показываем своё состояние. Первые
+            // секунды после передачи он ещё в фазе 0: сессия там только заводится, и
+            // принять это за конец значит показать «завершена» на самом старте.
+            if (st.indexOf("\"phase\":0") >= 0 && millis() - otaDelegateMs > 10000)
+                otaDelegate = "";
+            otaServer.send(200, "application/json", st);
+            return;
+        }
+        otaDelegate = "";      // не отвечает — больше не притворяемся, что ведём сессию
+        snprintf(otaLastErr, sizeof(otaLastErr), "%s не отвечает", otaNote[0] ? otaNote : "узел");
+    }
     int idx = -1;
     for (int i = 0; i < sensorDeviceDiscCount; i++) {
         if (sensorDeviceDisc[i] == otaTarget) { idx = i; break; }
@@ -694,20 +715,22 @@ void otaHandleStatus() {
     char tgt[48], err[64], ver[32];
     jsonEscape(otaTarget.c_str(), tgt, sizeof(tgt));
     jsonEscape(otaLastErr, err, sizeof(err));
+    char note[80];
+    jsonEscape(otaNote, note, sizeof(note));
     jsonEscape(idx >= 0 ? sensorFwVersion[idx].c_str() : "", ver, sizeof(ver));
     unsigned long endMs = (otaPhase == OTA_PHASE_DONE) ? otaDoneMs : millis();
     // back: сенсор прислал hello уже после подтверждения прошивки — значит, загрузился с неё
     bool back = otaPhase == OTA_PHASE_DONE && idx >= 0 && sensorLastActive[idx] > otaDoneMs;
-    char json[384];
+    char json[480];
     snprintf(json, sizeof(json),
              "{\"phase\":%u,\"fw\":%s,\"sent\":%u,\"total\":%u,\"elapsed_ms\":%lu,\"retr\":%u,"
              "\"polls\":%u,\"retrs\":%u,"
-             "\"err\":\"%s\",\"target\":\"%s\",\"ver\":\"%s\",\"back\":%s}",
+             "\"err\":\"%s\",\"note\":\"%s\",\"target\":\"%s\",\"ver\":\"%s\",\"back\":%s}",
              (unsigned)otaPhase, otaFwReady ? "true" : "false",
              (unsigned)otaSentBytes, (unsigned)otaFwSize,
              otaSessionMs ? endMs - otaSessionMs : 0UL, (unsigned)otaRetries,
              (unsigned)otaPolls, (unsigned)otaRetrTotal,
-             err, tgt, ver, back ? "true" : "false");
+             err, note, tgt, ver, back ? "true" : "false");
     otaServer.send(200, "application/json", json);
 }
 

@@ -11,7 +11,7 @@
 extern unsigned long otaSessionMs; // старт сессии — для скорости и длительности на странице
 extern unsigned long otaDoneMs;    // когда узел подтвердил прошивку
 extern uint32_t otaImgSize;       // размер прошивки после распаковки
-extern char otaLastErr[];         // причина последнего abort — показывается на странице
+extern char otaLastErr[48];       // причина последнего abort — показывается на странице
 extern String otaFwName;          // имя последнего загруженного файла — для страницы
 extern uint16_t otaPolls;         // сколько раз пришлось переспрашивать маску за сессию
 extern uint32_t otaUsBuild;

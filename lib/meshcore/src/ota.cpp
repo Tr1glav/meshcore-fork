@@ -496,6 +496,10 @@ void slog(const char* fmt, ...) {
 // Общий запуск сессии: используется и веб-обработчиком, и автообновлением
 bool otaStartSession(const String& target) {
     if (otaPhase != OTA_PHASE_IDLE && otaPhase != OTA_PHASE_DONE) return false;
+    // Чистим следы прошлого запуска здесь, в самом начале: передача прошивальщику
+    // возвращается раньше, чем дело дойдёт до низа функции.
+    otaNote[0] = 0;
+    otaDelegate = "";
     // Единственное, чем прошивка узла защищена в эфире, — ключ канала сенсоров: маркер
     // платы внутри образа подделывается тривиально, а подписи у образа нет. Если ключ
     // выведен из имени канала, прислать узлу прошивку может любой, кто это имя угадал,
@@ -528,7 +532,7 @@ bool otaStartSession(const String& target) {
     // supportFlashSelf).
     if (target == supportName && supportPresent()) {
         if (supportFlashSelf()) {
-            snprintf(otaLastErr, sizeof(otaLastErr), "%s прошит по сети", supportName.c_str());
+            snprintf(otaNote, sizeof(otaNote), "%s прошит по сети", supportName.c_str());
             return true;
         }
         snprintf(otaLastErr, sizeof(otaLastErr), "не удалось прошить %s по сети",
@@ -540,7 +544,9 @@ bool otaStartSession(const String& target) {
 
     if (target != supportName && supportPresent() && supportHearsDirect(target)) {
         if (supportHandOff(target)) {
-            snprintf(otaLastErr, sizeof(otaLastErr), "сессию ведёт %s", supportName.c_str());
+            otaDelegate = supportName;
+            otaDelegateMs = millis();
+            snprintf(otaNote, sizeof(otaNote), "сессию ведёт %s", supportName.c_str());
             return true;
         }
         // Не вышло передать — не повод отказываться совсем: может, дотянемся сами

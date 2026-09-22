@@ -272,7 +272,8 @@ function track(){
     try{j=await (await fetch('/ota/status')).json()}catch(e){return}
     const sec=j.elapsed_ms/1000;
     const stats='повторы: '+j.retrs+' · опросы: '+j.polls;
-    if(j.phase==1){bar(0,'Ждём ответ сенсора…',dur(sec))}
+    const by=j.deleg?' · ведёт '+j.deleg:'';
+    if(j.phase==1){bar(0,'Ждём ответ сенсора…',dur(sec)+by)}
     else if(j.phase==2){
       const p=j.total?j.sent*100/j.total:0,rate=sec>0?j.sent/sec:0;
       bar(p,kb(j.sent)+' из '+kb(j.total),rate>0?(rate/1024).toFixed(1)+' КБ/с · осталось '+dur((j.total-j.sent)/rate):'');
@@ -280,7 +281,7 @@ function track(){
     }
     else if(j.phase==3){bar(100,'Сенсор проверяет прошивку…',dur(sec))}
     else if(j.phase==4){
-      bar(100,'Передано за '+dur(sec),stats);
+      bar(100,'Передано за '+dur(sec),stats+by);
       if(j.back){st('Готово: '+j.target+' загрузился'+(j.ver?' с версией '+j.ver:''),'ok');finish();loadSensors()}
       else{
         doneAt=doneAt||Date.now();
@@ -288,6 +289,7 @@ function track(){
         else st('Прошивка принята, ждём перезагрузку сенсора…','ok');
       }
     }
+    else if(j.note){st(j.note,'ok');finish()}
     else{st(j.err?'Ошибка: '+errText(j.err)+' ('+stats+')':'Сессия завершена','err');finish()}
   },1000);
 }

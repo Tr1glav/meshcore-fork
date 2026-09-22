@@ -32,6 +32,14 @@ extern uint8_t sensorHops[SENSOR_DEV_CACHE_MAX];
 extern String supportName;
 extern String supportIp;
 extern unsigned long supportSeenMs;
+// Кому передана текущая сессия; пусто — ведём сами. Пока не пусто, страница координатора
+// показывает ход сессии, спрашивая его у прошивальщика.
+extern String otaDelegate;
+extern unsigned long otaDelegateMs;   // когда передали: до старта он ещё в фазе 0
+// Сообщение о том, ЧТО ПРОИЗОШЛО, а не о том, что сломалось. Раньше такие сообщения
+// клались в otaLastErr — и страница честно показывала «Ошибка: сессию ведёт ...» на
+// успешно идущей прошивке.
+extern char otaNote[64];
 extern unsigned long timeSyncMs;
 // Качество последнего пакета синхронизации времени. Такие пакеты шлёт в сенсорный канал
 // именно координатор, поэтому их RSSI/SNR — это измерение связи С НИМ, а не со случайным

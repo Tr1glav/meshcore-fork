@@ -23,6 +23,10 @@ bool supportHearsDirect(const String& target);
 // у него есть WiFi. Сохранённый .otaz распаковывается на лету: /update ждёт сырой образ.
 bool supportFlashSelf();
 
+// Ход сессии, которую ведёт прошивальщик: его же /ota/status, слово в слово.
+// false — не ответил; тогда координатор показывает своё состояние.
+bool supportStatus(String& out);
+
 // Отдать сессию: образ уходит к нему по сети, следом команда начать.
 bool supportHandOff(const String& target);
 

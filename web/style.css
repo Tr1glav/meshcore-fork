@@ -17,7 +17,9 @@ label{display:block;font-size:11px;color:#93a4c4;margin:0 0 4px}
 .tgt.sel{border-color:#0ea5e9;background:#1b2b3d}
 /* Подпункт координатора: отступ и уголок связи — видно, что строка относится к тому,
    что над ней, а не стоит сама по себе среди целей. */
-.tgt.sub{margin-left:18px;position:relative}
+.tgt.sub{margin-left:18px;position:relative;padding:4px 8px;opacity:.9}
+.tgt.sub .nm{font-size:12px}
+.tgt.sub .meta{font-size:9px}
 .tgt.sub::before{content:'';position:absolute;left:-11px;top:50%;width:9px;height:1px;background:#35405a}
 .tgt .nm{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tgt .meta{font-size:10px;color:#93a4c4;margin-top:2px}

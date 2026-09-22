@@ -204,6 +204,16 @@ done:
     return ok;
 }
 
+// Ход переданной сессии. Ответ отдаём как есть: формат у прошивальщика тот же, и
+// страница координатора разбирает его теми же полями, что и свой.
+bool supportStatus(String& out) {
+    if (!supportPresent()) return false;
+    String req = String("GET /ota/status HTTP/1.1\r\nHost: ") + supportIp +
+                 "\r\nConnection: close\r\n\r\n";
+    out = "";
+    return supportRequest(req, &out, 512) && out.indexOf('{') >= 0;
+}
+
 // Отдать образ и команду. Образ уходит multipart-ом — ровно тем, что ждёт /savefw:
 // приём файла на той стороне сделан обработчиком загрузки, он разбирает конверт сам и
 // пишет файл потоком, не держа его в памяти.
