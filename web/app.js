@@ -55,7 +55,12 @@ function addTarget(id,name,parts,online,bat,sub){
   const meta=el('div','meta');
   parts.forEach((p,i)=>{
     if(i)meta.appendChild(document.createTextNode(' · '));
-    meta.appendChild(p.b?el('b',null,p.t):document.createTextNode(p.t));
+    if(p.href){
+      const a=el('a',null,p.t);
+      a.href=p.href; a.target='_blank';
+      a.onclick=e=>e.stopPropagation();   // ссылка ведёт на страницу, а не выбирает цель
+      meta.appendChild(a);
+    }else meta.appendChild(p.b?el('b',null,p.t):document.createTextNode(p.t));
   });
   grow.appendChild(meta);
   d.appendChild(grow);
@@ -84,11 +89,12 @@ function renderTargets(){
     const sp=sensors.find(x=>x.name==supName);
     const parts=[{t:'прошивальщик',b:1}];
     if(sp){
-      parts.push({t:sp.env||'?'},{t:sp.ver?'v'+sp.ver:'версия ?'},
+      parts.push({t:sp.ver?'v'+sp.ver:'версия ?'},
                  {t:sp.online?'онлайн':'был '+ago(sp.seen_s)+' назад'});
     }else{
       parts.push({t:'объявился по радио, в списке узлов ещё нет'});
     }
+    if(info.supip)parts.push({t:'открыть',href:'http://'+info.supip+':3232/'});
     addTarget(supName,supName,parts,sp?sp.online:true,sp?sp.bat:-1,true);
   }
 
@@ -101,7 +107,8 @@ function renderTargets(){
     // и ретрансляторы их не переносят. Показываем это рядом с узлом, а не только в
     // отказе после нажатия. Число выводим всегда, в том числе ноль: «напрямую» словом
     // отвечает на вопрос «можно ли прошить», но не на вопрос «сколько хопов».
-    if(s.hops>=0)parts.push({t:s.hops+' '+hopw(s.hops)+(s.hops?' — не прошить':' · напрямую')});
+    if(s.hops===0)parts.push({t:'напрямую'});
+    else if(s.hops>0)parts.push({t:s.hops+' '+hopw(s.hops)});
     else parts.push({t:'хопы: ?'});
     addTarget(s.name,s.name,parts,s.online,s.bat);
   }
@@ -124,9 +131,7 @@ async function loadInfo(){
       +' <span class="dot'+(info.mqtt?' on':'')+'"></span>MQTT · '+info.ip
       +' · '+upfmt(info.up)+' · '+info.temp.toFixed(0)+'°C · heap '+Math.round(info.heap/1024)+' КБ'
       +(info.bat>=0?' · '+batHtml(info.bat)+' '+info.bat+'% ('+info.volt.toFixed(2)+' V)':'')
-      // Прошивальщик берёт на себя сессии к узлам, до которых координатору не дотянуться
-      // напрямую. Показываем и адрес: ход такой сессии виден на его странице.
-      +(info.sup?' · прошивальщик <a href="http://'+info.supip+':3232/">'+info.sup+'</a>':'');
+      ;
     const fw=$('fw');
     if(info.fwready){
       fw.hidden=false;

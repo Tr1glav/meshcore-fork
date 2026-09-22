@@ -22,6 +22,10 @@ label{display:block;font-size:11px;color:#93a4c4;margin:0 0 4px}
 .tgt .nm{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tgt .meta{font-size:10px;color:#93a4c4;margin-top:2px}
 .tgt .meta b{color:#c7d3e8;font-weight:600}
+/* Ссылка внутри строки цели (страница прошивальщика): по цвету видно, что это ссылка,
+   а не очередное поле — в общем тоне меты она терялась совсем. */
+.tgt .meta a{color:#38bdf8;text-decoration:none;border-bottom:1px dotted #38bdf8}
+.tgt .meta a:hover{color:#7dd3fc;border-bottom-color:#7dd3fc}
 .grow{flex:1;min-width:0}
 #drop{margin-top:8px;border:2px dashed #4a5775;border-radius:8px;padding:10px;text-align:center;cursor:pointer;background:#1e2638;font-size:12px;color:#93a4c4}
 #drop.hover{border-color:#5eead4;background:#1b2233}

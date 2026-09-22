@@ -13,7 +13,7 @@
 // Всё это делается по расписанию и ничего не ждёт, поэтому живёт отдельно от приёма
 // радио и от обслуживания страницы.
 
-#if FEATURE_MQTT || FEATURE_AUTOUPDATE || FEATURE_NTP
+#if FEATURE_MQTT || FEATURE_AUTOUPDATE || FEATURE_SELFUPDATE || FEATURE_NTP
 
 void coordinatorTasksTick() {
     // ===== MQTT STATUS (раз в 60 сек) =====

@@ -424,9 +424,14 @@ static void fwAfterCheck() {
     fwNextInterval = FW_CHECK_INTERVAL_MS;
     // Сначала узлы: обновление себя означает перезагрузку и потерю сессии. Берём ровно
     // один узел за проход — прошивка по радио занимает эфир целиком.
+#if FEATURE_AUTOUPDATE
     for (int i = 0; i < sensorDeviceDiscCount; i++) {
         if (!sensorOnlineNow[i] || sensorFwVersion[i].length() == 0) continue;
         if (fwVersionCmp(fwLatest.version, sensorFwVersion[i]) <= 0) continue;
+        // Прошивальщика по радио не обновляем: у него есть сеть, и он качает свой образ
+        // из релиза сам. Сессия заняла бы эфир на сорок секунд ради того, что делается
+        // по WiFi за несколько.
+        if (supportName.length() > 0 && sensorDeviceDisc[i] == supportName) continue;
         // Окружение берём из hello: по нему и подбирается файл релиза. Запасного пути
         // через код платы больше нет — он выбирал образ сенсора и для компаньона, потому
         // что плата у них одна. Узел, который окружения не прислал, пропускаем: молча
@@ -453,6 +458,7 @@ static void fwAfterCheck() {
         fwStartNetTask(fwFetchTask, "fwfetch");
         return;
     }
+#endif // FEATURE_AUTOUPDATE
     if (fwLatest.binUrl.length() > 0 && fwVersionCmp(fwLatest.version, FW_VERSION) > 0) {
         slog("[FW] своя прошивка устарела: %s -> %s\n", FW_VERSION, fwLatest.version.c_str());
         fwSelfPending = true;   // прошьём себя следующим проходом

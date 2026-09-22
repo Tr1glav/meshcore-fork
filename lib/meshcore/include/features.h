@@ -34,6 +34,13 @@
   #define FEATURE_AUTOUPDATE FEATURE_WIFI
 #endif
 
+// Обновить СЕБЯ из релиза — не то же самое, что раздавать прошивки узлам. Узел-прошивальщик
+// раздаёт по радио, а себя качает по сети: у него есть WiFi, и занимать эфир на сорок
+// секунд ради собственного образа незачем. Поэтому признак отдельный.
+#ifndef FEATURE_SELFUPDATE
+  #define FEATURE_SELFUPDATE FEATURE_AUTOUPDATE
+#endif
+
 #ifndef FEATURE_NTP           // синхронизация часов и рассылка времени узлам
   #define FEATURE_NTP FEATURE_WIFI
 #endif
@@ -102,6 +109,9 @@
 #endif
 #if FEATURE_AUTOUPDATE && !FEATURE_WIFI
   #error "FEATURE_AUTOUPDATE требует FEATURE_WIFI"
+#endif
+#if FEATURE_SELFUPDATE && !FEATURE_WIFI
+  #error "FEATURE_SELFUPDATE требует FEATURE_WIFI: образ качается из релиза по сети"
 #endif
 #if FEATURE_COMPANION && !FEATURE_SENSOR
   #error "Компаньон собирается поверх сенсорного узла: нужен FEATURE_SENSOR"

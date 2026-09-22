@@ -299,7 +299,7 @@ void appLoop() {
 
     // Условие то же, что у самой функции (coordinator_tasks.h): у узла-прошивальщика
     // сеть есть, а этих задач нет — ни брокера, ни NTP, ни проверки релизов.
-    #if FEATURE_MQTT || FEATURE_AUTOUPDATE || FEATURE_NTP
+    #if FEATURE_MQTT || FEATURE_AUTOUPDATE || FEATURE_SELFUPDATE || FEATURE_NTP
     coordinatorTasksTick();   // MQTT, время, доступность узлов, проверка обновлений
     #endif
 
