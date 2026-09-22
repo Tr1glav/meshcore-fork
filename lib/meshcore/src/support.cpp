@@ -24,6 +24,10 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 
+extern "C" {
+#include "esp32s3/rom/miniz.h"
+}
+
 // Объявление прошивальщика приходит вместе с его heartbeat. Раз в десять минут — значит
 // пропуск одного объявления ещё ничего не значит, а три подряд означают, что его нет.
 #define SUPPORT_STALE_MS (3UL * SENSOR_HEARTBEAT_MS)
@@ -83,6 +87,121 @@ bool supportHearsDirect(const String& target) {
     int hopsAt = body.indexOf("\"hops\":", at);
     if (hopsAt < 0 || hopsAt > end) return false;
     return body.substring(hopsAt + 7, end).toInt() == 0;
+}
+
+// Прошить САМ прошивальщик — по сети, а не по радио.
+//
+// Радио ему не нужно: у него есть WiFi, и сессия заняла бы эфир почти на минуту ради
+// того, что по сети делается за несколько секунд. Но на /update он ждёт сырой образ, а у
+// координатора лежит .otaz — заголовок плюс zlib-поток. Поэтому образ распаковывается на
+// лету тем же tinfl из ПЗУ, которым узлы разворачивают прошивку, приходящую по радио:
+// целиком в память он не влезет, да и незачем.
+//
+// Длина тела известна заранее — распакованный размер записан в заголовке .otaz, — поэтому
+// Content-Length считается без обмана.
+bool supportFlashSelf() {
+    if (!supportPresent()) return false;
+
+    File f = LittleFS.open("/ota.bin", "r");
+    if (!f) { slog("[SUP] /ota.bin не открылся\n"); return false; }
+    uint8_t hdr[OTA_Z_HDR];
+    uint32_t imgSize = 0;
+    if ((uint32_t)f.size() <= OTA_Z_HDR || f.read(hdr, OTA_Z_HDR) != (size_t)OTA_Z_HDR ||
+        memcmp(hdr, OTA_Z_MAGIC, 4) != 0) {
+        f.close();
+        slog("[SUP] сохранённый образ не .otaz\n");
+        return false;
+    }
+    memcpy(&imgSize, hdr + 4, 4);
+    if (imgSize == 0) { f.close(); return false; }
+
+    tinfl_decompressor* inf = (tinfl_decompressor*)malloc(sizeof(tinfl_decompressor));
+    uint8_t* dict = (uint8_t*)malloc(TINFL_LZ_DICT_SIZE);
+    uint8_t* chunk = (uint8_t*)malloc(1024);
+    bool ok = false;
+    uint32_t sent = 0;
+    size_t dictOfs = 0;
+    WiFiClient c;
+
+    if (!inf || !dict || !chunk) { slog("[SUP] не хватило памяти на распаковку\n"); goto done; }
+    tinfl_init(inf);
+
+    if (!c.connect(supportIp.c_str(), SUPPORT_PORT)) {
+        slog("[SUP] %s недоступен для прошивки\n", supportIp.c_str());
+        goto done;
+    }
+    {
+        const char* BND = "----meshcoreself";
+        String head = String("--") + BND + "\r\n"
+                      "Content-Disposition: form-data; name=\"fw\"; filename=\"fw.bin\"\r\n"
+                      "Content-Type: application/octet-stream\r\n\r\n";
+        String tail = String("\r\n--") + BND + "--\r\n";
+        c.print(String("POST /update HTTP/1.1\r\nHost: ") + supportIp +
+                "\r\nContent-Type: multipart/form-data; boundary=" + BND +
+                "\r\nContent-Length: " + String(head.length() + imgSize + tail.length()) +
+                "\r\nConnection: close\r\n\r\n");
+        c.print(head);
+
+        bool last = false;
+        while (!last && sent < imgSize) {
+            int got = f.read(chunk, 1024);
+            if (got <= 0) break;
+            last = (f.position() >= f.size());
+            const uint8_t* p = chunk;
+            size_t avail = (size_t)got;
+            for (;;) {
+                size_t inBytes = avail;
+                size_t outBytes = TINFL_LZ_DICT_SIZE - dictOfs;
+                tinfl_status st = tinfl_decompress(inf, p, &inBytes, dict, dict + dictOfs,
+                                                   &outBytes,
+                                                   TINFL_FLAG_PARSE_ZLIB_HEADER |
+                                                   (last ? 0 : TINFL_FLAG_HAS_MORE_INPUT));
+                p += inBytes;
+                avail -= inBytes;
+                if (outBytes) {
+                    // Распаковщик может выдать больше объявленного: последний блок он
+                    // дополняет. Лишнее в тело не пишем, иначе разъедется Content-Length.
+                    size_t take = outBytes;
+                    if (sent + take > imgSize) take = imgSize - sent;
+                    if (take && c.write(dict + dictOfs, take) != take) { sent = 0; break; }
+                    sent += take;
+                    dictOfs = (dictOfs + outBytes) & (TINFL_LZ_DICT_SIZE - 1);
+                }
+                if (st < 0) { slog("[SUP] образ не распаковался (%d)\n", (int)st); sent = 0; break; }
+                if (st == TINFL_STATUS_DONE) { last = true; break; }
+                if (avail == 0 && st != TINFL_STATUS_HAS_MORE_OUTPUT) break;
+            }
+            if (sent == 0) break;
+        }
+        c.print(tail);
+
+        if (sent == imgSize) {
+            unsigned long t0 = millis();
+            while (!c.available() && millis() - t0 < SUPPORT_HTTP_TIMEOUT_MS) delay(10);
+            String status = c.readStringUntil('\n');
+            String body;
+            while (c.connected() || c.available()) {
+                String line = c.readStringUntil('\n');
+                if (line.length() <= 1) break;
+            }
+            while ((c.connected() || c.available()) && body.length() < 128) {
+                int ch = c.read();
+                if (ch < 0) { if (!c.connected()) break; delay(1); continue; }
+                body += (char)ch;
+            }
+            ok = status.indexOf("200") > 0 && body.indexOf("FAIL") < 0;
+            if (!ok) slog("[SUP] прошивальщик отказал: %s\n", body.c_str());
+        }
+    }
+    c.stop();
+
+done:
+    f.close();
+    free(inf); free(dict); free(chunk);
+    if (ok) slog("[SUP] %s прошит по сети (%u байт)\n", supportName.c_str(), (unsigned)sent);
+    else if (sent != imgSize) slog("[SUP] передано %u из %u байт\n",
+                                   (unsigned)sent, (unsigned)imgSize);
+    return ok;
 }
 
 // Отдать образ и команду. Образ уходит multipart-ом — ровно тем, что ждёт /savefw:

@@ -19,6 +19,10 @@ bool supportPresent();
 // Слышит ли он этот узел напрямую. Спрашиваем у него самого — его /sensors отдаёт хопы.
 bool supportHearsDirect(const String& target);
 
+// Прошить сам прошивальщик: образ уходит к нему по сети (HTTP OTA), а не по радио —
+// у него есть WiFi. Сохранённый .otaz распаковывается на лету: /update ждёт сырой образ.
+bool supportFlashSelf();
+
 // Отдать сессию: образ уходит к нему по сети, следом команда начать.
 bool supportHandOff(const String& target);
 

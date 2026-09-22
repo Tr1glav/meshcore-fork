@@ -522,6 +522,22 @@ bool otaStartSession(const String& target) {
     // переносят — они умеют пересылать mesh-пакеты, а не эти. Узел за ретранслятором не
     // получит ни одного чанка: сессия займёт эфир и кончится таймаутом. Отказать сразу
     // честнее. Поэтому у прошивальщика и спрашивают, слышит ли он цель напрямую.
+    // Сам прошивальщик по радио не шьётся вовсе: у него есть сеть, и образ уходит к нему
+    // по ней. Сессия заняла бы эфир почти на минуту ради того, что делается за несколько
+    // секунд, — а .otaz он и не примет, на /update нужен сырой образ (его распаковывает
+    // supportFlashSelf).
+    if (target == supportName && supportPresent()) {
+        if (supportFlashSelf()) {
+            snprintf(otaLastErr, sizeof(otaLastErr), "%s прошит по сети", supportName.c_str());
+            return true;
+        }
+        snprintf(otaLastErr, sizeof(otaLastErr), "не удалось прошить %s по сети",
+                 supportName.c_str());
+        slog("[OTA] '%s' по сети не прошился; по радио его шить нечем — на /update нужен "
+             "сырой образ\n", target.c_str());
+        return false;
+    }
+
     if (target != supportName && supportPresent() && supportHearsDirect(target)) {
         if (supportHandOff(target)) {
             snprintf(otaLastErr, sizeof(otaLastErr), "сессию ведёт %s", supportName.c_str());
