@@ -475,6 +475,27 @@ void logGetSnapshot(String& tailOut, uint32_t& totalOut) {
     xSemaphoreGive(logLock);
 }
 
+// Одинаковые строки подряд не повторяются: вместо них считается счётчик, и он выходит
+// одной строкой, когда в журнале появляется что-то новое. Иначе объявление прошивальщика
+// (оно приходит с каждым heartbeat и с каждым опросом) забивало журнал десятком
+// одинаковых строк, среди которых не видно ничего полезного.
+//
+// Счётчик выводится ПЕРЕД новой строкой, а не вместо неё: хвост журнала читают как поток,
+// и «повторов: N» должно стоять там, где повторы кончились.
+static char logPrev[512] = "";
+static uint16_t logRepeats = 0;
+
+static void logWrite(const char* text, size_t len) {
+    Serial.write((const uint8_t*)text, len);
+    logEnsureLock();
+    xSemaphoreTake(logLock, portMAX_DELAY);
+    logTail += text;
+    logTotal += len;
+    // logTail — точный хвост потока лога без вставок, иначе позиции /logs/tail разъедутся
+    if (logTail.length() > LOG_TAIL_MAX) logTail.remove(0, logTail.length() - LOG_TAIL_MAX);
+    xSemaphoreGive(logLock);
+}
+
 void slog(const char* fmt, ...) {
     char tmp[512];
     va_list ap;
@@ -483,14 +504,19 @@ void slog(const char* fmt, ...) {
     va_end(ap);
     if (n <= 0) return;
     size_t len = min((size_t)n, sizeof(tmp) - 1);   // vsnprintf возвращает длину без учёта обрезки
-    Serial.write((const uint8_t*)tmp, len);
-    logEnsureLock();
-    xSemaphoreTake(logLock, portMAX_DELAY);
-    logTail += tmp;
-    logTotal += len;
-    // logTail — точный хвост потока лога без вставок, иначе позиции /logs/tail разъедутся
-    if (logTail.length() > LOG_TAIL_MAX) logTail.remove(0, logTail.length() - LOG_TAIL_MAX);
-    xSemaphoreGive(logLock);
+
+    if (strcmp(tmp, logPrev) == 0) {
+        if (logRepeats < 0xFFFF) logRepeats++;
+        return;
+    }
+    if (logRepeats > 0) {
+        char rep[48];
+        int rn = snprintf(rep, sizeof(rep), "   ... и ещё %u таких же\n", (unsigned)logRepeats);
+        logRepeats = 0;
+        if (rn > 0) logWrite(rep, (size_t)rn);
+    }
+    strlcpy(logPrev, tmp, sizeof(logPrev));
+    logWrite(tmp, len);
 }
 
 // Общий запуск сессии: используется и веб-обработчиком, и автообновлением

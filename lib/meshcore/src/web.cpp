@@ -560,11 +560,7 @@ void otaHandleSaveFw() {
         otaFwName = up.filename;
         slog("\n[OTA-SAVE] %s (%u байт)\n", up.filename.c_str(), (unsigned)up.totalSize);
         otaFile = LittleFS.open("/ota.bin", "w");
-        if (!otaFile) {
-            slog("[OTA-SAVE] LittleFS.open FAILED\n");
-        } else {
-            slog("[OTA-SAVE] file opened OK\n");
-        }
+        if (!otaFile) slog("[OTA-SAVE] LittleFS.open FAILED\n");
         break;
     }
     case UPLOAD_FILE_WRITE:
@@ -593,9 +589,11 @@ void otaHandleSaveFw() {
     }
     case UPLOAD_FILE_END:
     {
-        slog("[OTA-SAVE] END: saving=%d file=%d total=%u | writeCalls=%lu writeBytes=%lu skipped=%lu\n",
-             (int)otaSaving, (int)(bool)otaFile, (unsigned)up.totalSize,
-             otaWriteCalls, otaWriteBytes, otaWriteSkipped);
+        // Счётчики заливки — только когда есть на что смотреть: пропущенные колбэки или
+        // расхождение с объявленной длиной. В обычной заливке итог скажет строка ниже.
+        if (otaWriteSkipped || (up.totalSize && otaWriteBytes != up.totalSize))
+            slog("[OTA-SAVE] вызовов %lu, записано %lu из %u, пропущено %lu\n",
+                 otaWriteCalls, otaWriteBytes, (unsigned)up.totalSize, otaWriteSkipped);
         if (otaSaving && otaFile) {
             // В ESP-IDF VFS fstat() НЕ видит буферизованные данные до fflush/close,
             // поэтому size() возвращает 0. Закрываем first → flush на диск → reopen для size.
@@ -744,7 +742,6 @@ void setupOtaServer() {
     otaServer.on("/savefw", HTTP_POST, []() {
         otaServer.sendHeader("Connection", "close");
         if (otaSaveOk && otaFwReady) {
-            slog("[WEB] /savefw -> OK (%u байт)\n", (unsigned)otaFwSize);
             otaServer.send(200, "text/plain", "OK");
         } else {
             slog("[WEB] /savefw -> FAIL (saveOk=%d fwSize=%u)\n",

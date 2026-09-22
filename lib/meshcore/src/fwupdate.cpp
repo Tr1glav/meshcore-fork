@@ -464,7 +464,13 @@ static void fwAfterCheck() {
         fwSelfPending = true;   // прошьём себя следующим проходом
         return;
     }
-    slog("[FW] обновлять нечего, последняя версия %s\n", fwLatest.version.c_str());
+    // Проверка идёт по расписанию, и почти всегда ответ один и тот же — сообщаем только
+    // тогда, когда в релизах появилась другая версия.
+    static String fwQuietAt;
+    if (fwQuietAt != fwLatest.version) {
+        fwQuietAt = fwLatest.version;
+        slog("[FW] обновлять нечего, последняя версия %s\n", fwLatest.version.c_str());
+    }
 }
 
 void fwUpdateTick() {

@@ -377,10 +377,13 @@ bool parseMeshCorePacket(uint8_t* data, int len) {
             String ip = lastMessage.substring(strlen(SENSOR_MSG_SUPPORT));
             ip.trim();
             if (ip.length() >= 7 && ip.length() <= 15) {
+                // Объявление приходит с каждым heartbeat и с каждым опросом, поэтому
+                // в журнал оно идёт только когда прошивальщик действительно сменился.
+                bool changed = (supportName != lastSender) || (supportIp != ip);
                 supportName = lastSender;
                 supportIp = ip;
                 supportSeenMs = millis();
-                slog("[SUP] прошивальщик %s на %s\n", supportName.c_str(), supportIp.c_str());
+                if (changed) slog("[SUP] прошивальщик %s на %s\n", supportName.c_str(), supportIp.c_str());
             }
             #endif
             return true;
