@@ -6,6 +6,9 @@ void initAdvertIdentity();
 uint8_t* findPeerPub(uint8_t hash);
 void rememberPeerPub(uint8_t hash, const uint8_t* pub);
 bool checkAndMarkSeen(uint8_t* data, int len);
+// Пометить СВОЙ ушедший кадр как «уже виденный» — эхо, вернувшееся от ретранслятора,
+// не должно заново пройти dedup и быть переизданным (см. mesh.cpp).
+void markOwnFrameSeen(const uint8_t* data, int len);
 // openKey = true: ключ канала не секрет (выведен из имени или общеизвестен)
 void addChannelKey16(const char* name, const uint8_t* key16, bool openKey = false);
 void deriveChannels();
@@ -52,6 +55,11 @@ void sendAdvert(uint8_t route_type);
 void sendSensorTimeSync();
 String channelListStr();
 bool parseMeshCorePacket(uint8_t* data, int len);
+
+// Ретрансляция чужих флуд-кадров: maybeQueueRelay решает по принятому кадру и ставит его
+// в очередь, meshRelayTick переиздаёт просроченные (зовётся из главного цикла).
+void maybeQueueRelay(const uint8_t* data, int len);
+void meshRelayTick();
 
 // forward decls referenced from parseMeshCorePacket
 #ifdef MQTT_ENABLED

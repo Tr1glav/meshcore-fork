@@ -59,6 +59,7 @@ int seen_next_idx = 0;
 uint8_t seen_advert_hashes[SEEN_ADVERT_HASH_COUNT * SEEN_HASH_SIZE];
 int seen_advert_next_idx = 0;
 uint32_t duplicateCount = 0;
+uint32_t relayForwardedCount = 0;   // чужих флуд-кадров, переизданных этим узлом
 String logTail;
 // used + печать в setup(): иначе линковщик с --gc-sections выбросит строку из образа
 const char fwMarker[] __attribute__((used)) = FW_MARKER;

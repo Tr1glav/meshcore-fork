@@ -55,6 +55,10 @@ void radioRxTick() {
                     duplicateCount++;
                     Serial.printf("[DUP] skipped (total dups=%lu)\n", duplicateCount);
                 } else {
+                    // Свежий чужий кадр: ретрансляция (переиздание флуд-кадров). Не блокирует
+                    // цикл — только ставит в очередь, передаст главный цикл (meshRelayTick).
+                    maybeQueueRelay(buffer, pktLen);
+
                     bool parsed = parseMeshCorePacket(buffer, pktLen);
 
                     // hex-экран только для GRP_TXT, который не расшифровался

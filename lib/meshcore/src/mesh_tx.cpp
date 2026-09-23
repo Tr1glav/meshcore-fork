@@ -44,6 +44,7 @@ void sendAdvert(uint8_t route_type) {
     Serial.printf("\n[TX ADV] route=%u (%dB)\n", route_type, f);
     for (int i = 0; i < f; i++) Serial.printf("%02X", frame[i]);
     Serial.println();
+    markOwnFrameSeen(frame, f);   // своё эхо, вернувшееся через ретрансляторов, не переиздавать
     txFrame(frame, f);
 }
 
@@ -119,6 +120,7 @@ int sendFrame(int chIdx, const uint8_t* frame, int f) {
 }
 
 void floodSend(int chIdx, const uint8_t* frame, int f, unsigned int gapMs, int repeats) {
+    markOwnFrameSeen(frame, f);   // своё эхо, вернувшееся через ретрансляторов, не переиздавать
     for (int i = 0; i < repeats; i++) {
         if (chIdx >= 0) sendFrame(chIdx, frame, f);
         else            txFrame((uint8_t*)frame, f);

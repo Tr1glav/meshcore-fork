@@ -56,28 +56,40 @@ void initAdvertIdentity() {
     Serial.printf(", own short hash: 0x%02X\n", ownShortHash);
 }
 
-bool checkAndMarkSeen(uint8_t* data, int len) {
-    if (len < 2) return true;  // битый пакет
+// Дедуп-хэш кадра: [тип пакета 1B][тело после пути]. Путь в хэш не входит — от этого и
+// зависят дедуп и защита от петель ретрансляции: одна и та же копия кадра, пришедшая
+// другой дорогой (с другим набором ретрансляторов в пути), хэшируется так же и
+// отбрасывается, а значит и не переиздаётся повторно. Возвращает false для битых кадров.
+static bool meshFrameHash(const uint8_t* data, int len, uint8_t* payload_type, uint8_t out[32]) {
+    if (len < 2) return false;
     uint8_t header = data[0];
-    uint8_t payload_type = (header >> 2) & 0x0F;
+    uint8_t pt = (header >> 2) & 0x0F;
     int offset = 1;
     if (((header & 0x03) == 0x00) || ((header & 0x03) == 0x03)) offset += 4;
-    if (offset >= len) return true;
+    if (offset >= len) return false;
     uint8_t path_len = data[offset++];
     uint8_t hash_size = (path_len >> 6) + 1;
     uint8_t hop_count = path_len & 0x3F;
     offset += hop_count * hash_size;
-    if (offset >= len) return true;
+    if (offset >= len) return false;
 
-    uint8_t hash_ctx[32];
     mbedtls_md_context_t ctx;
     mbedtls_md_init(&ctx);
     mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 0);
     mbedtls_md_starts(&ctx);
-    mbedtls_md_update(&ctx, &payload_type, 1);
+    mbedtls_md_update(&ctx, &pt, 1);
     mbedtls_md_update(&ctx, &data[offset], len - offset);
-    mbedtls_md_finish(&ctx, hash_ctx);
+    mbedtls_md_finish(&ctx, out);
     mbedtls_md_free(&ctx);
+
+    if (payload_type) *payload_type = pt;
+    return true;
+}
+
+bool checkAndMarkSeen(uint8_t* data, int len) {
+    uint8_t payload_type;
+    uint8_t hash_ctx[32];
+    if (!meshFrameHash(data, len, &payload_type, hash_ctx)) return true;  // битый пакет
 
     // выбираем кольцевой буфер по типу пакета
     int count  = (payload_type == 0x04) ? SEEN_ADVERT_HASH_COUNT : SEEN_HASH_COUNT;
@@ -94,5 +106,22 @@ bool checkAndMarkSeen(uint8_t* data, int len) {
     memcpy(&hashes[*nextIdx * SEEN_HASH_SIZE], hash_ctx, SEEN_HASH_SIZE);
     *nextIdx = (*nextIdx + 1) % count;
     return false;
+}
+
+// Свой же кадр, ушедший в эфир, помечаем как «уже виденный»: его эхо, вернувшееся через
+// ретранслятор, иначе прошло бы dedup как свежее, и узел переиздал бы собственное
+// сообщение. Хэш не замечает пути, поэтому копия с достроенным путём матчится так же.
+void markOwnFrameSeen(const uint8_t* data, int len) {
+    uint8_t payload_type;
+    uint8_t hash_ctx[32];
+    if (!meshFrameHash(data, len, &payload_type, hash_ctx)) return;
+
+    int count  = (payload_type == 0x04) ? SEEN_ADVERT_HASH_COUNT : SEEN_HASH_COUNT;
+    uint8_t* hashes = (payload_type == 0x04) ? seen_advert_hashes : seen_hashes;
+    int* nextIdx    = (payload_type == 0x04) ? &seen_advert_next_idx : &seen_next_idx;
+
+    // занимаем слот как при приёме — перезаписываем самый старый
+    memcpy(&hashes[*nextIdx * SEEN_HASH_SIZE], hash_ctx, SEEN_HASH_SIZE);
+    *nextIdx = (*nextIdx + 1) % count;
 }
 

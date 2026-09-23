@@ -73,6 +73,7 @@ extern int seen_next_idx;
 extern uint8_t seen_advert_hashes[SEEN_ADVERT_HASH_COUNT * SEEN_HASH_SIZE];
 extern int seen_advert_next_idx;
 extern uint32_t duplicateCount;
+extern uint32_t relayForwardedCount;   // чужих флуд-кадров, переизданных этим узлом
 extern String logTail;
 extern const char fwMarker[];   // FW_MARKER, зашит в образ для проверки платы
 
