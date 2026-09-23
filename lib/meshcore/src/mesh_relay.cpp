@@ -63,6 +63,12 @@ void maybeQueueRelay(const uint8_t* data, int len) {
     int pathBytes = hop_count * path_hash_size;
     if (offset + pathBytes >= len) return;     // битый кадр: тело пустое
 
+    // Наш хэш уже есть в пути — кадр когда-то прошёл через нас (петля или эхо) —
+    // повторно в него не вписываемся.
+    for (int h = 0; h < hop_count; h++) {
+        if (memcmp(&data[offset + h * path_hash_size], bot_pub, PATH_HASH_SIZE) == 0) return;
+    }
+
     // Личку НЕ для нас не разносим (у каждого свои ключи, читать её кроме адресата никто
     // не сможет), а личку для нас дальше передавать незачем — мы и есть получатель.
     if (payload_type == 0x02) {
