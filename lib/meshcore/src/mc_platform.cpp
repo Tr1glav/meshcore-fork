@@ -177,3 +177,10 @@ bool mcWifiConnected() {
 String mcLocalIp() {
     return WiFi.localIP().toString();
 }
+
+// ===== Батарея (узел) — срез на локальные функции display.cpp =====
+#if HAS_BATTERY
+bool mcBatteryPresent()   { return batteryPresent(); }
+int  mcBatteryPercent()   { return batteryPercent(); }
+float mcBatteryVoltage()  { return batteryVoltage(); }
+#endif
