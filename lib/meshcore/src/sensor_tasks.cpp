@@ -83,6 +83,11 @@ void sensorTasksTick() {
                (supRetryMs == 0 || millis() - supRetryMs >= SUPPORT_ANNOUNCE_RETRY_MS)) {
         supRetryMs = millis();
         supAnnounced = supportAnnounce();
+        // Ровно один раз на подключение: объявление уходит ещё и с каждым heartbeat, и
+        // строка в журнале на каждый из них была бы шумом. А вот того, что оно вообще
+        // ушло, до сих пор нигде не было видно — и молчащий прошивальщик выглядел как
+        // исправный.
+        if (supAnnounced) slog("[SUP] объявлен по радио: %s\n", mcLocalIp().c_str());
     }
     #endif
     #if FEATURE_BUTTON
