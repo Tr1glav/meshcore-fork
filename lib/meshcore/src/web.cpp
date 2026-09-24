@@ -361,6 +361,12 @@ void otaHandleSensorsHello() {
     otaServer.send(200, "text/plain", "sent");
 }
 
+// Всё, что ниже, — веб-интерфейс для человека: страница, CSS, JS. Саппорту он не
+// нужен: его веб-морда была бы дубликатом страницы координатора, а образ он получает
+// по сети через точки входа управления, которым страница не требуется. Выключаем
+// морду целиком — ни HTML, ни статика не попадут в прошивку саппорта.
+#if !FEATURE_SUPPORT
+
 // CSS и JS лежат в web/ и попадают в прошивку уже сжатыми (scripts/gen_web.py собирает
 // web_assets.h). Браузер распаковывает сам, а во флеше они занимают вчетверо меньше.
 // HTML остаётся в коде: он маленький и требует подстановки имени и версии.
@@ -439,6 +445,8 @@ void otaHandleRoot() {
     otaServer.sendHeader("Connection", "close");
     otaServer.send(200, "text/html", page);
 }
+
+#endif // !FEATURE_SUPPORT — веб-морда саппорту не нужна, остаются только точки входа управления
 
 // После неудачной самопрошивки возвращаем радио и усилитель, иначе бот оглохнет до перезагрузки
 static void otaSelfUpdateResume() {
@@ -749,7 +757,9 @@ void otaHandleStatus() {
 }
 
 void setupOtaServer() {
-    otaServer.on("/", HTTP_GET, otaHandleRoot);
+    #if !FEATURE_SUPPORT
+    otaServer.on("/", HTTP_GET, otaHandleRoot);   // веб-морда: нужна только координатору
+    #endif
     otaServer.on("/update", HTTP_POST, []() {
         otaServer.sendHeader("Connection", "close");
         if (otaSelfErr[0]) otaServer.send(200, "text/plain", String("FAIL: ") + otaSelfErr);
@@ -803,8 +813,10 @@ void setupOtaServer() {
     });
     otaServer.on("/config", HTTP_GET, otaHandleConfigGet);
     otaServer.on("/config", HTTP_POST, otaHandleConfigPost);
+    #if !FEATURE_SUPPORT
     otaServer.on("/style.css", HTTP_GET, otaHandleCss);
     otaServer.on("/app.js", HTTP_GET, otaHandleJs);
+    #endif
     otaServer.begin();
     Serial.println("OTA server: http://<ip>:3232/update | /ota/start");
 }
