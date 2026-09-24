@@ -39,12 +39,17 @@ void sensorTasksTick() {
     // Во время OTA mesh-отправки подавляем: радио слушает raw-чанки на быстром канале.
     static unsigned long lastHeartbeat = 0;
     static bool bootHelloSent = false;
+    #if FEATURE_SUPPORT
+    // Ушло ли объявление прошивальщика и когда его пробовали повторить.
+    static bool supAnnounced = false;
+    static unsigned long supRetryMs = 0;
+    #endif
     if (!otaActive && cfgReady()) {
         if (!bootHelloSent) {
             bootHelloSent = true;
             sensorSendHello();   // стартовый hello сразу после включения
             #if FEATURE_SUPPORT
-            supportAnnounce();   // следом за heartbeat: координатор узнаёт адрес прошивальщика
+            supAnnounced = supportAnnounce();   // следом за heartbeat: координатор узнаёт адрес прошивальщика
             #endif
             // не упреждать первый периодический heartbeat после boot-привета
             lastHeartbeat = millis();
@@ -54,16 +59,32 @@ void sensorTasksTick() {
             lastHeartbeat = millis();
             sensorSendHello();
             #if FEATURE_SUPPORT
-            supportAnnounce();   // следом за heartbeat: координатор узнаёт адрес прошивальщика
+            supAnnounced = supportAnnounce();   // следом за heartbeat: координатор узнаёт адрес прошивальщика
             #endif
         } else if (millis() - lastHeartbeat >= SENSOR_HEARTBEAT_MS) {
             lastHeartbeat = millis();
             sensorSendHello();
             #if FEATURE_SUPPORT
-            supportAnnounce();   // следом за heartbeat: координатор узнаёт адрес прошивальщика
+            supAnnounced = supportAnnounce();   // следом за heartbeat: координатор узнаёт адрес прошивальщика
             #endif
         }
     }
+    #if FEATURE_SUPPORT
+    // Объявление без адреса бессмысленно, а WiFi поднимается ПОЗЖЕ стартового heartbeat:
+    // попытка рядом с ним почти всегда уходит впустую. Без повтора следующая была бы
+    // только со следующим heartbeat — десять минут после каждой перезагрузки координатор
+    // считал бы, что прошивальщика в сети нет, и шил бы узлы сам, по радио.
+    //
+    // Обрыв WiFi обнуляет признак: переподключение может принести другой адрес, а по
+    // старому координатор постучится в пустоту и потеряет сессию на таймауте.
+    if (!mcWifiConnected()) {
+        supAnnounced = false;
+    } else if (!supAnnounced && !otaActive && cfgReady() &&
+               (supRetryMs == 0 || millis() - supRetryMs >= SUPPORT_ANNOUNCE_RETRY_MS)) {
+        supRetryMs = millis();
+        supAnnounced = supportAnnounce();
+    }
+    #endif
     #if FEATURE_BUTTON
     buttonTick();   // кнопка: счёт нажатий и переключение экрана, без блокировки
     #endif
