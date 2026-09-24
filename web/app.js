@@ -44,10 +44,10 @@ function setFile(f){
   $('fver').textContent=m?'версия '+m[1]:'';
   refresh();
 }
-// parts — массив {t:'текст', b:1 если жирным}; между частями ставится разделитель
-function addTarget(id,name,parts,online,bat,sub){
-  // sub — строка второго уровня: прошивальщик показан подпунктом координатора, потому
-  // что он часть того же узла сети по смыслу (кто ведёт сессии), а не очередная цель.
+// parts — массив {t:'текст', b:1 если жирным}; между частями ставится разделитель.
+// sub — строка второго уровня (прошивальщик) в общем прямоугольнике координатора.
+// grp — элемент-родитель этого прямоугольника; пуст — строка идёт в общий список.
+function addTarget(id,name,parts,online,bat,sub,grp){
   const d=el('div','tgt'+(target==id?' sel':'')+(sub?' sub':''));
   d.appendChild(el('span','dot'+(online?' on':'')));
   const grow=el('span','grow');
@@ -66,7 +66,7 @@ function addTarget(id,name,parts,online,bat,sub){
   d.appendChild(grow);
   if(bat>=0)d.insertAdjacentHTML('beforeend',batHtml(bat));   // bat — число
   d.onclick=()=>{target=id;renderTargets();refresh()};
-  $('targets').appendChild(d);
+  (grp||$('targets')).appendChild(d);
 }
 // 1 хоп, 2 хопа, 5 хопов: без этого строка читается как машинный вывод
 function hopw(n){
@@ -78,13 +78,14 @@ function hopw(n){
 
 function renderTargets(){
   $('targets').innerHTML='';
+  // Координатор и его прошивальщик — один узел сети: сессии ведёт прошивальщик, но это
+  // часть того же узла. Они в общем прямоугольнике: координатор сверху, прошивальщик
+  // под ним, строкой вполовину высоты. Если прошивальщик не объявился — одна строка.
+  const supName=info.sup||'';
+  const grp=supName?el('div','grp'):null;
   addTarget('__self__',$('dev').textContent+' — этот бот',
             [{t:info.env||'?',b:1},{t:'v'+(info.ver||'?')},{t:'файл .bin'}],true,
-            info.bat>=0?info.bat:-1);
-  // Прошивальщик идёт сразу за координатором и с отступом: сессии ведёт он, поэтому
-  // стоять ему среди обычных целей неправильно — но целью он тоже бывает (себя он не
-  // прошьёт, его шьёт координатор), поэтому строка остаётся выбираемой.
-  const supName=info.sup||'';
+            info.bat>=0?info.bat:-1,false,grp);
   if(supName){
     const sp=sensors.find(x=>x.name==supName);
     const parts=[{t:'прошивальщик',b:1}];
@@ -95,7 +96,8 @@ function renderTargets(){
       parts.push({t:'объявился по радио, в списке узлов ещё нет'});
     }
     if(info.supip)parts.push({t:'открыть',href:'http://'+info.supip+':3232/'});
-    addTarget(supName,supName,parts,sp?sp.online:true,sp?sp.bat:-1,true);
+    addTarget(supName,supName,parts,sp?sp.online:true,sp?sp.bat:-1,true,grp);
+    $('targets').appendChild(grp);
   }
 
   for(const s of sensors){

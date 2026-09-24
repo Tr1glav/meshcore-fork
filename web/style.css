@@ -15,12 +15,18 @@ label{display:block;font-size:11px;color:#93a4c4;margin:0 0 4px}
 .tgt{display:flex;gap:8px;align-items:center;padding:7px 8px;border:1px solid #35405a;border-radius:8px;background:#1e2638;cursor:pointer;margin-bottom:6px}
 .tgt:hover{border-color:#4a5775}
 .tgt.sel{border-color:#0ea5e9;background:#1b2b3d}
-/* Подпункт координатора: отступ и уголок связи — видно, что строка относится к тому,
-   что над ней, а не стоит сама по себе среди целей. */
-.tgt.sub{margin-left:18px;position:relative;padding:4px 8px;opacity:.9}
-.tgt.sub .nm{font-size:12px}
-.tgt.sub .meta{font-size:9px}
-.tgt.sub::before{content:'';position:absolute;left:-11px;top:50%;width:9px;height:1px;background:#35405a}
+/* Координатор и его прошивальщик — один узел сети: общий прямоугольник, координатор
+   сверху, прошивальщик под ним строкой вполовину высоты. Вертикальная линия слева и
+   уголок к ней показывают, что прошивальщик относится к координатору. */
+.grp{position:relative;border:1px solid #35405a;border-radius:8px;background:#1e2638;margin-bottom:6px;padding:2px 4px 2px 22px}
+.grp::before{content:'';position:absolute;left:11px;top:10px;bottom:10px;width:1px;background:#35405a}
+.grp>.tgt{background:transparent;border:0;margin-bottom:0;padding-left:0;padding-right:0}
+.grp>.tgt:hover{border-color:transparent}
+.grp>.tgt.sel{background:#1b2b3d;box-shadow:inset 0 0 0 1px #0ea5e9}
+.grp>.tgt .nm{font-size:12px}
+.grp>.tgt .meta{font-size:9px}
+.grp>.tgt.sub{margin-left:0;position:relative;padding:3px 6px;border-top:1px solid #33415c;border-radius:0;opacity:1}
+.grp>.tgt.sub::before{content:'';position:absolute;left:-11px;top:50%;width:8px;height:1px;background:#35405a}
 .tgt .nm{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tgt .meta{font-size:10px;color:#93a4c4;margin-top:2px}
 .tgt .meta b{color:#c7d3e8;font-weight:600}
