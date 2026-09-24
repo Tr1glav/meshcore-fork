@@ -50,6 +50,7 @@
 #define RESP_CODE_ADVERT_PATH      22
 #define RESP_CODE_DEFAULT_FLOOD_SCOPE 28
 #define PUSH_CODE_ADVERT         0x80    // знакомый узел объявился снова
+#define PUSH_CODE_PATH_UPDATED   0x81    // маршрут к контакту изменился — перезапросить командой 42
 #define PUSH_CODE_MSG_WAITING    0x83
 #define PUSH_CODE_NEW_ADVERT     0x8A    // узел услышан впервые, кадр целиком
 

@@ -263,7 +263,9 @@ bool parseMeshCorePacket(uint8_t* data, int len) {
                       ? lastSender + ": " + lastMessage : lastMessage;
         // Приложению нужен сам байт длины пути, а не число хопов: в нём закодированы и
         // размер хэша ретранслятора, и счётчик, по нему приложение и показывает маршрут.
-        companionOnChannelText(chIdx, forApp, lastSNR, path_len);
+        // Для пакетов, пришедших не флудом (direct), как в оригинале шлём маркер 0xFF.
+        uint8_t appPathLen = (route_type == 0x00 || route_type == 0x01) ? path_len : 0xFF;
+        companionOnChannelText(chIdx, forApp, lastSNR, appPathLen);
     }
     #endif
 

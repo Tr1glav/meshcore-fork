@@ -364,6 +364,12 @@ void companionOnAdvert(const uint8_t* pub, const uint8_t* app, int applen,
         contacts[idx].outPathLen = 0xFF;                  // пути не знаем — только флудом
     }
     Contact& c = contacts[idx];
+    // Путь мог поменяться: контакт перекочевал на другой ретранслятор. В этом случае
+    // приложению нужен пуш 0x81 — по нему оно переспросит команду 42 и обновит маршрут.
+    bool pathChanged = false;
+    uint8_t oldLen = c.advPathLen;
+    uint8_t oldHops = oldLen & 0x3F, oldHsize = (oldLen >> 6) + 1;
+    uint16_t oldBytes = (uint16_t)oldHops * oldHsize;
     c.type  = type;
     // c.flags — это флаги контакта в приложении (например «избранный»), а не признаки
     // адверта: их выставляет само приложение командой 9, и затирать их нельзя.
@@ -375,6 +381,9 @@ void companionOnAdvert(const uint8_t* pub, const uint8_t* app, int applen,
     uint8_t hops = pathLen & 0x3F, hsize = (pathLen >> 6) + 1;
     uint16_t bytes = (uint16_t)hops * hsize;
     if (path != nullptr && bytes <= sizeof(c.advPath)) {
+        if (oldBytes <= sizeof(c.advPath)) {   // сравниваем только если и старый путь читаем
+            pathChanged = (c.advPathLen != pathLen) || memcmp(c.advPath, path, min(oldBytes, bytes)) != 0;
+        }
         c.advPathLen = pathLen;
         memcpy(c.advPath, path, bytes);
     }
@@ -385,6 +394,12 @@ void companionOnAdvert(const uint8_t* pub, const uint8_t* app, int applen,
     uint8_t buf[160];
     if (isNew) {
         sendFrameToApp(buf, contactFrame(PUSH_CODE_NEW_ADVERT, c, buf));
+    } else if (pathChanged) {
+        // Маршрут к знакомому контакту изменился — шлём 0x81, приложение переспросит путь
+        buf[0] = PUSH_CODE_PATH_UPDATED;
+        memcpy(&buf[1], c.pub, 32);
+        sendFrameToApp(buf, 1 + 32);
+        Serial.printf("[ADV] путь к контакту <%02X> изменился\n", pub[0]);
     } else {
         buf[0] = PUSH_CODE_ADVERT;
         memcpy(&buf[1], c.pub, 32);
