@@ -31,8 +31,8 @@ bool supportStatus(String& out);
 bool supportHandOff(const String& target);
 
 // Обе передачи идут фоновой задачей: в них мегабайт по сети, а обработчик страницы
-// на это время заблокировал бы веб-сервер целиком.
-enum : uint8_t { SUP_JOB_NONE = 0, SUP_JOB_SELF, SUP_JOB_HANDOFF };
+// на это время заблокировал бы веб-сервер целиком. enum SUP_JOB_* приходит из
+// mesh-network-core/include/mc_platform.h (подключается из config.h).
 
 // Идёт ли передача прямо сейчас. Пока идёт, новую сессию начинать нельзя: обе писали бы
 // один и тот же /ota.bin.

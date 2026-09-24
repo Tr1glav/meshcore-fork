@@ -1,3 +1,5 @@
+// Объект display инстанцируется здесь (см. oled.h / DISPLAY_DEFINE_HERE)
+#define DISPLAY_DEFINE_HERE
 #include "config.h"
 #include "globals.h"
 #include "crypto.h"

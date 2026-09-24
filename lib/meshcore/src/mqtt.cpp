@@ -432,7 +432,9 @@ bool publishSensorMessage() {
     if (idx >= 0) {
         sensorLastActive[idx] = millis();
         sensorRssi[idx] = lastRSSI;
-        sensorHops[idx] = lastHopCount;      // сколько ретрансляторов прошёл этот пакет
+        // Кадр, пришедший от узла-прошивальщика (второе ухо), не доказывает прямой
+        // слышимости: хопов координатора в нём 0, но эфирные кадры прошли через ретрансляторы.
+        sensorHops[idx] = lastRxViaSupport ? 0xFF : lastHopCount;   // 0xFF — «неизвестно», не «напрямую»
         cameOnline = !sensorOnlineNow[idx];
         sensorOnlineNow[idx] = true;
     }

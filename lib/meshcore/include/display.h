@@ -1,5 +1,6 @@
 #pragma once
 #include "config.h"
+#include "oled.h"          // объект display и драйверы — только для прошивки
 void drawIdleStatus();
 // Перерисовка статуса по расписанию — зовётся из главного цикла
 void statusScreenTick();
