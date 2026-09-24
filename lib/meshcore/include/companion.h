@@ -17,9 +17,10 @@ uint32_t companionBlePin();
 bool companionBleLinked();
 // Входящее сообщение из сенсорного/группового канала — кладём в очередь для приложения
 // notify = false для того, что отправило само устройство: сообщение попадёт в переписку,
-// но телефон не покажет уведомление о собственном же действии.
+// но телефон не покажет уведомление о собственном же действии. Объявление (с дефолтом)
+// приходит из mesh-network-core/include/mc_platform.h.
 void companionOnChannelText(int channelIdx, const String& text, float snr, uint8_t pathLen,
-                            bool notify = true);
+                            bool notify);
 // Услышан адверт: обновляем список контактов и сообщаем об этом приложению.
 // app — содержимое поля приложения адверта: [флаги|тип][имя], applen — его длина.
 void companionOnAdvert(const uint8_t* pub, const uint8_t* app, int applen,

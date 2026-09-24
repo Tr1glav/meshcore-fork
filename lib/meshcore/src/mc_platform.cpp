@@ -47,7 +47,7 @@ void mcUiSensorRx(bool snsPub, float rssi) {
     display.setCursor(0, 50);
     char r3[12];
     if (snsPub) display.printf("SNS -> MQTT RSSI:%s", fmtFix(rssi, 0, r3, sizeof(r3)));
-    else        display.printf("SNS RX, MQTT %s", wifiConnected ? "off" : "no-wifi");
+    else        display.printf("SNS RX, MQTT %s", mcWifiConnected() ? "off" : "no-wifi");
     display.display();
     #else
     (void)snsPub; (void)rssi;
