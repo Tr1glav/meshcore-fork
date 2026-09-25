@@ -270,7 +270,7 @@ void earsTick() {
     if (drained == 0) return;
 
     WiFiClient c;
-    if (!c.connect(coordIp.c_str(), 80, EARS_CONNECT_MS)) {
+    if (!c.connect(coordIp.c_str(), 3232, EARS_CONNECT_MS)) {
         slog("[EARS] %s недоступен, кадры остаются в очереди\n", coordIp.c_str());
         return;
     }
@@ -306,3 +306,62 @@ void earsTick() {
     }
 }
 #endif // FEATURE_SUPPORT
+
+// ===== Обратный канал «вторых ушей»: ответ пингу уходит через прошивальщика =====
+// На пинг, пришедший через поддержку (/ears), координатор отвечает не со своего радио —
+// отправитель его не слышит. Готовый кадр ответа уходит прошивальщику POST /radiotx, и
+// тот передаёт его со своего радио (см. web.cpp). Хук зовёт ядро только у координатора
+// (meshReplyTick под #ifndef SENSOR_NODE), но и здесь не мешает оставить под тем же
+// условием — лишний символ в прошивке поддержки не нужен.
+#ifndef SENSOR_NODE
+#define RADIOTX_CONNECT_MS 3000
+// Сколько ждём объявление прошивальщика после последнего раз. Тот же срок жизни, что у
+// EARS_COORD_STALE_MS у прошивальщика (3 периода объявления координатора) — у поддержки
+// свой heartbeat, но порядок тот же: три пропуска подряд означают, что его нет.
+#define RADIOTX_SUPPORT_STALE_MS (3UL * 45000UL)
+bool mcRelayFrameToSupport(const uint8_t* frame, int len) {
+    if (len <= 0 || len > 255) return false;
+    if (supportIp.length() < 7) return false;
+    if ((unsigned long)(millis() - supportSeenMs) > RADIOTX_SUPPORT_STALE_MS) return false;
+
+    static const char RADIO_HEX[] = "0123456789ABCDEF";
+    String body;
+    body.reserve(2 * len);
+    for (int i = 0; i < len; i++) {
+        body += RADIO_HEX[frame[i] >> 4];
+        body += RADIO_HEX[frame[i] & 0x0F];
+    }
+
+    WiFiClient c;
+    if (!c.connect(supportIp.c_str(), 3232, RADIOTX_CONNECT_MS)) {
+        slog("[RADIOTX] %s недоступен\n", supportIp.c_str());
+        return false;
+    }
+    c.setTimeout(4000);
+    c.print(String("POST /radiotx HTTP/1.1\r\nHost: ") + supportIp +
+            "\r\nX-API-Key: " + MESH_API_KEY +
+            "\r\nContent-Type: text/plain\r\n"
+            "Content-Length: " + String((unsigned)body.length()) +
+            "\r\nConnection: close\r\n\r\n");
+    c.print(body);
+
+    bool ok = false;
+    unsigned long deadline = millis() + 4000;
+    String head;
+    while (c.connected() && (long)(millis() - deadline) < 0) {
+        if (!c.available()) { delay(1); continue; }
+        char ch = (char)c.read();
+        if (ch == '\r' || ch == '\n') {
+            if (head.startsWith("HTTP/1.") && head.indexOf(" 200 ") > 0) ok = true;
+            if (head.length() == 0) break;
+            head = "";
+        } else {
+            head += ch;
+        }
+    }
+    c.stop();
+    slog("[RADIOTX] ответ %s (%d байт %s прошивальщику)\n",
+         ok ? "отдан" : "не принят", len, ok ? "ушло" : "осталось");
+    return ok;
+}
+#endif // !SENSOR_NODE

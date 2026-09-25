@@ -232,7 +232,6 @@ void otaHandleLogTail() {
     otaServer.send(200, "text/plain; charset=utf-8", out);
 }
 
-#ifndef SENSOR_NODE
 static int hexVal(char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -240,6 +239,7 @@ static int hexVal(char c) {
     return -1;
 }
 
+#ifndef SENSOR_NODE
 // «Вторые уши»: POST /ears от прошивальщика. Строки — "<hex-кадр>:<rssi>:<snr>": кадр,
 // который прошивальщик услышал там, куда радиокарта координатора не достаёт, и его оценка
 // связи. Кадры проходят тот же дедуп и разбор (meshRxFrame), что и с радио, поэтому
@@ -289,6 +289,40 @@ void otaHandleEars() {
     otaServer.send(200, "application/json", reply);
 }
 #endif // !SENSOR_NODE
+
+#ifdef SENSOR_NODE
+// Обратный канал «вторых ушей»: координатор отвечает на пинг, пришедший через
+// прошивальщика, — и отдаёт готовый кадр ответа этому прошивальщику POST /radiotx,
+// чтобы тот вывел его в эфир СО СВОЕГО радио: отправитель слышит его, а координатора нет.
+void otaHandleRadiotx() {
+    // Принимаем только от координатора со своим ключом (тот же MESH_API_KEY, что и /ears).
+    if (otaServer.header("X-API-Key") != String(MESH_API_KEY)) {
+        slog("[RADIOTX] неверный ключ\n");
+        otaServer.send(403, "text/plain", "forbidden");
+        return;
+    }
+    String hex = otaServer.arg("plain");
+    if (hex.length() == 0 || (hex.length() & 1) != 0) {
+        otaServer.send(400, "text/plain", "bad hex");
+        return;
+    }
+    uint8_t frame[256];
+    int n = 0;
+    for (int i = 0; i + 1 < (int)hex.length() && n < 256; i += 2) {
+        int hi = hexVal(hex[i]), lo = hexVal(hex[i + 1]);
+        if (hi < 0 || lo < 0) { n = 0; break; }
+        frame[n++] = (uint8_t)((hi << 4) | lo);
+    }
+    if (n < 9) {   // короче минимального сырого кадра (см. radioRxTick) — в эфир не идёт
+        otaServer.send(400, "text/plain", "bad frame");
+        return;
+    }
+    // Кадр полностью готов (заголовок, путь, шифрованный текст) — просто выводим его.
+    floodSend(-1, frame, n);
+    slog("[RADIOTX] %d байт в эфир\n", n);
+    otaServer.send(200, "text/plain", "OK");
+}
+#endif // SENSOR_NODE
 
 void otaHandleSensors() {
     String json = "[";
@@ -841,6 +875,9 @@ void setupOtaServer() {
     otaServer.on("/sensors", HTTP_GET, otaHandleSensors);
     #ifndef SENSOR_NODE
     otaServer.on("/ears", HTTP_POST, otaHandleEars);   // «вторые уши»: приём кадров по сети
+    #endif
+    #ifdef SENSOR_NODE
+    otaServer.on("/radiotx", HTTP_POST, otaHandleRadiotx);   // обратно: координатор шлёт кадр в эфир
     #endif
     otaServer.on("/sensors/hello", HTTP_POST, otaHandleSensorsHello);
     otaServer.on("/fw/check", HTTP_POST, otaHandleFwCheck);
