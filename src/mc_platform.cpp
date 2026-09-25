@@ -334,7 +334,7 @@ bool mcRelayFrameToSupport(const uint8_t* frame, int len) {
 
     WiFiClient c;
     if (!c.connect(supportIp.c_str(), 3232, RADIOTX_CONNECT_MS)) {
-        slog("[RADIOTX] %s недоступен\n", supportIp.c_str());
+        Serial.printf("[RADIOTX] %s недоступен\n", supportIp.c_str());
         return false;
     }
     c.setTimeout(4000);
@@ -360,7 +360,7 @@ bool mcRelayFrameToSupport(const uint8_t* frame, int len) {
         }
     }
     c.stop();
-    slog("[RADIOTX] ответ %s (%d байт %s прошивальщику)\n",
+    Serial.printf("[RADIOTX] ответ %s (%d байт %s прошивальщику)\n",
          ok ? "отдан" : "не принят", len, ok ? "ушло" : "осталось");
     return ok;
 }
