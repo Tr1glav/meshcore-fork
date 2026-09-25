@@ -253,12 +253,12 @@ void earsTick() {
     String body;
     body.reserve(EARS_BATCH_CHARS);
     unsigned drained = 0;
-    static const char HEX[] = "0123456789ABCDEF";
+    static const char HEXCH[] = "0123456789ABCDEF";
     for (unsigned k = 0; k < earsCount && body.length() < EARS_BATCH_CHARS; k++) {
         const uint8_t i = (earsHead + k) % EARS_QUEUE_MAX;
         for (int b = 0; b < earsLen[i]; b++) {
-            body += HEX[earsPool[i][b] >> 4];
-            body += HEX[earsPool[i][b] & 0x0F];
+            body += HEXCH[earsPool[i][b] >> 4];
+            body += HEXCH[earsPool[i][b] & 0x0F];
         }
         body += ':';
         body += (int)lround(earsRssi[i]);
