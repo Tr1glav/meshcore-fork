@@ -246,6 +246,13 @@ static int hexVal(char c) {
 // дубликаты не создают двойных публикаций, а RSSI/SNR — лучшая оценка связи, которая есть
 // (см. MeshRxMeta). Ответ ровно такой, чтобы прошивальщик понял, сколько из пачки принято.
 void otaHandleEars() {
+    // Принимаем форвард только от прошивальщика со своим ключом (см. MESH_API_KEY в config.h).
+    // Иначе любой прибор в сети мог бы подсунуть координатору чужие кадры.
+    if (otaServer.header("X-API-Key") != String(MESH_API_KEY)) {
+        slog("[WEB] /ears: неверный ключ\n");
+        otaServer.send(403, "text/plain", "forbidden");
+        return;
+    }
     String body = otaServer.arg("plain");
     if (body.length() == 0) { otaServer.send(400, "application/json", "{\"recv\":0,\"dup\":0}"); return; }
     int pos = 0, recv = 0, dup = 0;

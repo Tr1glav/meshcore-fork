@@ -276,6 +276,7 @@ void earsTick() {
     }
     c.setTimeout(4000);
     c.print(String("POST /ears HTTP/1.1\r\nHost: ") + coordIp +
+            "\r\nX-API-Key: " + MESH_API_KEY +
             "\r\nContent-Type: text/plain\r\n"
             "Content-Length: " + String((unsigned)body.length()) +
             "\r\nConnection: close\r\n\r\n");
