@@ -18,6 +18,7 @@
 #include "config.h"
 #include "globals.h"
 #include "crypto.h"      // fmtFix: печать RSSI/SNR без float-printf
+#include "ota.h"         // slog: журнал показывается на странице координатора
 #include "display.h"
 #include <WiFi.h>
 
@@ -200,3 +201,107 @@ bool mcBatteryPresent()   { return batteryPresent(); }
 int  mcBatteryPercent()   { return batteryPercent(); }
 float mcBatteryVoltage()  { return batteryVoltage(); }
 #endif
+
+// ===== «Вторые уши»: кадры, услышанные по радио, уходят координатору по сети =====
+// Прошивальщик стоит ближе, чем координатор, к части узлов и слышит их, а координатор —
+// нет. Услышанные кадры он копит в кольцо и батчем отдаёт координатору POST /ears; там
+// они проходят тот же дедуп и разбор, что и с радио, — координатор видит узлы и их hello,
+// до которых его радиокарта не достаёт.
+//
+// Кольцо маленькое намеренно: это дренаж до ближайшего POST, а не архив. Когда сеть лежит
+// и очередь переполняется, новые кадры вытесняют старые — старые и так никому не нужны.
+#if FEATURE_SUPPORT
+#define EARS_QUEUE_MAX 24
+#define EARS_FRAME_MAX 255
+#define EARS_BATCH_CHARS 6000   // тело запроса: ~11 кадров, остальное доберёт следующий POST
+#define EARS_CONNECT_MS 3000
+// Координатор объявляется "coord:<ip>" каждые COORD_ANNOUNCE_MS; молчит дольше трёх
+// периодов — считаем его ушедшим и не стучимся в пустоту (см. coordinator_tasks.cpp).
+#define EARS_COORD_STALE_MS (3UL * 45000UL)
+
+static uint8_t earsPool[EARS_QUEUE_MAX][EARS_FRAME_MAX];
+static uint8_t  earsLen[EARS_QUEUE_MAX];
+static float    earsRssi[EARS_QUEUE_MAX];
+static float    earsSnr[EARS_QUEUE_MAX];
+static uint8_t  earsHead = 0;    // самый старый кадр
+static uint8_t  earsCount = 0;
+
+void mcOnFreshFrame(const uint8_t* buf, size_t len, float rssi, float snr) {
+    if (len == 0 || len > EARS_FRAME_MAX) return;
+    uint8_t tail = (earsHead + earsCount) % EARS_QUEUE_MAX;
+    memcpy(earsPool[tail], buf, len);
+    earsLen[tail] = (uint8_t)len;
+    earsRssi[tail] = rssi;
+    earsSnr[tail] = snr;
+    if (earsCount < EARS_QUEUE_MAX) earsCount++;
+    else earsHead = (earsHead + 1) % EARS_QUEUE_MAX;   // кольцо полно — самое старое долой
+}
+
+static void earsPop(unsigned n) {
+    earsHead = (earsHead + n) % EARS_QUEUE_MAX;
+    earsCount -= n;
+}
+
+// Главный цикл зовёт раз в проход; работает только у прошивальщика (FEATURE_SUPPORT),
+// там же, где и хук, — оба в одном контексте, гонок нет.
+void earsTick() {
+    if (earsCount == 0) return;
+    if (!mcWifiConnected()) return;
+    if (coordIp.length() < 7) return;
+    if ((unsigned long)(millis() - coordSeenMs) > EARS_COORD_STALE_MS) return;
+
+    String body;
+    body.reserve(EARS_BATCH_CHARS);
+    unsigned drained = 0;
+    static const char HEX[] = "0123456789ABCDEF";
+    for (unsigned k = 0; k < earsCount && body.length() < EARS_BATCH_CHARS; k++) {
+        const uint8_t i = (earsHead + k) % EARS_QUEUE_MAX;
+        for (int b = 0; b < earsLen[i]; b++) {
+            body += HEX[earsPool[i][b] >> 4];
+            body += HEX[earsPool[i][b] & 0x0F];
+        }
+        body += ':';
+        body += (int)lround(earsRssi[i]);
+        body += ':';
+        body += (int)lround(earsSnr[i]);
+        body += '\n';
+        drained++;
+    }
+    if (drained == 0) return;
+
+    WiFiClient c;
+    if (!c.connect(coordIp.c_str(), 80, EARS_CONNECT_MS)) {
+        slog("[EARS] %s недоступен, кадры остаются в очереди\n", coordIp.c_str());
+        return;
+    }
+    c.setTimeout(4000);
+    c.print(String("POST /ears HTTP/1.1\r\nHost: ") + coordIp +
+            "\r\nContent-Type: text/plain\r\n"
+            "Content-Length: " + String((unsigned)body.length()) +
+            "\r\nConnection: close\r\n\r\n");
+    c.print(body);
+    // Ответ нам не нужен, но код статуса скажет честно, принял ли координатор кадры:
+    // снятая с очереди пачка, уехавшая в пустоту, была бы потеряна навсегда.
+    bool ok = false;
+    unsigned long deadline = millis() + 4000;
+    String head;
+    while (c.connected() && (long)(millis() - deadline) < 0) {
+        if (!c.available()) { delay(1); continue; }
+        char ch = (char)c.read();
+        if (ch == '\r' || ch == '\n') {
+            if (head.startsWith("HTTP/1.") && head.indexOf(" 200 ") > 0) ok = true;
+            if (head.length() == 0) break;   // пустая строка = конец заголовка
+            head = "";
+        } else {
+            head += ch;
+        }
+    }
+    c.stop();
+    if (ok) {
+        earsPop(drained);
+        slog("[EARS] ушло %u кадров, в очереди %u\n", drained, earsCount);
+    } else {
+        slog("[EARS] POST /ears не принят (%u кадров остаются)\n", drained);
+    }
+}
+#endif // FEATURE_SUPPORT

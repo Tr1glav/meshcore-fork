@@ -65,6 +65,23 @@ void coordinatorTasksTick() {
         sendSensorTimeSync();
     }
     fwUpdateTick();   // новые версии из релизов GitHub
+    // ===== «Вторые уши»: объявляем адрес, куда слать услышанное по радио =====
+    // Слушает узел-прошивальщик (разбор SENSOR_MSG_COORD в ядре): слыша узлы, до которых
+    // мы по радио не добираемся, он шлёт их кадры сюда, на POST /ears. Как с "support:",
+    // объявление отдельным сообщением — платить байтами за него в каждом heartbeat некому.
+    // Период держит компромисс: перезагрузившийся координатор прошивальщик должен найти
+    // за десятки секунд, но и эфир мусором забивать незачем.
+    #if FEATURE_WEB && !defined(SENSOR_NODE)
+    #define COORD_ANNOUNCE_MS 45000UL
+    static unsigned long lastCoordAnnounceMs = 0;
+    if (mcWifiConnected() && sensorChannelIdx >= 0 && !otaSessionActive() &&
+        (lastCoordAnnounceMs == 0 || millis() - lastCoordAnnounceMs >= COORD_ANNOUNCE_MS)) {
+        lastCoordAnnounceMs = millis();
+        char msg[32];
+        snprintf(msg, sizeof(msg), "%s%s", SENSOR_MSG_COORD, mcLocalIp().c_str());
+        sensorSendMsg(msg);
+    }
+    #endif
     #if FEATURE_WEB
     webTick();        // очередь настроек узла: по одному сообщению раз в CFG_MSG_GAP_MS
     #endif

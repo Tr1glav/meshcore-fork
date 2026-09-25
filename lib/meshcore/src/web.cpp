@@ -232,6 +232,57 @@ void otaHandleLogTail() {
     otaServer.send(200, "text/plain; charset=utf-8", out);
 }
 
+#ifndef SENSOR_NODE
+static int hexVal(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+// «Вторые уши»: POST /ears от прошивальщика. Строки — "<hex-кадр>:<rssi>:<snr>": кадр,
+// который прошивальщик услышал там, куда радиокарта координатора не достаёт, и его оценка
+// связи. Кадры проходят тот же дедуп и разбор (meshRxFrame), что и с радио, поэтому
+// дубликаты не создают двойных публикаций, а RSSI/SNR — лучшая оценка связи, которая есть
+// (см. MeshRxMeta). Ответ ровно такой, чтобы прошивальщик понял, сколько из пачки принято.
+void otaHandleEars() {
+    String body = otaServer.arg("plain");
+    if (body.length() == 0) { otaServer.send(400, "application/json", "{\"recv\":0,\"dup\":0}"); return; }
+    int pos = 0, recv = 0, dup = 0;
+    while (pos < (int)body.length()) {
+        int e = body.indexOf('\n', pos);
+        if (e < 0) e = body.length();
+        String line = body.substring(pos, e);
+        pos = e + 1;
+        int c1 = line.indexOf(':');
+        int c2 = (c1 < 0) ? -1 : line.indexOf(':', c1 + 1);
+        if (c1 <= 0 || c2 <= c1) continue;
+        String hex = line.substring(0, c1);
+        int rssi = line.substring(c1 + 1, c2).toInt();
+        int snr = line.substring(c2 + 1).toInt();
+        if ((hex.length() & 1) != 0) continue;   // hex обязан быть чётным
+        uint8_t frame[256];
+        int n = 0;
+        for (int i = 0; i + 1 < (int)hex.length() && n < 256; i += 2) {
+            int hi = hexVal(hex[i]), lo = hexVal(hex[i + 1]);
+            if (hi < 0 || lo < 0) { n = 0; break; }
+            frame[n++] = (uint8_t)((hi << 4) | lo);
+        }
+        if (n < 9) continue;   // короче минимального сырого кадра (см. radioRxTick)
+        recv++;
+        MeshRxMeta meta;
+        meta.origin = MESH_RX_FORWARDED;
+        meta.rssi = (float)rssi;
+        meta.snr = (float)snr;
+        if (!meshRxFrame(frame, n, meta)) dup++;
+    }
+    char reply[80];
+    snprintf(reply, sizeof(reply), "{\"recv\":%d,\"dup\":%d,\"new\":%d}", recv, dup, recv - dup);
+    slog("[EARS] принято %d кадров (дублей %d)\n", recv, dup);
+    otaServer.send(200, "application/json", reply);
+}
+#endif // !SENSOR_NODE
+
 void otaHandleSensors() {
     String json = "[";
     for (int i = 0; i < sensorDeviceDiscCount; i++) {
@@ -781,6 +832,9 @@ void setupOtaServer() {
     otaServer.on("/ota/abort", HTTP_POST, otaHandleAbort);
     otaServer.on("/ota/status", HTTP_GET, otaHandleStatus);
     otaServer.on("/sensors", HTTP_GET, otaHandleSensors);
+    #ifndef SENSOR_NODE
+    otaServer.on("/ears", HTTP_POST, otaHandleEars);   // «вторые уши»: приём кадров по сети
+    #endif
     otaServer.on("/sensors/hello", HTTP_POST, otaHandleSensorsHello);
     otaServer.on("/fw/check", HTTP_POST, otaHandleFwCheck);
     otaServer.on("/fw/status", HTTP_GET, otaHandleFwStatus);
