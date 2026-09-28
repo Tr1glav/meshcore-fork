@@ -18,6 +18,10 @@
 #include "support.h"   // coordPushTick: координатор сообщает свой адрес прошивальщикам
 #include "companion.h"
 #include "app_main.h"
+#include <WiFi.h>
+#include <LittleFS.h>
+#include <esp_partition.h>
+#include "ota_internal.h"
 
 
 static void initSystemClock() {

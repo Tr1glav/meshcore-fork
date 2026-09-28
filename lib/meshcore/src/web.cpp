@@ -9,6 +9,10 @@
 #include "fwupdate.h"   // проверка обновлений по кнопке
 #include "display.h"
 #include <esp_system.h>
+#include <WiFi.h>
+#include <LittleFS.h>
+#include <esp_partition.h>
+#include "mqtt.h"
 
 // ===== Веб-страница координатора и диагностика =====
 // Выделено из ota.cpp: разметка страницы, все обработчики HTTP, отчёт о состоянии и
@@ -17,6 +21,10 @@
 // ota_internal.h.
 
 #if FEATURE_WEB
+
+// Сервер страницы: порт 3232. Определён здесь, а не в globals.h ядра, — ядро WebServer не
+// касается, и держать его в библиотеке протокола значило тащить <WebServer.h> в каждый узел.
+WebServer otaServer(3232);
 
 static const char* resetReasonStr() {
     switch (esp_reset_reason()) {

@@ -12,6 +12,7 @@
 #include <BLE2902.h>
 #include <BLESecurity.h>
 #include <Preferences.h>
+#include <LittleFS.h>
 
 
 static BLEServer* bleServer = nullptr;

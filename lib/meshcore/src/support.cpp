@@ -23,6 +23,7 @@
 
 #include <LittleFS.h>
 #include <WiFi.h>
+#include "mqtt.h"     // wifiConnected: сеть нужна и для передачи образа
 
 extern "C" {
 #include "esp32s3/rom/miniz.h"

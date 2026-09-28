@@ -6,6 +6,34 @@
 #include "ota.h"
 
 #ifdef MQTT_ENABLED
+
+#include <esp_sntp.h>
+
+// Состояние сети, брокера, времени и Home Assistant. Переехало из globals.h ядра: протокол
+// носил в себе WiFi-клиент и PubSubClient, не обращаясь к ним ни разу. Guard см. в mqtt.h.
+WiFiClient wifiClient;
+bool wifiConnected = false;
+bool wifiConnInProgress = false;
+unsigned long wifiConnStartMs = 0;
+unsigned long lastMqttReconnectMs = 0;
+
+PubSubClient mqtt(wifiClient);
+char mqttPrefix[64];
+bool mqttConnected = false;
+unsigned long lastStatusPublishMs = 0;
+bool discoveryPublished = false;
+unsigned long lastmsgClearAt = 0;
+bool lastmsgPendingClear = false;
+unsigned long snsBtnClearAt = 0;
+bool snsBtnPendingClear = false;
+char snsBtnSlug[48];
+unsigned long lastSensorAvailCheckMs = 0;
+
+bool ntpStarted = false;
+bool ntpSyncedLogged = false;
+unsigned long lastNtpSyncMs = 0;
+unsigned long lastSensorTimeSyncMs = 0;
+
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
     char msg[256];
     int mlen = min((unsigned int)255, length);
@@ -23,10 +51,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
             return;
         }
         uint8_t frame[256];
-        int fl = buildGroupFrameFlood(mqttTxChannel, msg, frame, sizeof(frame));
+        int fl = buildGroupFrameFlood(txChannelIdx, msg, frame, sizeof(frame));
         if (fl > 0) {
-            Serial.printf("[MQTT TX] %s: %s: %s (%dB)\n", channels[mqttTxChannel].name, cfg.name.c_str(), msg, fl);
-            floodSend(mqttTxChannel, frame, fl);
+            Serial.printf("[MQTT TX] %s: %s: %s (%dB)\n", channels[txChannelIdx].name, cfg.name.c_str(), msg, fl);
+            floodSend(txChannelIdx, frame, fl);
         }
         return;
     }
@@ -196,16 +224,16 @@ void publishMessage() {
     Serial.printf("[MQTT] message published\n");
 
     // last_msg: публикуется только для ВЫБРАННОГО в HA канала (для триггеров).
-    // Значение меняется только когда пришло сообщение с канала mqttTxChannel.
+    // Значение меняется только когда пришло сообщение с канала txChannelIdx.
     // Спустя LASTMSG_RESET_MS после публикации обнуляется: HA-триггер на
     // одинаковый текст срабатывает снова (состояние менялось /gate -> "" -> /gate).
-    if (lastChannelIdx == mqttTxChannel && lastMessage.length() > 0) {
+    if (lastChannelIdx == txChannelIdx && lastMessage.length() > 0) {
         char lmTopic[96];
         snprintf(lmTopic, sizeof(lmTopic), "%s/lastmsg", mqttPrefix);
         mqtt.publish(lmTopic, lastMessage.c_str(), true);
         lastmsgClearAt = millis() + LASTMSG_RESET_MS;
         lastmsgPendingClear = true;
-        Serial.printf("[MQTT] lastmsg published (ch %s)\n", channels[mqttTxChannel].name);
+        Serial.printf("[MQTT] lastmsg published (ch %s)\n", channels[txChannelIdx].name);
     }
 }
 
@@ -596,8 +624,8 @@ void publishStatus() {
     char prvEsc[64];
     jsonEscape(privateChannelName.c_str(), prvEsc, sizeof(prvEsc));
     char chEsc[64];
-    const char* chName = (mqttTxChannel >= 0 && mqttTxChannel < numChannels)
-                         ? channels[mqttTxChannel].name : "?";
+    const char* chName = (txChannelIdx >= 0 && txChannelIdx < numChannels)
+                         ? channels[txChannelIdx].name : "?";
     jsonEscape(chName, chEsc, sizeof(chEsc));
     char topic[96], payload[384];
     unsigned long upSec = millis() / 1000;

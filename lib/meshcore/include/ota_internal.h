@@ -7,6 +7,13 @@
 // (fwupdate.cpp — он проставляет имя скачанного файла). Объявления сгенерированы по
 // самим определениям, чтобы типы не разошлись при правках.
 
+// Сервер страницы. Он тоже переехал сюда из globals.h ядра: WebServer в библиотеке
+// протокола существовал только затем, чтобы им пользовалась прошивка.
+#if FEATURE_WEB
+#include <WebServer.h>
+extern WebServer otaServer;
+#endif
+
 #if FEATURE_WEB || FEATURE_MESH_OTA_SENDER
 extern unsigned long otaSessionMs; // старт сессии — для скорости и длительности на странице
 extern unsigned long otaDoneMs;    // когда узел подтвердил прошивку

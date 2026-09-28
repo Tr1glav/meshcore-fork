@@ -5,6 +5,7 @@
 #include "crypto.h"
 #include "display.h"
 #include "companion.h"   // код сопряжения BLE на экране компаньона
+#include "mqtt.h"
 
 
 #ifdef SENSOR_NODE
@@ -245,8 +246,8 @@ void drawIdleStatus() {
     const char* w = wifiConnected ? "+" : "-";
     const char* m = mqttConnected ? "+" : "-";
     display.printf("WiFi:%s MQTT:%s\n", w, m);
-    if (mqttTxChannel >= 0 && mqttTxChannel < numChannels) {
-        display.printf("TX: %s\n", channels[mqttTxChannel].name);
+    if (txChannelIdx >= 0 && txChannelIdx < numChannels) {
+        display.printf("TX: %s\n", channels[txChannelIdx].name);
     }
     #endif
     display.println(tbuf);

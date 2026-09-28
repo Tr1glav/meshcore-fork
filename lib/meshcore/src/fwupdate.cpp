@@ -45,6 +45,9 @@ int fwVersionCmp(const String& a, const String& b) {
 // без перепрошивки.
 #if __has_include("ca_bundle.h")
 #include "ca_bundle.h"
+#include <WiFi.h>
+#include <LittleFS.h>
+#include "mqtt.h"
 #define HAVE_CA_BUNDLE 1
 #else
 #define HAVE_CA_BUNDLE 0
