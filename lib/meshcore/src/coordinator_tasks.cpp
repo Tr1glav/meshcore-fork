@@ -65,27 +65,10 @@ void coordinatorTasksTick() {
         sendSensorTimeSync();
     }
     fwUpdateTick();   // новые версии из релизов GitHub
-    // ===== «Вторые уши»: объявляем адрес, куда слать услышанное по радио =====
-    // Слушает узел-прошивальщик (разбор SENSOR_MSG_COORD в ядре): слыша узлы, до которых
-    // мы по радио не добираемся, он шлёт их кадры сюда, на POST /ears. Как с "support:",
-    // объявление отдельным сообщением — платить байтами за него в каждом heartbeat некому.
-    // Период (COORD_ANNOUNCE_MS в config.h) держит компромисс: перезагрузившийся
-    // координатор прошивальщик должен найти за десятки секунд, но и эфир мусором забивать
-    // незачем. Отсюда же и условие: объявляемся, только пока прошивальщик в сети. Слушать
-    // это объявление больше некому, и в сети без прошивальщика оно было бы лишним кадром в
-    // сенсорном канале каждые 45 секунд — в тринадцать раз чаще, чем heartbeat самих узлов.
-    // Перезагрузился координатор — прошивальщик напомнит о себе своим heartbeat, и с этого
-    // момента объявления пойдут (первое — сразу, lastCoordAnnounceMs ещё нулевой).
-    #if FEATURE_WEB && !defined(SENSOR_NODE)
-    static unsigned long lastCoordAnnounceMs = 0;
-    if (mcWifiConnected() && sensorChannelIdx >= 0 && !otaSessionActive() && supportPresent() &&
-        (lastCoordAnnounceMs == 0 || millis() - lastCoordAnnounceMs >= COORD_ANNOUNCE_MS)) {
-        lastCoordAnnounceMs = millis();
-        char msg[32];
-        snprintf(msg, sizeof(msg), "%s%s", SENSOR_MSG_COORD, mcLocalIp().c_str());
-        sensorSendMsg(msg);
-    }
-    #endif
+    // «Вторые уши»: свой адрес прошивальщикам координатор сообщает ПО СЕТИ (coordPushTick в
+    // support.cpp, POST /coord). Здесь раньше стояло объявление "coord:<ip>" в сенсорный
+    // канал каждые 45 секунд — служебный адрес занимал эфир в тринадцать раз чаще, чем
+    // heartbeat самих узлов, и слышали его все, включая тех, кому он не нужен.
     #if FEATURE_WEB
     webTick();        // очередь настроек узла: по одному сообщению раз в CFG_MSG_GAP_MS
     #endif

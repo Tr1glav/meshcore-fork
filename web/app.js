@@ -81,13 +81,16 @@ function renderTargets(){
   // Координатор и его прошивальщик — один узел сети: сессии ведёт прошивальщик, но это
   // часть того же узла. Они в общем прямоугольнике: координатор сверху, прошивальщик
   // под ним, строкой вполовину высоты. Если прошивальщик не объявился — одна строка.
-  const supName=info.sup||'';
-  const grp=supName?el('div','grp'):null;
+  // Прошивальщиков может быть несколько: каждый стоит там, где слышно свою часть сети.
+  // Все они — подпункты координатора: сессию ведёт один из них, а кто именно, решает
+  // координатор по хопам до цели.
+  const sups=info.sups||[];
+  const grp=sups.length?el('div','grp'):null;
   addTarget('__self__',$('dev').textContent+' — этот бот',
             [{t:info.env||'?',b:1},{t:'v'+(info.ver||'?')},{t:'файл .bin'}],true,
             info.bat>=0?info.bat:-1,false,grp);
-  if(supName){
-    const sp=sensors.find(x=>x.name==supName);
+  for(const sup of sups){
+    const sp=sensors.find(x=>x.name==sup.n);
     const parts=[{t:'прошивальщик',b:1}];
     if(sp){
       parts.push({t:sp.ver?'v'+sp.ver:'версия ?'},
@@ -95,13 +98,13 @@ function renderTargets(){
     }else{
       parts.push({t:'объявился по радио, в списке узлов ещё нет'});
     }
-    if(info.supip)parts.push({t:'открыть',href:'http://'+info.supip+':3232/'});
-    addTarget(supName,supName,parts,sp?sp.online:true,sp?sp.bat:-1,true,grp);
-    $('targets').appendChild(grp);
+    if(sup.ip)parts.push({t:'открыть',href:'http://'+sup.ip+':3232/'});
+    addTarget(sup.n,sup.n,parts,sp?sp.online:true,sp?sp.bat:-1,true,grp);
   }
+  if(grp)$('targets').appendChild(grp);
 
   for(const s of sensors){
-    if(s.name==supName)continue;             // уже показан подпунктом выше
+    if(sups.some(x=>x.n==s.name))continue;   // уже показан подпунктом выше
     const parts=[{t:s.env||'?',b:1},{t:s.ver?'v'+s.ver:'версия ?'},
                  {t:s.online?'онлайн':'был '+ago(s.seen_s)+' назад'}];
     if(s.rssi)parts.push({t:s.rssi+' dBm'});

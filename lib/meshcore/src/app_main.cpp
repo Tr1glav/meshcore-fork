@@ -15,6 +15,7 @@
 #include "ota.h"
 #include "mqtt.h"
 #include "fwupdate.h"
+#include "support.h"   // coordPushTick: координатор сообщает свой адрес прошивальщикам
 #include "companion.h"
 #include "app_main.h"
 
@@ -324,6 +325,12 @@ void appLoop() {
     // heartbeat, а очередь кадров живёт своей жизнью.
     #if FEATURE_SUPPORT
     earsTick();
+    #endif
+
+    // Обратная сторона: координатор сообщает прошивальщикам свой адрес — по сети, а не в
+    // эфир. По одному адресату за проход: каждый — это соединение.
+    #if FEATURE_MESH_OTA_SENDER && !defined(SENSOR_NODE)
+    coordPushTick();
     #endif
 
     // во время mesh OTA кадры пачки идут каждые ~40 мс — опрашиваем радио чаще

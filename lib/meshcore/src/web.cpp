@@ -192,23 +192,36 @@ void otaHandleInfo() {
     char temp[12], volt[12];
     fmtFix(cpuTempC(), 1, temp, sizeof(temp));
     fmtFix(batteryVoltage(), 2, volt, sizeof(volt));
-    // Прошивальщик, если он объявился: по его адресу видно, куда смотреть за ходом
-    // сессии, которую координатор отдал ему.
-    char supName[48];
-    jsonEscape(supportPresent() ? supportName.c_str() : "", supName, sizeof(supName));
-    char json[448];
+    // Прошивальщики, которые объявились: их может быть несколько, и страница показывает
+    // каждого — по адресу видно, куда смотреть за ходом отданной ему сессии.
+    char sups[320] = "";
+    {
+        int at = 0;
+        at += snprintf(sups + at, sizeof(sups) - at, "[");
+        bool first = true;
+        for (int i = 0; i < supportCount && at < (int)sizeof(sups) - 80; i++) {
+            if (!supportLive(i)) continue;
+            char nm[48];
+            jsonEscape(supports[i].name.c_str(), nm, sizeof(nm));
+            at += snprintf(sups + at, sizeof(sups) - at, "%s{\"n\":\"%s\",\"ip\":\"%s\"}",
+                           first ? "" : ",", nm, supports[i].ip.c_str());
+            first = false;
+        }
+        snprintf(sups + at, sizeof(sups) - at, "]");
+    }
+    char json[768];
     snprintf(json, sizeof(json),
              "{\"up\":%lu,\"wifi\":%s,\"mqtt\":%s,\"heap\":%u,\"temp\":%s,"
              "\"bat\":%d,\"volt\":%s,\"ip\":\"%s\",\"pkts\":%d,"
              "\"env\":\"" FW_ENV "\",\"ver\":\"" FW_VERSION "\","
-             "\"sup\":\"%s\",\"supip\":\"%s\","
+             "\"sups\":%s,"
              "\"fwready\":%s,\"fwname\":\"%s\",\"fwsize\":%u,\"fwimg\":%u}",
              (unsigned long)(millis() / 1000),
              wifiConnected ? "true" : "false", mqttConnected ? "true" : "false",
              (unsigned)ESP.getFreeHeap(), temp,
              batteryPercent(), volt,
              wifiConnected ? WiFi.localIP().toString().c_str() : "-", packetCount,
-             supName, supportPresent() ? supportIp.c_str() : "",
+             sups,
              otaFwReady ? "true" : "false", fwname,
              (unsigned)otaFwSize, (unsigned)otaImgSize);
     otaServer.send(200, "application/json", json);
@@ -283,6 +296,26 @@ static bool apiKeyOk() {
     return otaServer.header("X-API-Key") == cfg.apiKey;
 }
 
+// Значение в строку запроса. Ключи каналов — base64, а в нём есть '+', '/' и '=': '+' в
+// query означает пробел, и ключ приехал бы на прошивальщик битым.
+static String urlEncode(const String& v) {
+    // Имя не HEX: в Print.h ядра Arduino это макрос основания счисления (HEX == 16).
+    static const char ENC_HEX[] = "0123456789ABCDEF";
+    String out;
+    out.reserve(v.length() + 8);
+    for (size_t i = 0; i < v.length(); i++) {
+        const char c = v[i];
+        if (isalnum((unsigned char)c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            out += c;
+        } else {
+            out += '%';
+            out += ENC_HEX[((unsigned char)c) >> 4];
+            out += ENC_HEX[((unsigned char)c) & 0x0F];
+        }
+    }
+    return out;
+}
+
 static int hexVal(char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -332,6 +365,7 @@ void otaHandleEars() {
         meta.origin = MESH_RX_FORWARDED;
         meta.rssi = (float)rssi;
         meta.snr = (float)snr;
+        meta.via = otaServer.header("X-Support");
         if (!meshRxFrame(frame, n, meta)) dup++;
     }
     char reply[80];
@@ -342,6 +376,23 @@ void otaHandleEars() {
 #endif // !SENSOR_NODE
 
 #ifdef SENSOR_NODE
+// Координатор сообщает свой адрес: POST /coord. Адрес берём из самого соединения, а не из
+// параметра, — координатор и есть тот, кто пришёл, и подменить его на чужой нельзя даже
+// случайно. Раньше адрес приходил сообщением "coord:<ip>" по радио каждые 45 секунд.
+void otaHandleCoord() {
+    if (!apiKeyOk()) {
+        slog("[COORD] неверный ключ\n");
+        otaServer.send(403, "text/plain", "forbidden");
+        return;
+    }
+    const String ip = otaServer.client().remoteIP().toString();
+    if (ip.length() < 7) { otaServer.send(400, "text/plain", "bad peer"); return; }
+    if (coordIp != ip) slog("[COORD] координатор этих ушей на %s\n", ip.c_str());
+    coordIp = ip;
+    coordSeenMs = millis();
+    otaServer.send(200, "text/plain", "OK");
+}
+
 // Обратный канал «вторых ушей»: координатор отвечает на пинг, пришедший через
 // прошивальщика, — и отдаёт готовый кадр ответа этому прошивальщику POST /radiotx,
 // чтобы тот вывел его в эфир СО СВОЕГО радио: отправитель слышит его, а координатора нет.
@@ -441,6 +492,42 @@ void otaHandleSensorsConfig() {
         otaServer.send(400, "text/plain; charset=utf-8", "не указан сенсор");
         return;
     }
+    // Цель — прошивальщик? Тогда не по радио, а по его API: он в той же сети, и очередь
+    // сообщений с паузой CFG_MSG_GAP_MS на поле ему незачем. Со стороны страницы это тот же
+    // запрос с тем же target — куда идти, решает координатор.
+    const int supIdx = supportFind(target);
+    if (supportLive(supIdx)) {
+        String answer;
+        if (otaServer.arg("get") == "1") {
+            if (!supportConfigRequest(supIdx, false, "", answer)) {
+                otaServer.send(504, "text/plain; charset=utf-8", "прошивальщик не ответил");
+                return;
+            }
+            otaServer.send(200, "application/json", answer);
+            return;
+        }
+        String query;
+        int fields = 0;
+        for (int i = 0; i < otaServer.args(); i++) {
+            String n = otaServer.argName(i);
+            if (n == "target" || n == "save" || n == "reboot" || n == "get" || n == "plain") continue;
+            if (query.length()) query += "&";
+            query += n + "=" + urlEncode(otaServer.arg(i));
+            fields++;
+        }
+        // save по сети не нужен: /config у прошивальщика сохраняет применённое сам (cfgSave),
+        // в отличие от радио-очереди, где save — отдельное сообщение.
+        if (otaServer.arg("reboot") == "1") query += (query.length() ? "&" : "") + String("reboot=1");
+        if (!supportConfigRequest(supIdx, true, query, answer)) {
+            otaServer.send(504, "text/plain; charset=utf-8", "прошивальщик не ответил");
+            return;
+        }
+        slog("[CFG] -> %s по сети: полей %d\n", target.c_str(), fields);
+        otaServer.send(200, "text/plain; charset=utf-8",
+                       answer.length() ? answer : String("настройки отправлены по сети"));
+        return;
+    }
+
     if (otaServer.arg("get") == "1") {
         cfgQueuePush("cfg:" + target + ":get");
         otaServer.send(200, "text/plain; charset=utf-8", "запрошены настройки, ответ в журнале");
@@ -923,7 +1010,9 @@ void setupOtaServer() {
     // Произвольный заголовок иначе не увидеть: WebServer по умолчанию копит только
     // Authorization, остальные отбрасывает. /ears и /radiotx ходят под X-API-Key —
     // без collectHeaders header("X-API-Key") всегда пустой, и форвард умер бы с "403 forbidden".
-    const char* headerKeys[] = {"X-API-Key"};
+    // X-Support — имя прошивальщика в его POST /ears: по нему ответ на пинг уходит
+    // обратно через того же, кто кадр и принёс.
+    const char* headerKeys[] = {"X-API-Key", "X-Support"};
     size_t headerKeysCount = sizeof(headerKeys) / sizeof(headerKeys[0]);
     otaServer.collectHeaders(headerKeys, headerKeysCount);
     #if !FEATURE_SUPPORT
@@ -955,6 +1044,7 @@ void setupOtaServer() {
     #endif
     #ifdef SENSOR_NODE
     otaServer.on("/radiotx", HTTP_POST, otaHandleRadiotx);   // обратно: координатор шлёт кадр в эфир
+    otaServer.on("/coord", HTTP_POST, otaHandleCoord);       // адрес координатора для /ears
     #endif
     otaServer.on("/sensors/hello", HTTP_POST, webAuth(otaHandleSensorsHello));
     otaServer.on("/fw/check", HTTP_POST, webAuth(otaHandleFwCheck));

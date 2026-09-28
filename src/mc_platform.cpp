@@ -297,8 +297,11 @@ void earsTick() {
         return;
     }
     c.setTimeout(4000);
+    // X-Support: кто прислал. Координатор запоминает его в мете кадра, чтобы ответ на
+    // пинг ушёл обратно через ЭТОГО прошивальщика, а не через того, кто ближе к нему.
     c.print(String("POST /ears HTTP/1.1\r\nHost: ") + coordIp +
             "\r\nX-API-Key: " + cfg.apiKey +
+            "\r\nX-Support: " + cfg.name +
             "\r\nContent-Type: text/plain\r\n"
             "Content-Length: " + String((unsigned)body.length()) +
             "\r\nConnection: close\r\n\r\n");
@@ -341,17 +344,20 @@ void earsTick() {
 // условием — лишний символ в прошивке поддержки не нужен.
 #ifndef SENSOR_NODE
 #define RADIOTX_CONNECT_MS 3000
-bool mcRelayFrameToSupport(const uint8_t* frame, int len) {
+bool mcRelayFrameToSupport(const char* supName, const uint8_t* frame, int len) {
     if (len <= 0 || len > 255) return false;
-    if (supportIp.length() < 7) return false;
     if (cfg.apiKey.length() == 0) return false;   // прошивальщик без ключа кадр не примет
-    // Жив ли прошивальщик — спрашиваем у supportPresent(), а не у своего срока годности.
-    // Здесь стоял свой литерал в 135 с, снятый с периода объявления КООРДИНАТОРА, тогда как
-    // сверялся он с временем объявления ПРОШИВАЛЬЩИКА — а тот объявляется своим heartbeat,
-    // раз в десять минут. Обратный канал поэтому жил около двух минут из каждых десяти, и
-    // ответ на пинг, пришедший через «вторые уши», почти всегда уходил обычным флудом — как
-    // раз к тем узлам, которые координатора не слышат.
-    if (!supportPresent()) return false;
+    // Кадр уходит ТОМУ прошивальщику, который принёс запрос: узел, которого слышит только
+    // он, ответа с чужого радио не получит. Раньше адрес был один на всю сеть, и с двумя
+    // прошивальщиками ответ уехал бы к тому, кто объявился последним.
+    //
+    // Жив ли он — решает реестр (supportLive), а не свой срок годности: здесь стоял литерал
+    // в 135 с, снятый с периода объявления КООРДИНАТОРА, тогда как сверялся он с временем
+    // объявления ПРОШИВАЛЬЩИКА — а тот объявляется своим heartbeat, раз в десять минут.
+    // Обратный канал поэтому жил около двух минут из каждых десяти.
+    const int idx = supportFind(String(supName ? supName : ""));
+    if (!supportLive(idx)) return false;
+    const String supportIp = supports[idx].ip;
 
     static const char RADIO_HEX[] = "0123456789ABCDEF";
     String body;
@@ -389,8 +395,9 @@ bool mcRelayFrameToSupport(const uint8_t* frame, int len) {
         }
     }
     c.stop();
-    Serial.printf("[RADIOTX] ответ %s (%d байт %s прошивальщику)\n",
-         ok ? "отдан" : "не принят", len, ok ? "ушло" : "осталось");
+    Serial.printf("[RADIOTX] ответ %s узлу %s (%d байт %s)\n",
+         ok ? "отдан" : "не принят", supports[idx].name.c_str(), len,
+         ok ? "ушло" : "осталось");
     return ok;
 }
 #endif // !SENSOR_NODE

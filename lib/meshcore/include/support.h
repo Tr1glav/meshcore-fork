@@ -16,9 +16,17 @@
 // объявление устаревает через три его периода.
 bool supportPresent();
 
-// Достаёт ли его радио до этого узла. Спрашиваем у него самого — его /sensors отдаёт хопы,
-// а порог один на всех (otaHopsReachable в ядре).
-bool supportCanReach(const String& target);
+// Кто из прошивальщиков дотягивается до цели лучше всех: индекс в supports[] или -1.
+// Спрашиваем у каждого — его /sensors отдаёт хопы, а порог один на всех (otaHopsReachable).
+int supportIndexFor(const String& target);
+
+// Координатор сообщает прошивальщикам свой адрес по сети (POST /coord). Зовётся из
+// главного цикла, по одному адресату за проход.
+void coordPushTick();
+
+// Настройки прошивальщика по сети: post=false — забрать список полей (GET /config),
+// post=true — применить query (POST /config?<поля>[&reboot=1]). Ответ отдаётся как есть.
+bool supportConfigRequest(int idx, bool post, const String& query, String& answer);
 
 // Прошить сам прошивальщик: образ уходит к нему по сети (HTTP OTA), а не по радио —
 // у него есть WiFi. Сохранённый .otaz распаковывается на лету: /update ждёт сырой образ.
@@ -40,7 +48,7 @@ bool supportHandOff(const String& target);
 bool supportBusy();
 
 // Завести передачу. false — задача не создалась.
-bool supportJobStart(uint8_t kind, const String& target);
+bool supportJobStart(uint8_t kind, int supIdx, const String& target);
 
 // Что именно передаётся и сколько уже ушло — для полосы на странице.
 uint8_t supportJobKind();
@@ -49,6 +57,6 @@ uint32_t supportJobTotal();
 
 // Забрать итог завершённой передачи (и освободить место под следующую). Зовётся из
 // главного цикла: результат ложится в поля, которые читает страница.
-bool supportJobFinished(uint8_t& kind, bool& ok, String& target);
+bool supportJobFinished(uint8_t& kind, bool& ok, String& target, String& who);
 
 #endif // FEATURE_MESH_OTA_SENDER

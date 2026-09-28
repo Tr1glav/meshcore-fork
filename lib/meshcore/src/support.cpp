@@ -28,9 +28,8 @@ extern "C" {
 #include "esp32s3/rom/miniz.h"
 }
 
-// Объявление прошивальщика приходит вместе с его heartbeat. Раз в десять минут — значит
-// пропуск одного объявления ещё ничего не значит, а три подряд означают, что его нет.
-#define SUPPORT_STALE_MS (3UL * SENSOR_HEARTBEAT_MS)
+// SUPPORT_STALE_MS живёт в config.h ядра: там же реестр supports[] и функция supportLive,
+// которая этим сроком и пользуется. Два места для одного срока уже один раз разъехались.
 #define SUPPORT_PORT 3232
 #define SUPPORT_HTTP_TIMEOUT_MS 15000
 // Сколько ждём само соединение. Прошивальщик — узел в той же локальной сети: он либо
@@ -46,8 +45,18 @@ extern "C" {
 extern volatile uint32_t supJobSent;
 extern volatile uint32_t supJobTotal;
 
+// Есть ли в сети хоть один живой прошивальщик.
 bool supportPresent() {
-    return supportIp.length() > 0 && (millis() - supportSeenMs) < SUPPORT_STALE_MS;
+    for (int i = 0; i < supportCount; i++)
+        if (supportLive(i)) return true;
+    return false;
+}
+
+// Адрес по имени: ведущего сессии страница знает по имени (otaDelegate), а стучаться надо
+// по адресу.
+static String supportIpOf(const String& name) {
+    const int i = supportFind(name);
+    return supportLive(i) ? supports[i].ip : String("");
 }
 
 // Чтение ответа: строка состояния, заголовки и, если просят, тело. У всех трёх циклов
@@ -91,11 +100,13 @@ static bool supReadResponse(WiFiClient& c, uint32_t waitMs, String* body, size_t
 
 // Один запрос и ответ строкой. Тело ответа нужно целиком только для /sensors — он
 // короткий (имена узлов), поэтому ограничиваем и его, и время ожидания.
-static bool supportRequest(const String& req, String* body, size_t bodyMax = 2048,
+static bool supportRequest(const String& ip, const String& req, String* body,
+                           size_t bodyMax = 2048,
                            uint32_t waitMs = SUPPORT_HTTP_TIMEOUT_MS) {
     WiFiClient c;
-    if (!c.connect(supportIp.c_str(), SUPPORT_PORT, SUPPORT_CONNECT_MS)) {
-        slog("[SUP] %s недоступен\n", supportIp.c_str());
+    if (ip.length() < 7) return false;
+    if (!c.connect(ip.c_str(), SUPPORT_PORT, SUPPORT_CONNECT_MS)) {
+        slog("[SUP] %s недоступен\n", ip.c_str());
         return false;
     }
     c.setTimeout((waitMs + 999) / 1000);
@@ -105,28 +116,49 @@ static bool supportRequest(const String& req, String* body, size_t bodyMax = 204
     return ok;
 }
 
-// Достаёт ли радио прошивальщика до этого узла. Спрашиваем у него самого: его /sensors
-// отдаёт тот же список, что и наш, вместе с хопами. Порог не свой, а общий — вердикт даёт
-// otaHopsReachable из ядра, иначе две стороны разъехались бы по дальности.
+// Сколько хопов у ЭТОГО прошивальщика до цели. Спрашиваем у него самого: его /sensors
+// отдаёт тот же список, что и наш, вместе с хопами. -1 — не знает узла, не слышал ни разу
+// или не отвечает.
 //
 // Разбор подстрокой, а не разбором JSON: ответ свой, формат известен, а тащить парсер
 // ради двух полей незачем — так же разобраны и остальные ответы в этом проекте.
-bool supportCanReach(const String& target) {
+static int supportHopsTo(int idx, const String& target) {
+    if (!supportLive(idx)) return -1;
     String body;
-    String req = String("GET /sensors HTTP/1.1\r\nHost: ") + supportIp +
+    String req = String("GET /sensors HTTP/1.1\r\nHost: ") + supports[idx].ip +
                  "\r\n" + apiHdr() + "Connection: close\r\n\r\n";
-    if (!supportRequest(req, &body, 4096, SUPPORT_SHORT_MS)) return false;
+    if (!supportRequest(supports[idx].ip, req, &body, 4096, SUPPORT_SHORT_MS)) return -1;
 
     String key = String("\"name\":\"") + target + "\"";
     int at = body.indexOf(key);
-    if (at < 0) return false;                   // прошивальщик такого узла не знает
+    if (at < 0) return -1;                      // прошивальщик такого узла не знает
     int end = body.indexOf('}', at);
     if (end < 0) end = body.length();
     int hopsAt = body.indexOf("\"hops\":", at);
-    if (hopsAt < 0 || hopsAt > end) return false;
-    // -1 в ответе означает «не слышали ни разу»; в вердикт это уходит как 0xFF.
-    const int hops = body.substring(hopsAt + 7, end).toInt();
-    return otaHopsReachable(hops < 0 ? 0xFF : (uint8_t)hops);
+    if (hopsAt < 0 || hopsAt > end) return -1;
+    return body.substring(hopsAt + 7, end).toInt();
+}
+
+// Кто из прошивальщиков ведёт сессию к этой цели. «Лучше всех» — это не «ближе к
+// координатору», а наименьшее число хопов до САМОЙ ЦЕЛИ: прошивальщики стоят в разных
+// местах, и смысл нескольких как раз в том, что у каждого своя часть сети.
+//
+// Порог общий с ядром (otaHopsReachable): дальше него сессия обречена, и такого ведущего
+// мы не берём. Цена выбора — по одному короткому запросу на живого прошивальщика.
+int supportIndexFor(const String& target) {
+    int best = -1, bestHops = 0;
+    for (int i = 0; i < supportCount; i++) {
+        if (!supportLive(i)) continue;
+        if (supports[i].name == target) continue;   // себя он не прошьёт
+        const int hops = supportHopsTo(i, target);
+        if (hops < 0 || !otaHopsReachable((uint8_t)hops)) continue;
+        if (best < 0 || hops < bestHops) { best = i; bestHops = hops; }
+        if (bestHops == 0) break;                   // ближе прямой слышимости не бывает
+    }
+    if (best >= 0)
+        slog("[SUP] сессию к '%s' поведёт %s (%d хоп(ов))\n",
+             target.c_str(), supports[best].name.c_str(), bestHops);
+    return best;
 }
 
 // Прошить САМ прошивальщик — по сети, а не по радио.
@@ -139,8 +171,9 @@ bool supportCanReach(const String& target) {
 //
 // Длина тела известна заранее — распакованный размер записан в заголовке .otaz, — поэтому
 // Content-Length считается без обмана.
-bool supportFlashSelf() {
-    if (!supportPresent()) return false;
+bool supportFlashSelf(int idx) {
+    if (!supportLive(idx)) return false;
+    const String ip = supports[idx].ip;
 
     File f = LittleFS.open("/ota.bin", "r");
     if (!f) { slog("[SUP] /ota.bin не открылся\n"); return false; }
@@ -168,8 +201,8 @@ bool supportFlashSelf() {
     if (!inf || !dict || !chunk) { slog("[SUP] не хватило памяти на распаковку\n"); goto done; }
     tinfl_init(inf);
 
-    if (!c.connect(supportIp.c_str(), SUPPORT_PORT, SUPPORT_CONNECT_MS)) {
-        slog("[SUP] %s недоступен для прошивки\n", supportIp.c_str());
+    if (!c.connect(ip.c_str(), SUPPORT_PORT, SUPPORT_CONNECT_MS)) {
+        slog("[SUP] %s недоступен для прошивки\n", ip.c_str());
         goto done;
     }
     c.setTimeout(SUPPORT_HTTP_TIMEOUT_MS / 1000);
@@ -179,7 +212,7 @@ bool supportFlashSelf() {
                       "Content-Disposition: form-data; name=\"fw\"; filename=\"fw.bin\"\r\n"
                       "Content-Type: application/octet-stream\r\n\r\n";
         String tail = String("\r\n--") + BND + "--\r\n";
-        c.print(String("POST /update HTTP/1.1\r\nHost: ") + supportIp +
+        c.print(String("POST /update HTTP/1.1\r\nHost: ") + ip +
                 "\r\n" + apiHdr() +
                 "Content-Type: multipart/form-data; boundary=" + BND +
                 "\r\nContent-Length: " + String(head.length() + imgSize + tail.length()) +
@@ -245,7 +278,7 @@ bool supportFlashSelf() {
 done:
     f.close();
     free(inf); free(dict); free(chunk);
-    if (ok) slog("[SUP] %s прошит по сети (%u байт)\n", supportName.c_str(), (unsigned)sent);
+    if (ok) slog("[SUP] %s прошит по сети (%u байт)\n", supports[idx].name.c_str(), (unsigned)sent);
     else if (sent != imgSize) slog("[SUP] передано %u из %u байт\n",
                                    (unsigned)sent, (unsigned)imgSize);
     return ok;
@@ -253,19 +286,22 @@ done:
 
 // Ход переданной сессии. Ответ отдаём как есть: формат у прошивальщика тот же, и
 // страница координатора разбирает его теми же полями, что и свой.
+// Ход сессии спрашиваем у ТОГО, кто её ведёт: otaDelegate держит его имя.
 bool supportStatus(String& out) {
-    if (!supportPresent()) return false;
-    String req = String("GET /ota/status HTTP/1.1\r\nHost: ") + supportIp + "\r\n" + apiHdr() +
+    const String ip = supportIpOf(otaDelegate);
+    if (ip.length() == 0) return false;
+    String req = String("GET /ota/status HTTP/1.1\r\nHost: ") + ip + "\r\n" + apiHdr() +
                  "\r\nConnection: close\r\n\r\n";
     out = "";
-    return supportRequest(req, &out, 512, SUPPORT_SHORT_MS) && out.indexOf('{') >= 0;
+    return supportRequest(ip, req, &out, 512, SUPPORT_SHORT_MS) && out.indexOf('{') >= 0;
 }
 
 // Отдать образ и команду. Образ уходит multipart-ом — ровно тем, что ждёт /savefw:
 // приём файла на той стороне сделан обработчиком загрузки, он разбирает конверт сам и
 // пишет файл потоком, не держа его в памяти.
-bool supportHandOff(const String& target) {
-    if (!supportPresent()) return false;
+bool supportHandOff(int idx, const String& target) {
+    if (!supportLive(idx)) return false;
+    const String ip = supports[idx].ip;
 
     File f = LittleFS.open("/ota.bin", "r");
     if (!f) { slog("[SUP] /ota.bin не открылся\n"); return false; }
@@ -280,13 +316,13 @@ bool supportHandOff(const String& target) {
     String tail = String("\r\n--") + BND + "--\r\n";
 
     WiFiClient c;
-    if (!c.connect(supportIp.c_str(), SUPPORT_PORT, SUPPORT_CONNECT_MS)) {
+    if (!c.connect(ip.c_str(), SUPPORT_PORT, SUPPORT_CONNECT_MS)) {
         f.close();
-        slog("[SUP] %s недоступен для передачи образа\n", supportIp.c_str());
+        slog("[SUP] %s недоступен для передачи образа\n", ip.c_str());
         return false;
     }
     c.setTimeout(SUPPORT_HTTP_TIMEOUT_MS / 1000);
-    c.print(String("POST /savefw HTTP/1.1\r\nHost: ") + supportIp +
+    c.print(String("POST /savefw HTTP/1.1\r\nHost: ") + ip +
             "\r\n" + apiHdr() +
             "Content-Type: multipart/form-data; boundary=" + BND +
             "\r\nContent-Length: " + String(head.length() + fsize + tail.length()) +
@@ -312,17 +348,78 @@ bool supportHandOff(const String& target) {
         slog("[SUP] образ не передан (%u из %u байт)\n", (unsigned)sent, (unsigned)fsize);
         return false;
     }
-    slog("[SUP] образ передан на %s (%u байт)\n", supportIp.c_str(), (unsigned)fsize);
+    slog("[SUP] образ передан на %s (%u байт)\n", ip.c_str(), (unsigned)fsize);
 
     String req = String("POST /ota/start?target=") + target + " HTTP/1.1\r\nHost: " +
-                 supportIp + "\r\n" + apiHdr() +
+                 ip + "\r\n" + apiHdr() +
                  "Content-Length: 0\r\nConnection: close\r\n\r\n";
-    if (!supportRequest(req, nullptr)) {
-        slog("[SUP] %s образ принял, но сессию не начал\n", supportName.c_str());
+    if (!supportRequest(ip, req, nullptr)) {
+        slog("[SUP] %s образ принял, но сессию не начал\n", supports[idx].name.c_str());
         return false;
     }
-    slog("[SUP] сессию к '%s' ведёт %s\n", target.c_str(), supportName.c_str());
+    slog("[SUP] сессию к '%s' ведёт %s\n", target.c_str(), supports[idx].name.c_str());
     return true;
+}
+
+// ===== Настройки прошивальщика по сети =====
+//
+// Прошивальщик настраивается со страницы координатора, как любой узел, — но не по радио, а
+// по своему API: он в той же сети, и мегабайтные паузы очереди сообщений ему не нужны. Со
+// стороны страницы это тот же /sensors/config с тем же target; координатор сам видит, что
+// цель — прошивальщик, и идёт к нему по HTTP (см. otaHandleSensorsConfig).
+//
+// Ответ отдаём как есть: у прошивальщика те же обработчики /config, что у координатора, и
+// страница разбирает их теми же полями.
+bool supportConfigRequest(int idx, bool post, const String& query, String& answer) {
+    if (!supportLive(idx)) return false;
+    const String ip = supports[idx].ip;
+    String req = String(post ? "POST" : "GET") + " /config";
+    if (post && query.length()) req += "?" + query;
+    req += " HTTP/1.1\r\nHost: " + ip + "\r\n" + apiHdr();
+    if (post) req += "Content-Length: 0\r\n";
+    req += "Connection: close\r\n\r\n";
+    answer = "";
+    return supportRequest(ip, req, &answer, 2048, SUPPORT_HTTP_TIMEOUT_MS);
+}
+
+// ===== Координатор сообщает свой адрес прошивальщикам (по сети, не в эфир) =====
+//
+// Прошивальщику нужен адрес координатора, чтобы слать ему услышанное по радио (POST /ears).
+// Раньше координатор объявлял себя сообщением "coord:<ip>" в сенсорном канале каждые 45
+// секунд: служебный адрес занимал эфир чаще, чем heartbeat самих узлов, и слышали его все,
+// включая тех, кому он не нужен. Адрес прошивальщика координатор и так узнаёт из эфира, а
+// дальше идёт к нему по WiFi, где это не стоит ничего.
+//
+// Ответ нам не нужен — важно лишь, дошло ли. Не дошло — пауза растёт: connect() к
+// недоступному узлу стоит SUPPORT_CONNECT_MS, и стоим мы в главном цикле координатора.
+#define COORD_PUSH_RETRY_MAX_MS 300000UL
+static unsigned long coordPushNextMs[SUPPORT_MAX] = {0};
+static uint8_t coordPushFails[SUPPORT_MAX] = {0};
+
+void coordPushTick() {
+    if (!mcWifiConnected()) return;
+    const String me = mcLocalIp();
+    if (me.length() < 7 || me == "0.0.0.0") return;
+    if (cfg.apiKey.length() == 0) return;   // без ключа прошивальщик запрос не примет
+    for (int i = 0; i < supportCount; i++) {
+        if (!supportLive(i)) continue;
+        if (coordPushNextMs[i] != 0 && (long)(millis() - coordPushNextMs[i]) < 0) continue;
+        String req = String("POST /coord HTTP/1.1\r\nHost: ") + supports[i].ip + "\r\n" +
+                     apiHdr() + "Content-Length: 0\r\nConnection: close\r\n\r\n";
+        if (supportRequest(supports[i].ip, req, nullptr, 0, SUPPORT_SHORT_MS)) {
+            if (coordPushFails[i]) slog("[COORD] %s снова принимает адрес\n",
+                                        supports[i].name.c_str());
+            coordPushFails[i] = 0;
+            coordPushNextMs[i] = millis() + COORD_PUSH_MS;
+        } else {
+            if (coordPushFails[i] < 8) coordPushFails[i]++;
+            unsigned long wait = COORD_PUSH_MS << (coordPushFails[i] - 1);
+            if (wait > COORD_PUSH_RETRY_MAX_MS) wait = COORD_PUSH_RETRY_MAX_MS;
+            coordPushNextMs[i] = millis() + wait;
+        }
+        if (coordPushNextMs[i] == 0) coordPushNextMs[i] = 1;
+        return;   // по одному за проход: каждый — это соединение, а мы в главном цикле
+    }
 }
 
 // ===== Фоновая передача =====
@@ -351,6 +448,10 @@ static volatile bool supJobAlive = false;
 static volatile uint32_t supJobGen = 0;
 static unsigned long supJobStartMs = 0;
 static String supJobTarget;
+// Кто ведёт: индекс в реестре и имя на момент старта. Имя копией, а не по индексу: пока
+// задача работает, реестр может вытеснить запись, и итог назвал бы чужой узел.
+static int supJobIdx = -1;
+static String supJobWho;
 // Сколько байт уже ушло — чтобы на странице двигалась полоса, а не висела надпись.
 // Мегабайт по сети идёт полминуты, и без этого прошивка выглядит зависшей.
 volatile uint32_t supJobSent = 0;
@@ -358,7 +459,8 @@ volatile uint32_t supJobTotal = 0;
 
 static void supJobTask(void* arg) {
     const uint32_t gen = (uint32_t)(uintptr_t)arg;
-    bool ok = (supJobKind == SUP_JOB_SELF) ? supportFlashSelf() : supportHandOff(supJobTarget);
+    bool ok = (supJobKind == SUP_JOB_SELF) ? supportFlashSelf(supJobIdx)
+                                           : supportHandOff(supJobIdx, supJobTarget);
     slog("[SUP] запас стека задачи: %u Б\n", (unsigned)uxTaskGetStackHighWaterMark(NULL));
     if (gen == supJobGen) {          // нас не успели бросить по сроку
         supJobOk = ok;
@@ -376,13 +478,16 @@ uint8_t supportJobKind() { return supJobKind; }
 uint32_t supportJobSent() { return supJobSent; }
 uint32_t supportJobTotal() { return supJobTotal; }
 
-bool supportJobStart(uint8_t kind, const String& target) {
+bool supportJobStart(uint8_t kind, int supIdx, const String& target) {
     if (supJobKind != SUP_JOB_NONE) return false;
+    if (!supportLive(supIdx)) return false;
     if (supJobAlive) {               // брошенная задача ещё не вышла — второй такой не надо
         slog("[SUP] прошлая передача ещё не завершилась\n");
         return false;
     }
     supJobTarget = target;
+    supJobIdx = supIdx;
+    supJobWho = supports[supIdx].name;
     supJobDone = false;
     supJobOk = false;
     supJobSent = 0;
@@ -401,7 +506,7 @@ bool supportJobStart(uint8_t kind, const String& target) {
     return false;
 }
 
-bool supportJobFinished(uint8_t& kind, bool& ok, String& target) {
+bool supportJobFinished(uint8_t& kind, bool& ok, String& target, String& who) {
     if (supJobKind == SUP_JOB_NONE) return false;
     if (!supJobDone) {
         if (millis() - supJobStartMs < SUPPORT_JOB_MAX_MS) return false;
@@ -412,6 +517,7 @@ bool supportJobFinished(uint8_t& kind, bool& ok, String& target) {
     kind = supJobKind;
     ok = supJobOk;
     target = supJobTarget;
+    who = supJobWho;
     supJobDone = false;
     supJobKind = SUP_JOB_NONE;
     return true;
