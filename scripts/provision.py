@@ -44,15 +44,25 @@ BAUD = 115200
 RADIO_FIELDS = ["lora_freq", "lora_bw", "lora_sf", "lora_cr", "lora_tx",
                 "lora_pre", "lora_sync", "tz", "disp_bri", "vext_on"]
 ROLE_FIELDS = {
+    # web_pass — пароль страницы узла, api_key — общий ключ запросов между узлами по сети
+    # (координатор <-> прошивальщик). Оба поля есть у всех, у кого есть страница; узлу без
+    # WiFi они не нужны. Ключ обязан совпадать у координатора и прошивальщика — потому и
+    # лежит в common.
     "bot": ["name", "wifi_ssid", "wifi_pass", "mqtt_host", "mqtt_port",
             "mqtt_user", "mqtt_pass", "prv_name", "prv_key", "sns_name", "sns_key",
-            "tx_ch"] + RADIO_FIELDS,
+            "tx_ch", "web_pass", "api_key"] + RADIO_FIELDS,
     "sensor": ["name", "sns_name", "sns_key"] + RADIO_FIELDS,
+    # Прошивальщик — сенсорный узел, у которого есть WiFi и своя страница: он ведёт сессии
+    # прошивки к узлам, до которых координатор не дотягивается. Роль была в secrets.json, но
+    # не в этом списке, и скрипт отказывался её настраивать вовсе («роль должна быть одной
+    # из: bot, companion, sensor»). MQTT ему не нужен — брокер остаётся координатору.
+    "support": ["name", "wifi_ssid", "wifi_pass", "sns_name", "sns_key",
+                "web_pass", "api_key"] + RADIO_FIELDS,
     # Компаньон — сенсорный узел плюс BLE для телефонного приложения. Приватный канал
     # ему тоже нужен: в приложении это обычный чат, и без ключа его попросту не видно.
     "companion": ["name", "prv_name", "prv_key", "sns_name", "sns_key"] + RADIO_FIELDS,
 }
-SECRET_FIELDS = {"wifi_pass", "mqtt_pass", "prv_key", "sns_key"}
+SECRET_FIELDS = {"wifi_pass", "mqtt_pass", "prv_key", "sns_key", "web_pass", "api_key"}
 
 # Соответствие старых build-флагов полям конфига — для import-ini
 INI_MAP = {

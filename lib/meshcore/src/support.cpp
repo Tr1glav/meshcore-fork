@@ -59,6 +59,13 @@ bool supportPresent() {
 // ждём миллисекунду» в такой паре крутится вечно. Задача передачи переставала завершаться
 // совсем, и страница до перезагрузки координатора показывала «шью…», хотя узел давно
 // прошит и уже вышел на связь с новой версией.
+// Заголовок с общим ключом: точки входа другого узла закрыты, и устройство приходит не с
+// паролем страницы, а с ключом (см. webAuthOk в web.cpp). Пустой ключ — заголовка нет, и
+// закрытая сторона откажет: так и надо, пока устройство не настроено.
+static String apiHdr() {
+    return cfg.apiKey.length() ? String("X-API-Key: ") + cfg.apiKey + "\r\n" : String("");
+}
+
 static bool supReadResponse(WiFiClient& c, uint32_t waitMs, String* body, size_t bodyMax,
                             bool* answered = nullptr) {
     const unsigned long deadline = millis() + waitMs;
@@ -107,7 +114,7 @@ static bool supportRequest(const String& req, String* body, size_t bodyMax = 204
 bool supportCanReach(const String& target) {
     String body;
     String req = String("GET /sensors HTTP/1.1\r\nHost: ") + supportIp +
-                 "\r\nConnection: close\r\n\r\n";
+                 "\r\n" + apiHdr() + "Connection: close\r\n\r\n";
     if (!supportRequest(req, &body, 4096, SUPPORT_SHORT_MS)) return false;
 
     String key = String("\"name\":\"") + target + "\"";
@@ -173,7 +180,8 @@ bool supportFlashSelf() {
                       "Content-Type: application/octet-stream\r\n\r\n";
         String tail = String("\r\n--") + BND + "--\r\n";
         c.print(String("POST /update HTTP/1.1\r\nHost: ") + supportIp +
-                "\r\nContent-Type: multipart/form-data; boundary=" + BND +
+                "\r\n" + apiHdr() +
+                "Content-Type: multipart/form-data; boundary=" + BND +
                 "\r\nContent-Length: " + String(head.length() + imgSize + tail.length()) +
                 "\r\nConnection: close\r\n\r\n");
         c.print(head);
@@ -247,7 +255,7 @@ done:
 // страница координатора разбирает его теми же полями, что и свой.
 bool supportStatus(String& out) {
     if (!supportPresent()) return false;
-    String req = String("GET /ota/status HTTP/1.1\r\nHost: ") + supportIp +
+    String req = String("GET /ota/status HTTP/1.1\r\nHost: ") + supportIp + "\r\n" + apiHdr() +
                  "\r\nConnection: close\r\n\r\n";
     out = "";
     return supportRequest(req, &out, 512, SUPPORT_SHORT_MS) && out.indexOf('{') >= 0;
@@ -279,7 +287,8 @@ bool supportHandOff(const String& target) {
     }
     c.setTimeout(SUPPORT_HTTP_TIMEOUT_MS / 1000);
     c.print(String("POST /savefw HTTP/1.1\r\nHost: ") + supportIp +
-            "\r\nContent-Type: multipart/form-data; boundary=" + BND +
+            "\r\n" + apiHdr() +
+            "Content-Type: multipart/form-data; boundary=" + BND +
             "\r\nContent-Length: " + String(head.length() + fsize + tail.length()) +
             "\r\nConnection: close\r\n\r\n");
     c.print(head);
@@ -306,7 +315,8 @@ bool supportHandOff(const String& target) {
     slog("[SUP] образ передан на %s (%u байт)\n", supportIp.c_str(), (unsigned)fsize);
 
     String req = String("POST /ota/start?target=") + target + " HTTP/1.1\r\nHost: " +
-                 supportIp + "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                 supportIp + "\r\n" + apiHdr() +
+                 "Content-Length: 0\r\nConnection: close\r\n\r\n";
     if (!supportRequest(req, nullptr)) {
         slog("[SUP] %s образ принял, но сессию не начал\n", supportName.c_str());
         return false;

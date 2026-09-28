@@ -232,6 +232,57 @@ void otaHandleLogTail() {
     otaServer.send(200, "text/plain; charset=utf-8", out);
 }
 
+// ===== КТО ИМЕЕТ ПРАВО =====
+// Человек приходит со страницы и знает её пароль (web_pass). Устройство — координатор или
+// прошивальщик — приходит с общим ключом (api_key) в заголовке X-API-Key: пароль страницы в
+// прошивке хранить негде, а ключ обеим ролям и так нужен для «вторых ушей».
+//
+// Пустой web_pass означает «страница открыта»: свежее устройство настраивается по USB, и
+// запирать его до первой настройки незачем. Но открытая страница не должна выглядеть нормой,
+// поэтому один раз за сессию об этом пишется в журнал.
+#define WEB_AUTH_USER "admin"
+
+static bool webAuthOk() {
+    if (cfg.apiKey.length() && otaServer.header("X-API-Key") == cfg.apiKey) return true;
+    if (cfg.webPass.length() == 0) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            slog("[WEB] пароль страницы не задан (web_pass): точки входа открыты всем в сети\n");
+        }
+        return true;
+    }
+    return otaServer.authenticate(WEB_AUTH_USER, cfg.webPass.c_str());
+}
+
+// Ответ шлёт вызывающий, а не сама проверка: в загрузках обработчик зовётся дважды (данные
+// и итог), и два ответа на один запрос порвали бы соединение.
+static void webAuthReject() {
+    slog("[WEB] отказ: ни пароля страницы, ни ключа\n");
+    otaServer.requestAuthentication(BASIC_AUTH, "meshcore",
+                                    "нужен пароль страницы (настройка web_pass)");
+}
+
+// Обёртка вокруг обработчика. Проверка стоит здесь, а не строкой в каждом обработчике:
+// строку забыли бы в новом, а тут виден сразу весь список и то, что закрыто.
+static WebServer::THandlerFunction webAuth(WebServer::THandlerFunction fn) {
+    return [fn]() {
+        if (!webAuthOk()) { webAuthReject(); return; }
+        fn();
+    };
+}
+
+// Кадры, которые уйдут в эфир или в разбор, принимаются ТОЛЬКО по общему ключу, и только
+// если он задан. Пустой ключ здесь запрещает, а не открывает: иначе поддельный радиокадр
+// координатору смог бы подсунуть любой прибор в сети.
+static bool apiKeyOk() {
+    if (cfg.apiKey.length() == 0) {
+        slog("[WEB] api_key не задан — приём кадров по сети выключен\n");
+        return false;
+    }
+    return otaServer.header("X-API-Key") == cfg.apiKey;
+}
+
 static int hexVal(char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -246,9 +297,9 @@ static int hexVal(char c) {
 // дубликаты не создают двойных публикаций, а RSSI/SNR — лучшая оценка связи, которая есть
 // (см. MeshRxMeta). Ответ ровно такой, чтобы прошивальщик понял, сколько из пачки принято.
 void otaHandleEars() {
-    // Принимаем форвард только от прошивальщика со своим ключом (см. MESH_API_KEY в config.h).
+    // Принимаем форвард только от прошивальщика со своим ключом (api_key в настройках).
     // Иначе любой прибор в сети мог бы подсунуть координатору чужие кадры.
-    if (otaServer.header("X-API-Key") != String(MESH_API_KEY)) {
+    if (!apiKeyOk()) {
         slog("[WEB] /ears: неверный ключ\n");
         otaServer.send(403, "text/plain", "forbidden");
         return;
@@ -295,8 +346,8 @@ void otaHandleEars() {
 // прошивальщика, — и отдаёт готовый кадр ответа этому прошивальщику POST /radiotx,
 // чтобы тот вывел его в эфир СО СВОЕГО радио: отправитель слышит его, а координатора нет.
 void otaHandleRadiotx() {
-    // Принимаем только от координатора со своим ключом (тот же MESH_API_KEY, что и /ears).
-    if (otaServer.header("X-API-Key") != String(MESH_API_KEY)) {
+    // Принимаем только от координатора со своим ключом (тот же api_key, что и /ears).
+    if (!apiKeyOk()) {
         slog("[RADIOTX] неверный ключ\n");
         otaServer.send(403, "text/plain", "forbidden");
         return;
@@ -553,10 +604,21 @@ static void otaSelfUpdateResume() {
 static FwScan otaSelfScan;
 static char otaSelfErr[64] = "";
 
+// Право на загрузку проверяется ДО первого записанного байта: обработчик загрузки зовётся
+// раньше основного, и без проверки здесь образ уже лежал бы в разделе к моменту отказа.
+// Отказ запоминаем: WRITE и END всё равно будут вызваны, а Update мы не начинаем — запись в
+// них уже под условием Update.isRunning().
+static bool upAllowed = false;
+
 void otaHandleUpdate() {
     HTTPUpload& up = otaServer.upload();
     switch (up.status) {
     case UPLOAD_FILE_START:
+        upAllowed = webAuthOk();
+        if (!upAllowed) {
+            slog("[OTA] загрузка отклонена: ни пароля страницы, ни ключа\n");
+            return;
+        }
         Serial.printf("\n[OTA] загрузка: %s\n", up.filename.c_str());
         fwScanReset(&otaSelfScan);
         otaSelfErr[0] = 0;
@@ -587,6 +649,7 @@ void otaHandleUpdate() {
         break;
     case UPLOAD_FILE_END:
     {
+        if (!upAllowed) break;
         // Образ чужой платы не запустится, а снимать его придётся USB-кабелем,
         // поэтому до применения прошивки проверяем маркер.
         int verdict = fwScanVerdict(&otaSelfScan);
@@ -622,6 +685,7 @@ void otaHandleUpdate() {
         break;
     }
     case UPLOAD_FILE_ABORTED:
+        if (!upAllowed) break;
         Update.abort();
         otaSelfUpdateResume();
         Serial.println("[OTA] прервано");
@@ -638,6 +702,13 @@ void otaHandleSaveFw() {
     switch (up.status) {
     case UPLOAD_FILE_START:
     {
+        // Как и в /update: право проверяем до первого байта, дальше всё под otaSaving.
+        if (!webAuthOk()) {
+            otaSaving = false;
+            otaSaveOk = false;
+            slog("[OTA-SAVE] отклонено: ни пароля страницы, ни ключа\n");
+            return;
+        }
         if (otaPhase != OTA_PHASE_IDLE && otaPhase != OTA_PHASE_DONE) otaBotAbort("новый файл");
         // Идёт сетевая загрузка образа (задача fwFetch): она пишет /ota.bin.part, и её
         // финализация в главном цикле держит общие флаги. Свою заливку начинать нельзя —
@@ -856,14 +927,14 @@ void setupOtaServer() {
     size_t headerKeysCount = sizeof(headerKeys) / sizeof(headerKeys[0]);
     otaServer.collectHeaders(headerKeys, headerKeysCount);
     #if !FEATURE_SUPPORT
-    otaServer.on("/", HTTP_GET, otaHandleRoot);   // веб-морда: нужна только координатору
+    otaServer.on("/", HTTP_GET, webAuth(otaHandleRoot));   // веб-морда: нужна только координатору
     #endif
-    otaServer.on("/update", HTTP_POST, []() {
+    otaServer.on("/update", HTTP_POST, webAuth([]() {
         otaServer.sendHeader("Connection", "close");
         if (otaSelfErr[0]) otaServer.send(200, "text/plain", String("FAIL: ") + otaSelfErr);
         else otaServer.send(200, "text/plain", Update.hasError() ? "FAIL" : "OK");
-    }, otaHandleUpdate);
-    otaServer.on("/savefw", HTTP_POST, []() {
+    }), otaHandleUpdate);
+    otaServer.on("/savefw", HTTP_POST, webAuth([]() {
         otaServer.sendHeader("Connection", "close");
         if (otaSaveOk && otaFwReady) {
             otaServer.send(200, "text/plain", "OK");
@@ -874,34 +945,34 @@ void setupOtaServer() {
                            otaSaveTooBig ? "FAIL: файл больше 3 МБ" :
                            otaSaveOk ? "FAIL: для сенсора нужен .otaz" : "FAIL: файл не открылся (LittleFS)");
         }
-    }, otaHandleSaveFw);
-    otaServer.on("/ota/start", HTTP_POST, otaHandleStartOta);
-    otaServer.on("/ota/abort", HTTP_POST, otaHandleAbort);
-    otaServer.on("/ota/status", HTTP_GET, otaHandleStatus);
-    otaServer.on("/sensors", HTTP_GET, otaHandleSensors);
+    }), otaHandleSaveFw);
+    otaServer.on("/ota/start", HTTP_POST, webAuth(otaHandleStartOta));
+    otaServer.on("/ota/abort", HTTP_POST, webAuth(otaHandleAbort));
+    otaServer.on("/ota/status", HTTP_GET, webAuth(otaHandleStatus));
+    otaServer.on("/sensors", HTTP_GET, webAuth(otaHandleSensors));
     #ifndef SENSOR_NODE
     otaServer.on("/ears", HTTP_POST, otaHandleEars);   // «вторые уши»: приём кадров по сети
     #endif
     #ifdef SENSOR_NODE
     otaServer.on("/radiotx", HTTP_POST, otaHandleRadiotx);   // обратно: координатор шлёт кадр в эфир
     #endif
-    otaServer.on("/sensors/hello", HTTP_POST, otaHandleSensorsHello);
-    otaServer.on("/fw/check", HTTP_POST, otaHandleFwCheck);
-    otaServer.on("/fw/status", HTTP_GET, otaHandleFwStatus);
-    otaServer.on("/sensors/config", HTTP_POST, otaHandleSensorsConfig);
-    otaServer.on("/logs", HTTP_GET, []() {
+    otaServer.on("/sensors/hello", HTTP_POST, webAuth(otaHandleSensorsHello));
+    otaServer.on("/fw/check", HTTP_POST, webAuth(otaHandleFwCheck));
+    otaServer.on("/fw/status", HTTP_GET, webAuth(otaHandleFwStatus));
+    otaServer.on("/sensors/config", HTTP_POST, webAuth(otaHandleSensorsConfig));
+    otaServer.on("/logs", HTTP_GET, webAuth([]() {
         String tail;
         uint32_t pos;
         logGetSnapshot(tail, pos);
         otaServer.sendHeader("X-Log-Pos", String(pos));
         otaServer.send(200, "text/plain; charset=utf-8", buildDiagReport());
-    });
-    otaServer.on("/logs/tail", HTTP_GET, otaHandleLogTail);
-    otaServer.on("/info", HTTP_GET, otaHandleInfo);
-    otaServer.on("/selftest", HTTP_GET, otaHandleSelfTest);
+    }));
+    otaServer.on("/logs/tail", HTTP_GET, webAuth(otaHandleLogTail));
+    otaServer.on("/info", HTTP_GET, webAuth(otaHandleInfo));
+    otaServer.on("/selftest", HTTP_GET, webAuth(otaHandleSelfTest));
     // Обслуживание: раздел, переставший принимать запись, лечится только пересозданием.
     // Образ прошивки не жаль — он всегда скачивается заново с релиза.
-    otaServer.on("/fs/format", HTTP_POST, []() {
+    otaServer.on("/fs/format", HTTP_POST, webAuth([]() {
         if (fwNetBusy()) {
             otaServer.send(503, "text/plain; charset=utf-8", "идёт сетевая загрузка образа, подождите");
             return;
@@ -914,12 +985,12 @@ void setupOtaServer() {
         LittleFS.begin(true);
         slog("[FS] пересоздание раздела: %s\n", ok ? "готово" : "ошибка");
         otaServer.send(ok ? 200 : 500, "text/plain; charset=utf-8", ok ? "OK" : "FAIL");
-    });
-    otaServer.on("/config", HTTP_GET, otaHandleConfigGet);
-    otaServer.on("/config", HTTP_POST, otaHandleConfigPost);
+    }));
+    otaServer.on("/config", HTTP_GET, webAuth(otaHandleConfigGet));
+    otaServer.on("/config", HTTP_POST, webAuth(otaHandleConfigPost));
     #if !FEATURE_SUPPORT
-    otaServer.on("/style.css", HTTP_GET, otaHandleCss);
-    otaServer.on("/app.js", HTTP_GET, otaHandleJs);
+    otaServer.on("/style.css", HTTP_GET, webAuth(otaHandleCss));
+    otaServer.on("/app.js", HTTP_GET, webAuth(otaHandleJs));
     #endif
     otaServer.begin();
     Serial.println("OTA server: http://<ip>:3232/update | /ota/start");

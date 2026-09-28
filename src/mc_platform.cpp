@@ -264,6 +264,8 @@ static void earsFailed() {
 void earsTick() {
     if (earsCount == 0) return;
     if (!mcWifiConnected()) return;
+    // Без ключа координатор нас и не примет: лучше не занимать эфир и сеть впустую.
+    if (cfg.apiKey.length() == 0) return;
     if (coordIp.length() < 7) return;
     if ((unsigned long)(millis() - coordSeenMs) > COORD_STALE_MS) return;
     if (earsNextTryMs != 0 && (long)(millis() - earsNextTryMs) < 0) return;
@@ -296,7 +298,7 @@ void earsTick() {
     }
     c.setTimeout(4000);
     c.print(String("POST /ears HTTP/1.1\r\nHost: ") + coordIp +
-            "\r\nX-API-Key: " + MESH_API_KEY +
+            "\r\nX-API-Key: " + cfg.apiKey +
             "\r\nContent-Type: text/plain\r\n"
             "Content-Length: " + String((unsigned)body.length()) +
             "\r\nConnection: close\r\n\r\n");
@@ -342,6 +344,7 @@ void earsTick() {
 bool mcRelayFrameToSupport(const uint8_t* frame, int len) {
     if (len <= 0 || len > 255) return false;
     if (supportIp.length() < 7) return false;
+    if (cfg.apiKey.length() == 0) return false;   // прошивальщик без ключа кадр не примет
     // Жив ли прошивальщик — спрашиваем у supportPresent(), а не у своего срока годности.
     // Здесь стоял свой литерал в 135 с, снятый с периода объявления КООРДИНАТОРА, тогда как
     // сверялся он с временем объявления ПРОШИВАЛЬЩИКА — а тот объявляется своим heartbeat,
@@ -365,7 +368,7 @@ bool mcRelayFrameToSupport(const uint8_t* frame, int len) {
     }
     c.setTimeout(4000);
     c.print(String("POST /radiotx HTTP/1.1\r\nHost: ") + supportIp +
-            "\r\nX-API-Key: " + MESH_API_KEY +
+            "\r\nX-API-Key: " + cfg.apiKey +
             "\r\nContent-Type: text/plain\r\n"
             "Content-Length: " + String((unsigned)body.length()) +
             "\r\nConnection: close\r\n\r\n");
