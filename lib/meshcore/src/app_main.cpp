@@ -16,7 +16,7 @@
 #include "mqtt.h"
 #include "fwupdate.h"
 #include "net.h"       // netTick: машина состояния сети
-#include "support.h"   // coordPushTick: координатор сообщает свой адрес прошивальщикам
+#include "support.h"   // supportPingTick: отметка прошивальщика у координатора
 #include "companion.h"
 #include "app_main.h"
 #include <WiFi.h>
@@ -338,10 +338,10 @@ void appLoop() {
     earsTick();
     #endif
 
-    // Обратная сторона: координатор сообщает прошивальщикам свой адрес — по сети, а не в
-    // эфир. По одному адресату за проход: каждый — это соединение.
-    #if FEATURE_MESH_OTA_SENDER && !defined(SENSOR_NODE)
-    coordPushTick();
+    // Обратная сторона: прошивальщик отмечается у координатора по сети — называет себя,
+    // версию и окружение. В эфир об этом не уходит ничего.
+    #if FEATURE_SUPPORT
+    supportPingTick();
     #endif
 
     // во время mesh OTA кадры пачки идут каждые ~40 мс — опрашиваем радио чаще

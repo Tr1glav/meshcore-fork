@@ -374,31 +374,6 @@ static String jsonField(const String& body, const char* key) {
     return end < 0 ? String("") : body.substring(from, end);
 }
 
-// Версия и окружение прошивальщика — из его /info, а не из радио-heartbeat. Heartbeat
-// приходит раз в десять минут, и до первого из них узел на странице висел без версии; по
-// сети он отвечает сразу, и ответ точнее — это то, что на нём сейчас запущено.
-//
-// Спрашиваем редко: версия меняется только после прошивки. Пустая — значит ещё не
-// спрашивали, дальше раз в период heartbeat.
-static void supportFetchInfo(int idx) {
-    if (!supportLive(idx)) return;
-    if (supports[idx].ver.length() > 0 &&
-        (millis() - supports[idx].infoMs) < SENSOR_HEARTBEAT_MS) return;
-    String body;
-    String req = String("GET /info HTTP/1.1\r\nHost: ") + supports[idx].ip + "\r\n" +
-                 apiHdr() + "Connection: close\r\n\r\n";
-    if (!supportRequest(supports[idx].ip, req, &body, 1024, SUPPORT_SHORT_MS)) return;
-    const String ver = jsonField(body, "ver");
-    const String env = jsonField(body, "env");
-    if (ver.length() == 0) return;
-    if (supports[idx].ver != ver)
-        slog("[SUP] %s: версия %s (%s)\n", supports[idx].name.c_str(), ver.c_str(),
-             env.c_str());
-    supports[idx].ver = ver;
-    if (env.length()) supports[idx].env = env;
-    supports[idx].infoMs = millis();
-}
-
 // ===== Настройки прошивальщика по сети =====
 //
 // Прошивальщик настраивается со страницы координатора, как любой узел, — но не по радио, а
@@ -420,47 +395,57 @@ bool supportConfigRequest(int idx, bool post, const String& query, String& answe
     return supportRequest(ip, req, &answer, 2048, SUPPORT_HTTP_TIMEOUT_MS);
 }
 
-// ===== Координатор сообщает свой адрес прошивальщикам (по сети, не в эфир) =====
+// ===== ПРОШИВАЛЬЩИК ОТМЕЧАЕТСЯ У КООРДИНАТОРА (по сети) =====
 //
-// Прошивальщику нужен адрес координатора, чтобы слать ему услышанное по радио (POST /ears).
-// Раньше координатор объявлял себя сообщением "coord:<ip>" в сенсорном канале каждые 45
-// секунд: служебный адрес занимал эфир чаще, чем heartbeat самих узлов, и слышали его все,
-// включая тех, кому он не нужен. Адрес прошивальщика координатор и так узнаёт из эфира, а
-// дальше идёт к нему по WiFi, где это не стоит ничего.
+// Отметка идёт от прошивальщика к координатору, а не наоборот: кто существует, тот и
+// сообщает о себе. Адрес координатора прошивальщик знает из своих настроек (coord_ip), имя
+// называет заголовком, а свой адрес координатор берёт из самого соединения — подменить его
+// нельзя даже случайно, и параметра для него не нужно.
 //
-// Ответ нам не нужен — важно лишь, дошло ли. Не дошло — пауза растёт: connect() к
-// недоступному узлу стоит SUPPORT_CONNECT_MS, и стоим мы в главном цикле координатора.
-#define COORD_PUSH_RETRY_MAX_MS 300000UL
-static unsigned long coordPushNextMs[SUPPORT_MAX] = {0};
-static uint8_t coordPushFails[SUPPORT_MAX] = {0};
+// Вместе с отметкой уходят версия и окружение: у координатора они появляются сразу, без
+// отдельного запроса /info и без ожидания радио-heartbeat.
+//
+// Раньше это работало наоборот и через эфир: прошивальщик объявлял себя сообщением
+// "support:<ip>" в сенсорном канале, координатор отвечал своим адресом по сети. Эфир платил
+// за служебный обмен, запись о прошивальщике жила три периода heartbeat (полчаса) и почти
+// никогда не отражала действительность. По сети отметка стоит одного пакета — поэтому она
+// частая (SUPPORT_PING_MS), и уход прошивальщика виден за полминуты.
+#if FEATURE_SUPPORT
+#define SUPPORT_PING_RETRY_MAX_MS 120000UL
+static unsigned long supPingNextMs = 0;
+static uint8_t supPingFails = 0;
 
-void coordPushTick() {
+void supportPingTick() {
     if (!mcWifiConnected()) return;
-    const String me = mcLocalIp();
-    if (me.length() < 7 || me == "0.0.0.0") return;
-    if (cfg.apiKey.length() == 0) return;   // без ключа прошивальщик запрос не примет
-    for (int i = 0; i < supportCount; i++) {
-        if (!supportLive(i)) continue;
-        if (coordPushNextMs[i] != 0 && (long)(millis() - coordPushNextMs[i]) < 0) continue;
-        String req = String("POST /coord HTTP/1.1\r\nHost: ") + supports[i].ip + "\r\n" +
-                     apiHdr() + "Content-Length: 0\r\nConnection: close\r\n\r\n";
-        if (supportRequest(supports[i].ip, req, nullptr, 0, SUPPORT_SHORT_MS)) {
-            if (coordPushFails[i]) slog("[COORD] %s снова принимает адрес\n",
-                                        supports[i].name.c_str());
-            coordPushFails[i] = 0;
-            coordPushNextMs[i] = millis() + COORD_PUSH_MS;
-            // Раз соединение и так состоялось — заодно узнаём, что на нём запущено.
-            supportFetchInfo(i);
-        } else {
-            if (coordPushFails[i] < 8) coordPushFails[i]++;
-            unsigned long wait = COORD_PUSH_MS << (coordPushFails[i] - 1);
-            if (wait > COORD_PUSH_RETRY_MAX_MS) wait = COORD_PUSH_RETRY_MAX_MS;
-            coordPushNextMs[i] = millis() + wait;
+    if (cfg.coordHost.length() < 7) return;      // адрес координатора не настроен
+    if (cfg.apiKey.length() == 0) return;        // без ключа координатор отметку не примет
+    if (supPingNextMs != 0 && (long)(millis() - supPingNextMs) < 0) return;
+
+    String body = String("ver=") + FW_VERSION + "&env=" + FW_ENV;
+    String req = String("POST /support HTTP/1.1\r\nHost: ") + cfg.coordHost + "\r\n" +
+                 apiHdr() + "X-Support: " + cfg.name + "\r\n"
+                 "Content-Type: application/x-www-form-urlencoded\r\n"
+                 "Content-Length: " + String((unsigned)body.length()) + "\r\n"
+                 "Connection: close\r\n\r\n" + body;
+    if (supportRequest(cfg.coordHost, req, nullptr, 0, SUPPORT_SHORT_MS)) {
+        // Отметка дошла — значит координатор на этом адресе есть и слушает. Это же и адрес
+        // для «вторых ушей»: кадры уходят туда же, откуда пришло подтверждение.
+        if (coordIp != cfg.coordHost) {
+            coordIp = cfg.coordHost;
+            slog("[SUP] координатор на %s принимает отметки\n", coordIp.c_str());
         }
-        if (coordPushNextMs[i] == 0) coordPushNextMs[i] = 1;
-        return;   // по одному за проход: каждый — это соединение, а мы в главном цикле
+        coordSeenMs = millis();
+        supPingFails = 0;
+        supPingNextMs = millis() + SUPPORT_PING_MS;
+    } else {
+        if (supPingFails < 8) supPingFails++;
+        unsigned long wait = SUPPORT_PING_MS << (supPingFails - 1);
+        if (wait > SUPPORT_PING_RETRY_MAX_MS) wait = SUPPORT_PING_RETRY_MAX_MS;
+        supPingNextMs = millis() + wait;
     }
+    if (supPingNextMs == 0) supPingNextMs = 1;
 }
+#endif // FEATURE_SUPPORT
 
 // ===== Фоновая передача =====
 //

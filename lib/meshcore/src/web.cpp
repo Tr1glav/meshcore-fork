@@ -336,6 +336,35 @@ static int hexVal(char c) {
 }
 
 #ifndef SENSOR_NODE
+// Отметка прошивальщика: POST /support. Он приходит сам, раз в SUPPORT_PING_MS, и называет
+// себя заголовком X-Support; адрес берём из самого соединения, версию и окружение — из тела.
+// Так весь служебный обмен координатора с прошивальщиком идёт по сети: в эфире о нём больше
+// нет ни одного пакета.
+void otaHandleSupport() {
+    if (!apiKeyOk()) {
+        slog("[SUP] отметка с неверным ключом\n");
+        otaServer.send(403, "text/plain", "forbidden");
+        return;
+    }
+    const String name = otaServer.header("X-Support");
+    if (name.length() == 0 || name.length() > CFG_NAME_MAX) {
+        otaServer.send(400, "text/plain", "bad name");
+        return;
+    }
+    const String ip = otaServer.client().remoteIP().toString();
+    if (ip.length() < 7) { otaServer.send(400, "text/plain", "bad peer"); return; }
+    const int idx = supportSeen(name, ip);
+    // Версия и окружение приходят вместе с отметкой: отдельный запрос /info и ожидание
+    // радио-heartbeat для этого больше не нужны.
+    const String ver = otaServer.arg("ver");
+    const String env = otaServer.arg("env");
+    if (ver.length() && supports[idx].ver != ver)
+        slog("[SUP] %s: версия %s (%s)\n", name.c_str(), ver.c_str(), env.c_str());
+    if (ver.length()) { supports[idx].ver = ver; supports[idx].infoMs = millis(); }
+    if (env.length()) supports[idx].env = env;
+    otaServer.send(200, "text/plain", "OK");
+}
+
 // «Вторые уши»: POST /ears от прошивальщика. Строки — "<hex-кадр>:<rssi>:<snr>": кадр,
 // который прошивальщик услышал там, куда радиокарта координатора не достаёт, и его оценка
 // связи. Кадры проходят тот же дедуп и разбор (meshRxFrame), что и с радио, поэтому
@@ -388,23 +417,6 @@ void otaHandleEars() {
 #endif // !SENSOR_NODE
 
 #ifdef SENSOR_NODE
-// Координатор сообщает свой адрес: POST /coord. Адрес берём из самого соединения, а не из
-// параметра, — координатор и есть тот, кто пришёл, и подменить его на чужой нельзя даже
-// случайно. Раньше адрес приходил сообщением "coord:<ip>" по радио каждые 45 секунд.
-void otaHandleCoord() {
-    if (!apiKeyOk()) {
-        slog("[COORD] неверный ключ\n");
-        otaServer.send(403, "text/plain", "forbidden");
-        return;
-    }
-    const String ip = otaServer.client().remoteIP().toString();
-    if (ip.length() < 7) { otaServer.send(400, "text/plain", "bad peer"); return; }
-    if (coordIp != ip) slog("[COORD] координатор этих ушей на %s\n", ip.c_str());
-    coordIp = ip;
-    coordSeenMs = millis();
-    otaServer.send(200, "text/plain", "OK");
-}
-
 // Обратный канал «вторых ушей»: координатор отвечает на пинг, пришедший через
 // прошивальщика, — и отдаёт готовый кадр ответа этому прошивальщику POST /radiotx,
 // чтобы тот вывел его в эфир СО СВОЕГО радио: отправитель слышит его, а координатора нет.
@@ -1071,10 +1083,10 @@ void setupOtaServer() {
     otaServer.on("/sensors", HTTP_GET, webAuth(otaHandleSensors));
     #ifndef SENSOR_NODE
     otaServer.on("/ears", HTTP_POST, otaHandleEars);   // «вторые уши»: приём кадров по сети
+    otaServer.on("/support", HTTP_POST, otaHandleSupport);   // отметка прошивальщика
     #endif
     #ifdef SENSOR_NODE
     otaServer.on("/radiotx", HTTP_POST, otaHandleRadiotx);   // обратно: координатор шлёт кадр в эфир
-    otaServer.on("/coord", HTTP_POST, otaHandleCoord);       // адрес координатора для /ears
     #endif
     otaServer.on("/sensors/hello", HTTP_POST, webAuth(otaHandleSensorsHello));
     otaServer.on("/fw/check", HTTP_POST, webAuth(otaHandleFwCheck));
