@@ -69,12 +69,16 @@ void coordinatorTasksTick() {
     // Слушает узел-прошивальщик (разбор SENSOR_MSG_COORD в ядре): слыша узлы, до которых
     // мы по радио не добираемся, он шлёт их кадры сюда, на POST /ears. Как с "support:",
     // объявление отдельным сообщением — платить байтами за него в каждом heartbeat некому.
-    // Период держит компромисс: перезагрузившийся координатор прошивальщик должен найти
-    // за десятки секунд, но и эфир мусором забивать незачем.
+    // Период (COORD_ANNOUNCE_MS в config.h) держит компромисс: перезагрузившийся
+    // координатор прошивальщик должен найти за десятки секунд, но и эфир мусором забивать
+    // незачем. Отсюда же и условие: объявляемся, только пока прошивальщик в сети. Слушать
+    // это объявление больше некому, и в сети без прошивальщика оно было бы лишним кадром в
+    // сенсорном канале каждые 45 секунд — в тринадцать раз чаще, чем heartbeat самих узлов.
+    // Перезагрузился координатор — прошивальщик напомнит о себе своим heartbeat, и с этого
+    // момента объявления пойдут (первое — сразу, lastCoordAnnounceMs ещё нулевой).
     #if FEATURE_WEB && !defined(SENSOR_NODE)
-    #define COORD_ANNOUNCE_MS 45000UL
     static unsigned long lastCoordAnnounceMs = 0;
-    if (mcWifiConnected() && sensorChannelIdx >= 0 && !otaSessionActive() &&
+    if (mcWifiConnected() && sensorChannelIdx >= 0 && !otaSessionActive() && supportPresent() &&
         (lastCoordAnnounceMs == 0 || millis() - lastCoordAnnounceMs >= COORD_ANNOUNCE_MS)) {
         lastCoordAnnounceMs = millis();
         char msg[32];

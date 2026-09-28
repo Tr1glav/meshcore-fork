@@ -216,8 +216,15 @@ float mcBatteryVoltage()  { return batteryVoltage(); }
 #define EARS_BATCH_CHARS 6000   // тело запроса: ~11 кадров, остальное доберёт следующий POST
 #define EARS_CONNECT_MS 3000
 // Координатор объявляется "coord:<ip>" каждые COORD_ANNOUNCE_MS; молчит дольше трёх
-// периодов — считаем его ушедшим и не стучимся в пустоту (см. coordinator_tasks.cpp).
-#define EARS_COORD_STALE_MS (3UL * 45000UL)
+// периодов (COORD_STALE_MS) — считаем его ушедшим и не стучимся в пустоту.
+//
+// Попытки — не чаще EARS_RETRY_MS, и после неудачи пауза удваивается до EARS_RETRY_MAX_MS.
+// Это не вежливость к координатору, а защита приёма: connect() к недоступному адресу стоит
+// до EARS_CONNECT_MS, и стоим мы в главном цикле. Пока он стоит, radioRxTick() не зовётся —
+// узел глух к эфиру. Без паузы каждый проход цикла упирался в этот connect, и узел терял
+// приём на все две минуты, пока адрес координатора не устареет.
+#define EARS_RETRY_MS 2000UL
+#define EARS_RETRY_MAX_MS 60000UL
 
 static uint8_t earsPool[EARS_QUEUE_MAX][EARS_FRAME_MAX];
 static uint8_t  earsLen[EARS_QUEUE_MAX];
@@ -225,6 +232,8 @@ static float    earsRssi[EARS_QUEUE_MAX];
 static float    earsSnr[EARS_QUEUE_MAX];
 static uint8_t  earsHead = 0;    // самый старый кадр
 static uint8_t  earsCount = 0;
+static unsigned long earsNextTryMs = 0;   // раньше этого времени не пробуем
+static uint8_t earsFails = 0;             // неудач подряд: по ним растёт пауза
 
 void mcOnFreshFrame(const uint8_t* buf, size_t len, float rssi, float snr) {
     if (len == 0 || len > EARS_FRAME_MAX) return;
@@ -244,11 +253,20 @@ static void earsPop(unsigned n) {
 
 // Главный цикл зовёт раз в проход; работает только у прошивальщика (FEATURE_SUPPORT),
 // там же, где и хук, — оба в одном контексте, гонок нет.
+static void earsFailed() {
+    if (earsFails < 8) earsFails++;
+    unsigned long wait = EARS_RETRY_MS << (earsFails - 1);
+    if (wait > EARS_RETRY_MAX_MS) wait = EARS_RETRY_MAX_MS;
+    earsNextTryMs = millis() + wait;
+    if (earsNextTryMs == 0) earsNextTryMs = 1;   // 0 занято признаком «пробуем сразу»
+}
+
 void earsTick() {
     if (earsCount == 0) return;
     if (!mcWifiConnected()) return;
     if (coordIp.length() < 7) return;
-    if ((unsigned long)(millis() - coordSeenMs) > EARS_COORD_STALE_MS) return;
+    if ((unsigned long)(millis() - coordSeenMs) > COORD_STALE_MS) return;
+    if (earsNextTryMs != 0 && (long)(millis() - earsNextTryMs) < 0) return;
 
     String body;
     body.reserve(EARS_BATCH_CHARS);
@@ -271,7 +289,9 @@ void earsTick() {
 
     WiFiClient c;
     if (!c.connect(coordIp.c_str(), 3232, EARS_CONNECT_MS)) {
-        slog("[EARS] %s недоступен, кадры остаются в очереди\n", coordIp.c_str());
+        earsFailed();
+        slog("[EARS] %s недоступен, кадры остаются в очереди (следующая попытка через %lu мс)\n",
+             coordIp.c_str(), earsNextTryMs - millis());
         return;
     }
     c.setTimeout(4000);
@@ -300,9 +320,13 @@ void earsTick() {
     c.stop();
     if (ok) {
         earsPop(drained);
+        earsFails = 0;
+        earsNextTryMs = 0;   // очередь ещё не пуста — остаток уйдёт следующим проходом
         slog("[EARS] ушло %u кадров, в очереди %u\n", drained, earsCount);
     } else {
-        slog("[EARS] POST /ears не принят (%u кадров остаются)\n", drained);
+        earsFailed();
+        slog("[EARS] POST /ears не принят (%u кадров остаются, следующая попытка через %lu мс)\n",
+             drained, earsNextTryMs - millis());
     }
 }
 #endif // FEATURE_SUPPORT
@@ -315,14 +339,16 @@ void earsTick() {
 // условием — лишний символ в прошивке поддержки не нужен.
 #ifndef SENSOR_NODE
 #define RADIOTX_CONNECT_MS 3000
-// Сколько ждём объявление прошивальщика после последнего раз. Тот же срок жизни, что у
-// EARS_COORD_STALE_MS у прошивальщика (3 периода объявления координатора) — у поддержки
-// свой heartbeat, но порядок тот же: три пропуска подряд означают, что его нет.
-#define RADIOTX_SUPPORT_STALE_MS (3UL * 45000UL)
 bool mcRelayFrameToSupport(const uint8_t* frame, int len) {
     if (len <= 0 || len > 255) return false;
     if (supportIp.length() < 7) return false;
-    if ((unsigned long)(millis() - supportSeenMs) > RADIOTX_SUPPORT_STALE_MS) return false;
+    // Жив ли прошивальщик — спрашиваем у supportPresent(), а не у своего срока годности.
+    // Здесь стоял свой литерал в 135 с, снятый с периода объявления КООРДИНАТОРА, тогда как
+    // сверялся он с временем объявления ПРОШИВАЛЬЩИКА — а тот объявляется своим heartbeat,
+    // раз в десять минут. Обратный канал поэтому жил около двух минут из каждых десяти, и
+    // ответ на пинг, пришедший через «вторые уши», почти всегда уходил обычным флудом — как
+    // раз к тем узлам, которые координатора не слышат.
+    if (!supportPresent()) return false;
 
     static const char RADIO_HEX[] = "0123456789ABCDEF";
     String body;
