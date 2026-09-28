@@ -40,17 +40,13 @@ void sensorTasksTick() {
     static unsigned long lastHeartbeat = 0;
     static bool bootHelloSent = false;
     #if FEATURE_SUPPORT
-    // Ушло ли объявление прошивальщика и когда его пробовали повторить.
-    static bool supAnnounced = false;
+    // Когда объявление пробовали в последний раз.
     static unsigned long supRetryMs = 0;
     #endif
     if (!otaActive && cfgReady()) {
         if (!bootHelloSent) {
             bootHelloSent = true;
             sensorSendHello();   // стартовый hello сразу после включения
-            #if FEATURE_SUPPORT
-            supAnnounced = supportAnnounce();   // следом за heartbeat: координатор узнаёт адрес прошивальщика
-            #endif
             // не упреждать первый периодический heartbeat после boot-привета
             lastHeartbeat = millis();
         } else if (sensorHelloDueMs != 0 && millis() >= sensorHelloDueMs) {
@@ -58,36 +54,37 @@ void sensorTasksTick() {
             sensorHelloDueMs = 0;
             lastHeartbeat = millis();
             sensorSendHello();
-            #if FEATURE_SUPPORT
-            supAnnounced = supportAnnounce();   // следом за heartbeat: координатор узнаёт адрес прошивальщика
-            #endif
         } else if (millis() - lastHeartbeat >= SENSOR_HEARTBEAT_MS) {
             lastHeartbeat = millis();
             sensorSendHello();
-            #if FEATURE_SUPPORT
-            supAnnounced = supportAnnounce();   // следом за heartbeat: координатор узнаёт адрес прошивальщика
-            #endif
         }
     }
     #if FEATURE_SUPPORT
-    // Объявление без адреса бессмысленно, а WiFi поднимается ПОЗЖЕ стартового heartbeat:
-    // попытка рядом с ним почти всегда уходит впустую. Без повтора следующая была бы
-    // только со следующим heartbeat — десять минут после каждой перезагрузки координатор
-    // считал бы, что прошивальщика в сети нет, и шил бы узлы сам, по радио.
+    // ===== ОБЪЯВЛЕНИЕ АДРЕСА: РОВНО ПОКА КООРДИНАТОР ЕГО НЕ ЗНАЕТ =====
     //
-    // Обрыв WiFi обнуляет признак: переподключение может принести другой адрес, а по
-    // старому координатор постучится в пустоту и потеряет сессию на таймауте.
-    if (!mcWifiConnected()) {
-        supAnnounced = false;
-    } else if (!supAnnounced && !otaActive && cfgReady() &&
-               (supRetryMs == 0 || millis() - supRetryMs >= SUPPORT_ANNOUNCE_RETRY_MS)) {
+    // Раньше адрес уходил в сенсорный канал с КАЖДЫМ heartbeat, то есть раз в десять минут
+    // и до конца времён — хотя координатор запомнил его с первого раза. Теперь признак того,
+    // что он его знает, есть прямой: координатор сам приходит к нам по сети (POST /coord,
+    // раз в COORD_PUSH_MS). Приходит — молчим, эфир не наш личный.
+    //
+    // Перестал приходить (перезагрузился, сменил адрес, пропал из сети) — через COORD_STALE_MS
+    // объявления возобновляются сами. Не ждать и этого позволяет опрос "hello?" со страницы:
+    // ядро ставит supportAnnounceDue, и адрес уходит следующим же проходом.
+    //
+    // Обрыв WiFi сбрасывает признак «нас знают»: переподключение может принести другой адрес,
+    // а по старому координатор постучится в пустоту и потеряет сессию на таймауте.
+    const bool coordKnowsUs = mcWifiConnected() && coordIp.length() > 0 &&
+                              (millis() - coordSeenMs) < COORD_STALE_MS;
+    if (mcWifiConnected() && !otaActive && cfgReady() &&
+        (supportAnnounceDue ||
+         (!coordKnowsUs && (supRetryMs == 0 ||
+                            millis() - supRetryMs >= SUPPORT_ANNOUNCE_RETRY_MS)))) {
+        const bool asked = supportAnnounceDue;
+        supportAnnounceDue = false;
         supRetryMs = millis();
-        supAnnounced = supportAnnounce();
-        // Ровно один раз на подключение: объявление уходит ещё и с каждым heartbeat, и
-        // строка в журнале на каждый из них была бы шумом. А вот того, что оно вообще
-        // ушло, до сих пор нигде не было видно — и молчащий прошивальщик выглядел как
-        // исправный.
-        if (supAnnounced) slog("[SUP] объявлен по радио: %s\n", mcLocalIp().c_str());
+        if (supportAnnounce())
+            slog("[SUP] объявлен по радио: %s%s\n", mcLocalIp().c_str(),
+                 asked ? " (по опросу)" : "");
     }
     #endif
     #if FEATURE_BUTTON

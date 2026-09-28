@@ -361,6 +361,42 @@ bool supportHandOff(int idx, const String& target) {
     return true;
 }
 
+// Строковое поле из JSON-ответа: "<key>":"<значение>". Разбор подстрокой, как и везде
+// здесь — ответ свой, формат известен.
+static String jsonField(const String& body, const char* key) {
+    const String pat = String("\"") + key + "\":\"";
+    const int at = body.indexOf(pat);
+    if (at < 0) return "";
+    const int from = at + pat.length();
+    const int end = body.indexOf('"', from);
+    return end < 0 ? String("") : body.substring(from, end);
+}
+
+// Версия и окружение прошивальщика — из его /info, а не из радио-heartbeat. Heartbeat
+// приходит раз в десять минут, и до первого из них узел на странице висел без версии; по
+// сети он отвечает сразу, и ответ точнее — это то, что на нём сейчас запущено.
+//
+// Спрашиваем редко: версия меняется только после прошивки. Пустая — значит ещё не
+// спрашивали, дальше раз в период heartbeat.
+static void supportFetchInfo(int idx) {
+    if (!supportLive(idx)) return;
+    if (supports[idx].ver.length() > 0 &&
+        (millis() - supports[idx].infoMs) < SENSOR_HEARTBEAT_MS) return;
+    String body;
+    String req = String("GET /info HTTP/1.1\r\nHost: ") + supports[idx].ip + "\r\n" +
+                 apiHdr() + "Connection: close\r\n\r\n";
+    if (!supportRequest(supports[idx].ip, req, &body, 1024, SUPPORT_SHORT_MS)) return;
+    const String ver = jsonField(body, "ver");
+    const String env = jsonField(body, "env");
+    if (ver.length() == 0) return;
+    if (supports[idx].ver != ver)
+        slog("[SUP] %s: версия %s (%s)\n", supports[idx].name.c_str(), ver.c_str(),
+             env.c_str());
+    supports[idx].ver = ver;
+    if (env.length()) supports[idx].env = env;
+    supports[idx].infoMs = millis();
+}
+
 // ===== Настройки прошивальщика по сети =====
 //
 // Прошивальщик настраивается со страницы координатора, как любой узел, — но не по радио, а
@@ -411,6 +447,8 @@ void coordPushTick() {
                                         supports[i].name.c_str());
             coordPushFails[i] = 0;
             coordPushNextMs[i] = millis() + COORD_PUSH_MS;
+            // Раз соединение и так состоялось — заодно узнаём, что на нём запущено.
+            supportFetchInfo(i);
         } else {
             if (coordPushFails[i] < 8) coordPushFails[i]++;
             unsigned long wait = COORD_PUSH_MS << (coordPushFails[i] - 1);

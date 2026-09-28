@@ -91,13 +91,14 @@ function renderTargets(){
             info.bat>=0?info.bat:-1,false,grp);
   for(const sup of sups){
     const sp=sensors.find(x=>x.name==sup.n);
-    const parts=[{t:'прошивальщик',b:1}];
-    if(sp){
-      parts.push({t:sp.ver?'v'+sp.ver:'версия ?'},
-                 {t:sp.online?'онлайн':'был '+ago(sp.seen_s)+' назад'});
-    }else{
-      parts.push({t:'объявился по радио, в списке узлов ещё нет'});
-    }
+    // Версия — из его /info по сети (sup.v): она точная и не ждёт радио-heartbeat, который
+    // приходит раз в десять минут. Из эфира (sp.ver) берём только если по сети не спросили.
+    const ver=sup.v||(sp&&sp.ver)||'';
+    const parts=[{t:sup.e||'прошивальщик',b:1}];
+    if(sup.e)parts.push({t:'прошивальщик'});
+    parts.push({t:ver?'v'+ver:'версия ?'});
+    if(sp)parts.push({t:sp.online?'онлайн':'был '+ago(sp.seen_s)+' назад'});
+    else parts.push({t:'в эфире пока не слышали'});
     if(sup.ip)parts.push({t:'открыть',href:'http://'+sup.ip+':3232/'});
     addTarget(sup.n,sup.n,parts,sp?sp.online:true,sp?sp.bat:-1,true,grp);
   }

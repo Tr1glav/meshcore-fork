@@ -201,10 +201,13 @@ void otaHandleInfo() {
         bool first = true;
         for (int i = 0; i < supportCount && at < (int)sizeof(sups) - 80; i++) {
             if (!supportLive(i)) continue;
-            char nm[48];
+            char nm[48], sv[24], se[40];
             jsonEscape(supports[i].name.c_str(), nm, sizeof(nm));
-            at += snprintf(sups + at, sizeof(sups) - at, "%s{\"n\":\"%s\",\"ip\":\"%s\"}",
-                           first ? "" : ",", nm, supports[i].ip.c_str());
+            jsonEscape(supports[i].ver.c_str(), sv, sizeof(sv));
+            jsonEscape(supports[i].env.c_str(), se, sizeof(se));
+            at += snprintf(sups + at, sizeof(sups) - at,
+                           "%s{\"n\":\"%s\",\"ip\":\"%s\",\"v\":\"%s\",\"e\":\"%s\"}",
+                           first ? "" : ",", nm, supports[i].ip.c_str(), sv, se);
             first = false;
         }
         snprintf(sups + at, sizeof(sups) - at, "]");
@@ -503,7 +506,25 @@ void otaHandleSensorsConfig() {
                 otaServer.send(504, "text/plain; charset=utf-8", "прошивальщик не ответил");
                 return;
             }
-            otaServer.send(200, "application/json", answer);
+            // Ответ /config — JSON, а страница показывает ответ этой точки входа строкой
+            // (у радио-пути он тоже текст). Разворачиваем в "поле=значение" здесь, чтобы
+            // страница осталась одна на оба пути; секреты у прошивальщика уже замаскированы.
+            String text;
+            for (int at = 0; (at = answer.indexOf("\"f\":\"", at)) >= 0; ) {
+                at += 5;
+                const int fe = answer.indexOf('"', at);
+                if (fe < 0) break;
+                const String field = answer.substring(at, fe);
+                const int vs = answer.indexOf("\"v\":\"", fe);
+                if (vs < 0) break;
+                const int ve = answer.indexOf('"', vs + 5);
+                if (ve < 0) break;
+                if (text.length()) text += ", ";
+                text += field + "=" + answer.substring(vs + 5, ve);
+                at = ve;
+            }
+            otaServer.send(200, "text/plain; charset=utf-8",
+                           text.length() ? text : String("прошивальщик ответил непонятным"));
             return;
         }
         String query;
