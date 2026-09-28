@@ -256,12 +256,18 @@ void appSetup() {
 }
 
 void appLoop() {
-    #ifdef MQTT_ENABLED
+    // Признаки, а не MQTT_ENABLED: страница жила под тем же условием, что брокер, и сборка с
+    // FEATURE_WEB=1 без MQTT_ENABLED поднимала сервер, которому никто не давал принимать
+    // соединения. Сам MQTT_ENABLED пока остаётся зонтиком над сетевым слоем: tickRetryConnections
+    // лежит в mqtt.cpp под ним же, и вынести подключение WiFi оттуда — отдельная работа.
+    #if FEATURE_WEB
     otaServer.handleClient();   // HTTP OTA: принимаем реквесты не блокируя радио
-    otaBotTick();               // mesh OTA: таймауты повтора чанков
+    #endif
     #if FEATURE_MESH_OTA_SENDER
+    otaBotTick();               // mesh OTA: таймауты повтора чанков
     otaSupportTick();           // итог передачи образа прошивальщику (идёт фоновой задачей)
     #endif
+    #ifdef MQTT_ENABLED
 
     // ===== MQTT RECONNECT (неблокирующий, раз в 5 с) =====
     if (millis() - lastMqttReconnectMs > MQTT_RECONNECT_INTERVAL_MS) {

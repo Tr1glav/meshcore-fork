@@ -409,13 +409,35 @@ static int sensorIndex(const String& name) {
     for (int i = 0; i < sensorDeviceDiscCount; i++) {
         if (sensorDeviceDisc[i] == name) return i;
     }
-    if (sensorDeviceDiscCount >= SENSOR_DEV_CACHE_MAX) return -1;
-    sensorDeviceDisc[sensorDeviceDiscCount] = name;
-    sensorDiscPublished[sensorDeviceDiscCount] = false;
-    sensorPosPublished[sensorDeviceDiscCount] = false;
-    sensorBattery[sensorDeviceDiscCount] = -1;
-    sensorHops[sensorDeviceDiscCount] = 0xFF;    // пока не услышали — не «напрямую», а «неизвестно»
-    return sensorDeviceDiscCount++;
+    int idx;
+    if (sensorDeviceDiscCount < SENSOR_DEV_CACHE_MAX) {
+        idx = sensorDeviceDiscCount++;
+    } else {
+        // Реестр полон. Раньше здесь стоял отказ, и узел сверх шестнадцатого просто не
+        // появлялся ни на странице, ни в MQTT — без единой строки в журнале, так что со
+        // стороны это выглядело как пропавшая связь. Вытесняем того, кто дольше всех не
+        // выходил в эфир: он либо снят, либо всё равно не на связи, а живому узлу место
+        // нужнее.
+        idx = 0;
+        for (int i = 1; i < sensorDeviceDiscCount; i++)
+            if ((long)(sensorLastActive[i] - sensorLastActive[idx]) < 0) idx = i;
+        slog("[REG] реестр узлов полон (%d): '%s' вытеснен узлом '%s'\n",
+             (int)SENSOR_DEV_CACHE_MAX, sensorDeviceDisc[idx].c_str(), name.c_str());
+    }
+    // Слот может быть переиспользован, поэтому чистим ВСЕ поля узла, а не только те, у
+    // которых нет разумного нуля: версия и окружение прошлого жильца иначе показывались бы
+    // как версия нового.
+    sensorDeviceDisc[idx] = name;
+    sensorDiscPublished[idx] = false;
+    sensorPosPublished[idx] = false;
+    sensorBattery[idx] = -1;
+    sensorHops[idx] = 0xFF;      // пока не услышали — не «напрямую», а «неизвестно»
+    sensorOnlineNow[idx] = false;
+    sensorLastActive[idx] = millis();
+    sensorFwVersion[idx] = "";
+    sensorEnv[idx] = "";
+    sensorRssi[idx] = 0;
+    return idx;
 }
 
 void publishSensorAvailability(int idx) {
