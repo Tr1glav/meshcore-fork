@@ -849,6 +849,12 @@ void otaHandleStatus() {
 }
 
 void setupOtaServer() {
+    // Произвольный заголовок иначе не увидеть: WebServer по умолчанию копит только
+    // Authorization, остальные отбрасывает. /ears и /radiotx ходят под X-API-Key —
+    // без collectHeaders header("X-API-Key") всегда пустой, и форвард умер бы с "403 forbidden".
+    const char* headerKeys[] = {"X-API-Key"};
+    size_t headerKeysCount = sizeof(headerKeys) / sizeof(headerKeys[0]);
+    otaServer.collectHeaders(headerKeys, headerKeysCount);
     #if !FEATURE_SUPPORT
     otaServer.on("/", HTTP_GET, otaHandleRoot);   // веб-морда: нужна только координатору
     #endif
