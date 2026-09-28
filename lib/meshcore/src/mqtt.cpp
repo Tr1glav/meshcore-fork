@@ -451,6 +451,8 @@ static int sensorIndex(const String& name) {
     sensorPosPublished[idx] = false;
     sensorBattery[idx] = -1;
     sensorHops[idx] = 0xFF;      // пока не услышали — не «напрямую», а «неизвестно»
+    sensorViaSup[idx] = 0;
+    sensorViaRssi[idx] = 0;
     sensorOnlineNow[idx] = false;
     sensorLastActive[idx] = millis();
     sensorFwVersion[idx] = "";
@@ -472,10 +474,17 @@ bool publishSensorMessage() {
     bool cameOnline = false;
     if (idx >= 0) {
         sensorLastActive[idx] = millis();
-        sensorRssi[idx] = lastRSSI;
-        // Кадр, пришедший от узла-прошивальщика (второе ухо), не доказывает прямой
-        // слышимости: хопов координатора в нём 0, но эфирные кадры прошли через ретрансляторы.
-        sensorHops[idx] = lastRxViaSupport ? 0xFF : lastHopCount;   // 0xFF — «неизвестно», не «напрямую»
+        if (lastRxViaSupport) {
+            // Кадр принёс прошивальщик по сети: и RSSI, и хопы в нём — ЕГО измерения, от его
+            // антенны. Свои этим не затираем — иначе узел, который мы слышим напрямую, после
+            // одного форварда выглядел бы неслышимым, и прошить его сами мы бы не взялись.
+            const int si = supportFind(lastRxSupport);
+            sensorViaSup[idx] = (si >= 0) ? (uint8_t)(si + 1) : 0xFF;
+            sensorViaRssi[idx] = lastRSSI;
+        } else {
+            sensorRssi[idx] = lastRSSI;
+            sensorHops[idx] = lastHopCount;
+        }
         cameOnline = !sensorOnlineNow[idx];
         sensorOnlineNow[idx] = true;
     }

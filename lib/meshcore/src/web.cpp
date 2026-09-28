@@ -456,18 +456,27 @@ void otaHandleSensors() {
         // Имя окружения показываем вместо кода платы: в нём уже есть и плата, и тип
         // прошивки, а по нему же автообновление выбирает файл релиза. Пустое значение —
         // прошивка узла старая, и файл подберётся по коду платы (он остаётся в hello).
-        char name[48], ver[32], env[40], rssi[12], item[320];
+        char name[48], ver[32], env[40], rssi[12], via[48], vrssi[12], item[448];
         jsonEscape(sensorDeviceDisc[i].c_str(), name, sizeof(name));
         jsonEscape(sensorFwVersion[i].c_str(), ver, sizeof(ver));
         jsonEscape(sensorEnv[i].c_str(), env, sizeof(env));
         fmtFix(sensorRssi[i], 0, rssi, sizeof(rssi));   // без float-printf, как и везде
-        // Хопы: по ним видно, можно ли узел прошить. -1 — ещё ни разу не слышали.
+        // Хопы: по ним видно, можно ли узел прошить ИЗ ЭФИРА. -1 — из эфира не слышали.
         const int hops = (sensorHops[i] == 0xFF) ? -1 : (int)sensorHops[i];
+        // Кто ещё его слышит: узел может быть неслышен нам, но прекрасно слышен
+        // прошивальщику — тогда сессию поведёт он, и «хопы: ?» это не отказ, а объяснение.
+        via[0] = 0;
+        const uint8_t vs = sensorViaSup[i];
+        if (vs == 0xFF) jsonEscape("?", via, sizeof(via));
+        else if (vs > 0 && vs - 1 < supportCount) jsonEscape(supports[vs - 1].name.c_str(), via, sizeof(via));
+        fmtFix(sensorViaRssi[i], 0, vrssi, sizeof(vrssi));
         snprintf(item, sizeof(item),
                  "%s{\"name\":\"%s\",\"ver\":\"%s\",\"env\":\"%s\","
-                 "\"online\":%s,\"seen_s\":%lu,\"bat\":%d,\"rssi\":%s,\"hops\":%d}",
+                 "\"online\":%s,\"seen_s\":%lu,\"bat\":%d,\"rssi\":%s,\"hops\":%d,"
+                 "\"via\":\"%s\",\"virssi\":%s}",
                  i ? "," : "", name, ver, env, sensorOnlineNow[i] ? "true" : "false",
-                 (millis() - sensorLastActive[i]) / 1000, sensorBattery[i], rssi, hops);
+                 (millis() - sensorLastActive[i]) / 1000, sensorBattery[i], rssi, hops,
+                 via, vrssi);
         json += item;
     }
     json += "]";
