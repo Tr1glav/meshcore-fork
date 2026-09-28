@@ -23,6 +23,7 @@
 
 #include <LittleFS.h>
 #include <WiFi.h>
+#include "net.h"
 #include "mqtt.h"     // wifiConnected: сеть нужна и для передачи образа
 
 extern "C" {

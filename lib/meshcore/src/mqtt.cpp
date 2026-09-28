@@ -8,15 +8,10 @@
 #ifdef MQTT_ENABLED
 
 #include <esp_sntp.h>
+#include "net.h"   // wifiClient: брокер работает по нему
 
-// Состояние сети, брокера, времени и Home Assistant. Переехало из globals.h ядра: протокол
-// носил в себе WiFi-клиент и PubSubClient, не обращаясь к ним ни разу. Guard см. в mqtt.h.
-WiFiClient wifiClient;
-bool wifiConnected = false;
-bool wifiConnInProgress = false;
-unsigned long wifiConnStartMs = 0;
-unsigned long lastMqttReconnectMs = 0;
-
+// Состояние брокера и Home Assistant. Сеть и время теперь в net.cpp: они нужны и тому, у
+// кого брокера нет вовсе, и одним признаком быть не должны.
 PubSubClient mqtt(wifiClient);
 char mqttPrefix[64];
 bool mqttConnected = false;
@@ -28,10 +23,6 @@ unsigned long snsBtnClearAt = 0;
 bool snsBtnPendingClear = false;
 char snsBtnSlug[48];
 unsigned long lastSensorAvailCheckMs = 0;
-
-bool ntpStarted = false;
-bool ntpSyncedLogged = false;
-unsigned long lastNtpSyncMs = 0;
 unsigned long lastSensorTimeSyncMs = 0;
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
@@ -663,46 +654,10 @@ void setupMQTT() {
     mqtt.setSocketTimeout(3);  // ограничиваем блокировку connect() до ~3 с
 }
 
-void tickRetryConnections() {
-    // без настроек подключаться некуда: устройство ждёт настройки в консоли
-    if (cfg.wifiSsid.length() == 0) return;
-    // ===== WiFi =====
-    bool connectedNow = (WiFi.status() == WL_CONNECTED);
-    if (wifiConnected && !connectedNow) {
-        // обрыв — сбрасываем флаги, дальше переподключаемся
-        wifiConnected = false;
-        mqttConnected = false;
-    }
-    if (!connectedNow) {
-        if (!wifiConnInProgress) {
-            wifiConnInProgress = true;
-            wifiConnStartMs = millis();
-            Serial.println("[WiFi] connecting...");
-            WiFi.disconnect();
-            WiFi.begin(cfg.wifiSsid.c_str(), cfg.wifiPass.c_str());
-        } else if ((int32_t)(millis() - wifiConnStartMs) > 15000) {
-            Serial.println("[WiFi] timeout, retry in 5s");
-            wifiConnInProgress = false;
-        }
-        return;   // без WiFi MQTT не трогаем
-    }
-    if (!wifiConnected) {
-        wifiConnected = true;
-        wifiConnInProgress = false;
-        Serial.printf("[WiFi] connected (%s)\n", WiFi.localIP().toString().c_str());
-        // SNTP сразу при появлении WiFi (не ждём MQTT): часы уточняются с
-        // сервера времени, build-time устаревает уже через пару дней.
-        if (!ntpStarted) {
-            ntpStarted = true;
-            lastNtpSyncMs = millis();
-            configTime(0, 0, "pool.ntp.org");   // синхронизация в UTC
-        }
-    }
-
-    // ===== MQTT =====
-    // Брокера может не быть вовсе: узлу-прошивальщику (support) сеть нужна, а MQTT нет —
-    // он ничего не публикует и ни на что не подписан. WiFi выше поднимается в любом
-    // случае, здесь же кончается всё, что относится к брокеру.
+// Шаг подключения к брокеру. Сеть к этому моменту уже поднята — её машина состояния живёт
+// в net.cpp и зовёт этот шаг сама. Раньше обе половины были одной функцией
+// tickRetryConnections, и «есть сеть» с «есть брокер» не различались.
+void mqttConnectTick() {
 #if FEATURE_MQTT
     if (cfg.mqttHost.length() == 0) return;
     if (mqttConnected && mqtt.connected()) return;

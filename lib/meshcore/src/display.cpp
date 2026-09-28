@@ -5,6 +5,7 @@
 #include "crypto.h"
 #include "display.h"
 #include "companion.h"   // код сопряжения BLE на экране компаньона
+#include "net.h"
 #include "mqtt.h"
 
 
@@ -241,11 +242,16 @@ void drawIdleStatus() {
         display.printf("    %s ago\n", agoStr(sensorLastSentMs).c_str());
     }
     #else
-    #ifdef MQTT_ENABLED
-    // WiFi/MQTT статус: 1 строка, "+" = подключено, "-" = нет
+    #if FEATURE_WIFI
+    // WiFi/MQTT статус: 1 строка, "+" = подключено, "-" = нет. У прошивальщика брокера нет,
+    // и вторая половина строки ему не про что — показываем только то, что у него есть.
     const char* w = wifiConnected ? "+" : "-";
+    #if FEATURE_MQTT
     const char* m = mqttConnected ? "+" : "-";
     display.printf("WiFi:%s MQTT:%s\n", w, m);
+    #else
+    display.printf("WiFi:%s\n", w);
+    #endif
     if (txChannelIdx >= 0 && txChannelIdx < numChannels) {
         display.printf("TX: %s\n", channels[txChannelIdx].name);
     }

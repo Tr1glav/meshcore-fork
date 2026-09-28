@@ -2,6 +2,7 @@
 #include "globals.h"
 #include "mesh.h"
 #include "ota.h"
+#include "net.h"
 #include "mqtt.h"
 #include "fwupdate.h"
 #include "display.h"
@@ -16,6 +17,11 @@
 #if FEATURE_MQTT || FEATURE_AUTOUPDATE || FEATURE_SELFUPDATE || FEATURE_NTP
 
 void coordinatorTasksTick() {
+    // Каждая задача под своим признаком, а не все под «есть брокер»: у прошивальщика
+    // FEATURE_MQTT=0 и FEATURE_NTP=0, и раньше он собирал этот код целиком, а в рантайме
+    // просто не входил ни в одну ветку — потому что mqttConnected и ntpStarted у него
+    // всегда ложь. Теперь их у него просто нет.
+#if FEATURE_MQTT
     // ===== MQTT STATUS (раз в 60 сек) =====
     if (mqttConnected && millis() - lastStatusPublishMs > MQTT_STATUS_INTERVAL_MS) {
         lastStatusPublishMs = millis();
@@ -33,6 +39,8 @@ void coordinatorTasksTick() {
             }
         }
     }
+#endif // FEATURE_MQTT
+#if FEATURE_NTP
     // ===== Ре-синк NTP раз в час (configTime снова делает stop+init) =====
     if (ntpStarted && wifiConnected && (int32_t)(millis() - lastNtpSyncMs) >= (int32_t)NTP_RESYNC_INTERVAL_MS) {
         lastNtpSyncMs = millis();
@@ -64,6 +72,7 @@ void coordinatorTasksTick() {
         lastSensorTimeSyncMs = millis();
         sendSensorTimeSync();
     }
+#endif // FEATURE_NTP
     fwUpdateTick();   // новые версии из релизов GitHub
     // «Вторые уши»: свой адрес прошивальщикам координатор сообщает ПО СЕТИ (coordPushTick в
     // support.cpp, POST /coord). Здесь раньше стояло объявление "coord:<ip>" в сенсорный

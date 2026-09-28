@@ -6,7 +6,9 @@
 #include "mesh.h"
 #include "support.h"   // прошивальщик может дотянуться туда, куда мы нет
 
-#ifdef MQTT_ENABLED
+// Признак сети, а не брокера: образ качается по HTTPS, и брокер к этому не имеет
+// отношения. У прошивальщика FEATURE_MQTT=0, а обновляет себя он именно этим кодом.
+#if FEATURE_WIFI
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 
@@ -47,6 +49,7 @@ int fwVersionCmp(const String& a, const String& b) {
 #include "ca_bundle.h"
 #include <WiFi.h>
 #include <LittleFS.h>
+#include "net.h"
 #include "mqtt.h"
 #define HAVE_CA_BUNDLE 1
 #else

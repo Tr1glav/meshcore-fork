@@ -15,6 +15,7 @@
 #include "ota.h"
 #include "mqtt.h"
 #include "fwupdate.h"
+#include "net.h"       // netTick: машина состояния сети
 #include "support.h"   // coordPushTick: координатор сообщает свой адрес прошивальщикам
 #include "companion.h"
 #include "app_main.h"
@@ -176,12 +177,16 @@ void appSetup() {
     deriveChannels();
     initAdvertIdentity();
 
-#ifdef MQTT_ENABLED
+#if FEATURE_MQTT
     loadTxChannel();
-    // Сеть НЕ блокируем: WiFi/MQTT поднимаются фоном в loop (tickRetryConnections).
+#endif
+#if FEATURE_WIFI
+    // Сеть НЕ блокируем: WiFi поднимается фоном в loop (netTick).
     // Радио начинает слушать сразу, без задержки на TCP/а-коннект.
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);   // без modem-sleep: меньше задержка отвёта
+#endif
+#if FEATURE_MESH_OTA_SENDER
     // Дамп РЕАЛЬНОЙ таблицы разделов с устройства — для отладки LittleFS.
     // Если spiffs нет/другой офсет — mesh OTA работать не будет.
     {
@@ -209,11 +214,13 @@ void appSetup() {
         slog("[OTA] /ota.bin: %u байт (mesh OTA ready=%d)\n",
              (unsigned)otaFwSize, (int)otaFwReady);
     }
+#endif // FEATURE_MESH_OTA_SENDER
 #if FEATURE_MQTT
     setupMQTT();            // только конфиг (префиксы/сервер/коллбэк)
 #endif
+#if FEATURE_WEB
     setupOtaServer();       // HTTP OTA на :3232 (обновление прошивки по WiFi)
-    #endif
+#endif
 
     radio.startReceive();
     isListening = true;
@@ -222,7 +229,7 @@ void appSetup() {
     #ifdef COMPANION_NODE
     // Список контактов лежит файлом, поэтому файловую систему монтируем до BLE.
     // У координатора она уже смонтирована выше — там в ней живёт образ для mesh OTA.
-    #ifndef MQTT_ENABLED
+    #if !FEATURE_MESH_OTA_SENDER
     if (!LittleFS.begin(true)) Serial.println("[FS] не смонтировалась — контакты не сохранятся");
     #endif
     companionBegin();   // BLE поднимаем после радио: приложение может подключиться сразу
@@ -272,16 +279,16 @@ void appLoop() {
     otaBotTick();               // mesh OTA: таймауты повтора чанков
     otaSupportTick();           // итог передачи образа прошивальщику (идёт фоновой задачей)
     #endif
-    #ifdef MQTT_ENABLED
-
-    // ===== MQTT RECONNECT (неблокирующий, раз в 5 с) =====
-    if (millis() - lastMqttReconnectMs > MQTT_RECONNECT_INTERVAL_MS) {
-        lastMqttReconnectMs = millis();
-        tickRetryConnections();
+    // Сеть и брокер — разные признаки: netTick поднимает WiFi и сам отдаёт ход брокеру,
+    // mqtt.loop крутит клиента. У прошивальщика первое есть, второго нет.
+    #if FEATURE_WIFI
+    if (millis() - lastNetRetryMs > MQTT_RECONNECT_INTERVAL_MS) {
+        lastNetRetryMs = millis();
+        netTick();
     }
-#if FEATURE_MQTT
+    #endif
+    #if FEATURE_MQTT
     if (mqttConnected) mqtt.loop();
-#endif
     #endif
 
     cfgConsoleTick();   // настройка через USB-консоль, не блокирует радио

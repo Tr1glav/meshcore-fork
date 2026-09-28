@@ -12,6 +12,7 @@
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <esp_partition.h>
+#include "net.h"
 #include "mqtt.h"
 
 // ===== Веб-страница координатора и диагностика =====
