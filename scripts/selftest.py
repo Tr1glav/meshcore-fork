@@ -13,6 +13,7 @@
 Запуск: python3 scripts/selftest.py
 Нужен g++; node — по желанию (без него проверка JS пропускается).
 """
+import os
 import pathlib
 import random
 import re
@@ -26,6 +27,13 @@ import zlib
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 failures = []
 
+# Ядро протокола (radio, mesh_rx/tx, ota, crypto, appconfig) живёт отдельным репозиторием и
+# подключается symlink://../mesh-network-core — см. lib_deps в platformio.ini. Половина
+# проверяемых функций лежит поэтому ВНЕ проекта: путь к ядру задаётся переменной
+# MESHCORE_CORE, по умолчанию это соседний каталог, тот же, что в lib_deps.
+CORE = pathlib.Path(os.environ.get("MESHCORE_CORE") or (ROOT.parent / "mesh-network-core"))
+
+
 
 def check(name, ok, detail=""):
     print(("OK   " if ok else "FAIL ") + name + ((" — " + detail) if detail and not ok else ""))
@@ -33,20 +41,25 @@ def check(name, ok, detail=""):
         failures.append(name)
 
 
-def grab(rel, signature):
-    """Вырезает функцию из исходника по началу сигнатуры, считая фигурные скобки."""
-    # Путь — подсказка, а не требование: файлы переезжают при разборке на модули, и
-    # жёсткая привязка ломает проверки на ровном месте. Не нашлось по подсказке — ищем
-    # сигнатуру по всем исходникам прошивки.
-    path = ROOT / rel
-    if signature not in path.read_text(encoding="utf-8"):
-        for cand in sorted((ROOT / "lib/meshcore/src").glob("*.cpp")) + \
-                    sorted((ROOT / "src").glob("*.cpp")):
+def grab(hint, signature):
+    """Вырезает функцию из исходника по началу сигнатуры, считая фигурные скобки.
+
+    hint — строка (путь от корня проекта) либо готовый Path: функции ядра берутся как
+    CORE / "src/crypto.cpp", функции прошивки — как "lib/meshcore/src/mqtt.cpp".
+    """
+    # Путь — подсказка, а не требование: файлы переезжают при разборке на модули, а то и
+    # целиком уезжают в отдельный репозиторий ядра, и жёсткая привязка ломает проверки на
+    # ровном месте. Не нашлось по подсказке (в том числе если файла вовсе нет) — ищем
+    # сигнатуру по всем исходникам прошивки и ядра.
+    path = hint if isinstance(hint, pathlib.Path) else ROOT / hint
+    if not (path.is_file() and signature in path.read_text(encoding="utf-8")):
+        for cand in sorted(p for d in (ROOT / "lib/meshcore/src", ROOT / "src", CORE / "src")
+                           if d.is_dir() for p in d.glob("*.cpp")):
             if signature in cand.read_text(encoding="utf-8"):
                 path = cand
                 break
         else:
-            raise RuntimeError("не найдена функция " + signature)
+            raise RuntimeError("не найдена функция %s (ядро: %s)" % (signature, CORE))
     src = path.read_text(encoding="utf-8")
     start = src.index(signature)
     depth = 0
@@ -113,11 +126,11 @@ def host_functions_test():
         "#define OTA_RAW_CHUNK_BYTES 240\n"
         "#define OTA_RAW_FRAME_MAX (11 + OTA_RAW_CHUNK_BYTES)\n"
         "#define RAW_MAGIC0 0xBE\n#define RAW_MAGIC1 0xEF\n"
-        + grab("lib/meshcore/src/crypto.cpp", "uint16_t crc16buf(") + "\n"
-        + grab("lib/meshcore/src/crypto.cpp", "uint32_t crc32_upd(") + "\n"
-        + grab("lib/meshcore/src/crypto.cpp", "void jsonEscape(") + "\n"
-        + grab("lib/meshcore/src/mesh.cpp", "void buildPingReply(") + "\n"
-        + grab("lib/meshcore/src/ota.cpp", "int rawBuildFrame(") + "\n"
+        + grab(CORE / "src/crypto.cpp", "uint16_t crc16buf(") + "\n"
+        + grab(CORE / "src/crypto.cpp", "uint32_t crc32_upd(") + "\n"
+        + grab(CORE / "src/crypto.cpp", "void jsonEscape(") + "\n"
+        + grab(CORE / "src/mesh_rx.cpp", "void buildPingReply(") + "\n"
+        + grab(CORE / "src/ota.cpp", "int rawBuildFrame(") + "\n"
         + HOST_MAIN
     )
     with tempfile.TemporaryDirectory() as tmp:
@@ -243,10 +256,10 @@ def pure_functions_test():
         print("SKIP g++ не найден — чистые функции не проверены")
         return
     code = (PURE_PRELUDE
-            + grab("lib/meshcore/src/appconfig.cpp", "bool cfgRangeOk(") + "\n"
-            + grab("lib/meshcore/src/crypto.cpp", "char* fmtFix(") + "\n"
-            + grab("lib/meshcore/src/crypto.cpp", "float parseFixed(") + "\n"
-            + grab("lib/meshcore/src/crypto.cpp", "uint16_t crc16buf(") + "\n"
+            + grab(CORE / "src/appconfig.cpp", "bool cfgRangeOk(") + "\n"
+            + grab(CORE / "src/crypto.cpp", "char* fmtFix(") + "\n"
+            + grab(CORE / "src/crypto.cpp", "float parseFixed(") + "\n"
+            + grab(CORE / "src/crypto.cpp", "uint16_t crc16buf(") + "\n"
             + grab("lib/meshcore/src/mqtt.cpp", "void mqttSlug(") + "\n"
             + grab("lib/meshcore/src/fwupdate.cpp", "int fwVersionCmp(") + "\n"
             + PURE_MAIN)
@@ -325,10 +338,10 @@ def marker_scan_test():
         print("SKIP g++ не найден — сканер маркера платы не проверен")
         return
     code = (MARKER_PRELUDE
-            + grab("lib/meshcore/src/ota.cpp", "void fwScanReset(") + "\n"
-            + grab("lib/meshcore/src/ota.cpp", "static void fwScanBuf(") + "\n"
-            + grab("lib/meshcore/src/ota.cpp", "void fwScanFeed(") + "\n"
-            + grab("lib/meshcore/src/ota.cpp", "int fwScanVerdict(") + "\n"
+            + grab(CORE / "src/ota.cpp", "void fwScanReset(") + "\n"
+            + grab(CORE / "src/ota.cpp", "static void fwScanBuf(") + "\n"
+            + grab(CORE / "src/ota.cpp", "void fwScanFeed(") + "\n"
+            + grab(CORE / "src/ota.cpp", "int fwScanVerdict(") + "\n"
             + MARKER_MAIN)
     with tempfile.TemporaryDirectory() as tmp:
         src = pathlib.Path(tmp) / "m.cpp"
@@ -360,7 +373,7 @@ def otaz_test():
     # Бот дописывает в эфир OTA_Z_TAIL_PAD нулей после потока: без них распаковщик узла
     # придерживает хвост образа, и приём падает с «size mismatch». Длину берём из config.h,
     # чтобы проверка и прошивка не разъехались, и убеждаемся, что лишний вход безвреден.
-    cfg = (ROOT / "lib/meshcore/include/config.h").read_text(encoding="utf-8")
+    cfg = (CORE / "include/config.h").read_text(encoding="utf-8")
     m = re.search(r"#define\s+OTA_Z_TAIL_PAD\s+(\d+)", cfg)
     check("формат .otaz: объявлен хвост нулей", m is not None)
     padded = body + bytes(int(m.group(1)) if m else 0)
@@ -382,7 +395,21 @@ def page_js_test():
         check("синтаксис JavaScript страницы", run.returncode == 0, run.stderr.strip()[:400])
 
 
+def core_check():
+    """Ядро на месте? Половина проверок вырезает функции из соседнего репозитория, и без
+    него они не «пропускаются», а валят запуск. Тихо урезанный selftest — это ровно то,
+    из-за чего сборка в CI оставалась красной, ни на что не жалуясь."""
+    ok = (CORE / "src" / "crypto.cpp").is_file()
+    check("ядро протокола найдено (%s)" % CORE, ok,
+          "нет исходников ядра — задайте путь переменной MESHCORE_CORE")
+    if not ok:
+        print()
+        print("ПРОВАЛЕНО: ядро протокола не найдено")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
+    core_check()
     host_functions_test()
     pure_functions_test()
     marker_scan_test()

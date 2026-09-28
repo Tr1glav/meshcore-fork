@@ -1,6 +1,7 @@
 import hashlib
 import os
 import subprocess
+import sys
 import time
 from SCons.Script import COMMAND_LINE_TARGETS
 
@@ -13,31 +14,57 @@ Import("env")
 PROJECT_DIR = env.subst("$PROJECT_DIR")
 VERSION_FILE = os.path.join(PROJECT_DIR, "version.txt")
 HEADER = os.path.join(PROJECT_DIR, "lib", "meshcore", "include", "build_info.h")
-SOURCE_PATHS = ["src", "lib", "web", "include", "boards", "variants", "platformio.ini"]
+
+# Ядро протокола (radio, mesh_rx/tx, ota, crypto, appconfig) живёт отдельным репозиторием и
+# подключается symlink://../mesh-network-core (см. lib_deps в platformio.ini). Его исходники
+# ОБЯЗАНЫ входить в хэш: иначе правка ядра не поднимает номер сборки, .otaz перезаписывается
+# под тем же именем, а автообновление и mesh OTA считают узлы актуальными — прошивка другая,
+# версия прежняя. Путь можно задать переменной MESHCORE_CORE, по умолчанию — соседний
+# каталог, тот же, что в lib_deps.
+CORE_DIR = os.path.abspath(os.environ.get("MESHCORE_CORE")
+                           or os.path.join(PROJECT_DIR, os.pardir, "mesh-network-core"))
+if not os.path.isdir(os.path.join(CORE_DIR, "src")):
+    # Молча взять хэш без ядра нельзя: получилась бы прошивка с чужим номером версии.
+    sys.exit("[gen_version] ядро протокола не найдено: %s (путь задаётся MESHCORE_CORE)"
+             % CORE_DIR)
+
+SOURCE_PATHS = [
+    (PROJECT_DIR, "src"),
+    (PROJECT_DIR, "lib"),
+    (PROJECT_DIR, "web"),
+    (PROJECT_DIR, "include"),
+    (PROJECT_DIR, "boards"),
+    (PROJECT_DIR, "variants"),
+    (PROJECT_DIR, "platformio.ini"),
+    (CORE_DIR, "src"),
+    (CORE_DIR, "include"),
+    (CORE_DIR, "library.json"),
+]
 
 # Служебные запуски (IntelliSense в IDE, clean) тоже исполняют pre-скрипты — версию не трогаем
 NO_BUMP_TARGETS = {"idedata", "__idedata", "clean", "cleanall", "envdump", "compiledb", "menuconfig", "size"}
 
 
 def source_files():
-    header_rel = os.path.relpath(HEADER, PROJECT_DIR)
-    for path in SOURCE_PATHS:
-        full = os.path.join(PROJECT_DIR, path)
+    for base, path in SOURCE_PATHS:
+        full = os.path.join(base, path)
         if os.path.isfile(full):
-            yield path
+            yield base, path
         for root, dirs, files in os.walk(full):
             dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
             for name in files:
-                rel = os.path.relpath(os.path.join(root, name), PROJECT_DIR)
-                if not name.startswith(".") and rel != header_rel:
-                    yield rel
+                rel = os.path.relpath(os.path.join(root, name), base)
+                # build_info.h генерируем сами — в хэш он не входит, иначе версия менялась бы
+                # от самой записи файла
+                if not name.startswith(".") and not rel.endswith("build_info.h"):
+                    yield base, rel
 
 
 def sources_hash():
     h = hashlib.sha1()
-    for rel in sorted(source_files()):
+    for base, rel in sorted(source_files(), key=lambda x: (x[0], x[1])):
         h.update(rel.replace(os.sep, "/").encode())
-        with open(os.path.join(PROJECT_DIR, rel), "rb") as fh:
+        with open(os.path.join(base, rel), "rb") as fh:
             h.update(fh.read())
     return h.hexdigest()[:12]
 
@@ -67,6 +94,32 @@ if not NO_BUMP_TARGETS & set(COMMAND_LINE_TARGETS):
         build += 1
         build_time = int(time.time())
     write_if_changed(VERSION_FILE, f"{major}.{minor}.{build}\n{current_hash}\n{build_time}\n")
+
+def core_ref():
+    """Какое ядро попало в сборку: пин из core.ref и то, на чём стоит соседний репозиторий.
+
+    Локально ядро правится живьём (symlink://), поэтому расхождение с пином — не ошибка, а
+    предупреждение: по нему видно, что прошивка собрана с кодом ядра, которого в core.ref
+    ещё нет, и в CI эта же ветка соберётся иначе.
+    """
+    pinned = ""
+    try:
+        with open(os.path.join(PROJECT_DIR, "core.ref")) as fh:
+            pinned = fh.read().split()[0]
+    except (OSError, IndexError):
+        return ""
+    actual = ""
+    try:
+        r = subprocess.run(["git", "describe", "--tags", "--always", "--dirty"],
+                           cwd=CORE_DIR, capture_output=True, text=True)
+        actual = r.stdout.strip()
+    except OSError:
+        pass
+    if actual and actual != pinned:
+        print("[gen_version] ВНИМАНИЕ: ядро в сборке %s, а core.ref пинует %s"
+              % (actual, pinned))
+    return actual or pinned
+
 
 def current_branch():
     """Имя ветки: в Actions оно есть в окружении, локально спрашиваем git."""
@@ -99,4 +152,4 @@ write_if_changed(HEADER,
                  "#pragma once\n"
                  f"#define FW_VERSION \"{version}\"\n"
                  f"#define BUILD_UNIX_TIME {build_time}UL\n")
-print(f"[gen_version] FW_VERSION = {version} (src {current_hash})")
+print(f"[gen_version] FW_VERSION = {version} (src {current_hash}, ядро {core_ref() or '?'})")

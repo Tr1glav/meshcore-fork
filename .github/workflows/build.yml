@@ -14,12 +14,33 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Прошивка и ядро лежат в workspace рядом (этого требует symlink://../mesh-network-core),
+    # поэтому все команды выполняются из каталога прошивки, а не из корня workspace.
+    defaults:
+      run:
+        working-directory: meshcore-fork
     steps:
       - uses: actions/checkout@v4
         with:
+          path: meshcore-fork
           # Нужны вся история и теги: из них собирается список отличий от прошлого релиза.
           # По умолчанию checkout берёт одну ревизию, и сравнивать было бы не с чем.
           fetch-depth: 0
+
+      # Ядро протокола (radio, mesh_rx/tx, ota, crypto, appconfig) — отдельный репозиторий,
+      # и platformio.ini подключает его как symlink://../mesh-network-core. На машине
+      # разработчика это соседний каталог; здесь его надо положить рядом самим, иначе
+      # сборка падает на ненайденной библиотеке. Версия берётся из core.ref: CI собирает
+      # именно тот тег ядра, который объявлен в этой ветке, а не «что там сейчас в main».
+      - name: Версия ядра из core.ref
+        id: core
+        run: echo "ref=$(head -1 core.ref)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Tr1glav/mesh-network-core
+          ref: ${{ steps.core.outputs.ref }}
+          path: mesh-network-core
 
       - uses: actions/setup-python@v5
         with:
@@ -31,8 +52,8 @@ jobs:
         with:
           path: |
             ~/.platformio
-            .pio/libdeps
-          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+            meshcore-fork/.pio/libdeps
+          key: pio-${{ runner.os }}-${{ hashFiles('meshcore-fork/platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-
 
       - name: Установка PlatformIO
@@ -66,8 +87,8 @@ jobs:
         with:
           name: firmware-${{ steps.ver.outputs.version }}
           path: |
-            firmware_output/*.bin
-            firmware_output/*.otaz
+            meshcore-fork/firmware_output/*.bin
+            meshcore-fork/firmware_output/*.otaz
           if-no-files-found: error
 
       # Релиз — только для веток release/v*, и только если всё выше прошло успешно.
