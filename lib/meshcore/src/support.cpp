@@ -164,6 +164,32 @@ static int supportHopsTo(int idx, const String& target) {
     return body.substring(hopsAt + 7, end).toInt();
 }
 
+// Кто может вести МЕДЛЕННУЮ сессию к этой цели. Хопы здесь не спрашиваются: медленный режим
+// едет обычными сообщениями и доходит туда же, куда доходит сеть. Важно лишь, что ведущий жив
+// и что цель — не он сам.
+//
+// Предпочитаем того, кто цель слышит: спросить дёшево (один короткий запрос), а вести сессию
+// лучше тому, до кого ближе. Никто не слышит — берём первого живого: доставку всё равно
+// обеспечивают ретрансляторы, а смысл передачи в том, чтобы координатор остался свободен.
+int supportIndexForAny(const String& target) {
+    int any = -1;
+    for (int i = 0; i < supportCount; i++) {
+        if (!supportLive(i)) continue;
+        if (supports[i].name == target) continue;   // себя он не прошьёт
+        if (any < 0) any = i;
+        const int hops = supportHopsTo(i, target);
+        if (hops >= 0) {
+            slog("[SUP] медленную сессию к '%s' поведёт %s (%d хоп(ов))\n",
+                 target.c_str(), supports[i].name.c_str(), hops);
+            return i;
+        }
+    }
+    if (any >= 0)
+        slog("[SUP] медленную сессию к '%s' поведёт %s (цель он не слышит — доставят "
+             "ретрансляторы)\n", target.c_str(), supports[any].name.c_str());
+    return any;
+}
+
 // Кто из прошивальщиков ведёт сессию к этой цели. «Лучше всех» — это не «ближе к
 // координатору», а наименьшее число хопов до САМОЙ ЦЕЛИ: прошивальщики стоят в разных
 // местах, и смысл нескольких как раз в том, что у каждого своя часть сети.
@@ -357,6 +383,16 @@ int supportStatusCached(String& out) {
     return 1;
 }
 
+// Отменить сессию у того, кто её ведёт. Кнопка «Прервать» на странице координатора должна
+// останавливать прошивку и тогда, когда ведёт не он.
+bool supportAbortDelegated() {
+    const String ip = supportIpOf(otaDelegate);
+    if (ip.length() == 0) return false;
+    String req = String("POST /ota/abort HTTP/1.1\r\nHost: ") + ip + "\r\n" + apiHdr() +
+                 "Content-Length: 0\r\nConnection: close\r\n\r\n";
+    return supportRequest(ip, req, nullptr, 0, SUPPORT_SHORT_MS);
+}
+
 // Ход сессии спрашиваем у ТОГО, кто её ведёт: otaDelegate держит его имя.
 bool supportStatus(String& out) {
     const String ip = supportIpOf(otaDelegate);
@@ -370,7 +406,7 @@ bool supportStatus(String& out) {
 // Отдать образ и команду. Образ уходит multipart-ом — ровно тем, что ждёт /savefw:
 // приём файла на той стороне сделан обработчиком загрузки, он разбирает конверт сам и
 // пишет файл потоком, не держа его в памяти.
-bool supportHandOff(int idx, const String& target) {
+bool supportHandOff(int idx, const String& target, bool slow) {
     if (!supportLive(idx)) return false;
     const String ip = supports[idx].ip;
 
@@ -422,8 +458,10 @@ bool supportHandOff(int idx, const String& target) {
     supportSeenByIp(ip);   // образ он принял — значит жив, и отметки для этого не нужно
     slog("[SUP] образ передан на %s (%u байт)\n", ip.c_str(), (unsigned)fsize);
 
-    String req = String("POST /ota/start?target=") + target + " HTTP/1.1\r\nHost: " +
-                 ip + "\r\n" + apiHdr() +
+    // slow=1 — команда начать медленную сессию. Образ ушёл тем же путём, отличается только
+    // способ раздачи, поэтому и точка входа та же.
+    String req = String("POST /ota/start?target=") + target + (slow ? "&slow=1" : "") +
+                 " HTTP/1.1\r\nHost: " + ip + "\r\n" + apiHdr() +
                  "Content-Length: 0\r\nConnection: close\r\n\r\n";
     // Команда повторяется, и это не перестраховка. Оба узла зовут друг друга синхронно из
     // главного цикла, а HTTP-сервер у каждого однопоточный и обслуживается там же: пока
@@ -443,7 +481,8 @@ bool supportHandOff(int idx, const String& target) {
         slog("[SUP] %s образ принял, но сессию не начал\n", supports[idx].name.c_str());
         return false;
     }
-    slog("[SUP] сессию к '%s' ведёт %s\n", target.c_str(), supports[idx].name.c_str());
+    slog("[SUP] %sсессию к '%s' ведёт %s\n", slow ? "медленную " : "",
+         target.c_str(), supports[idx].name.c_str());
     return true;
 }
 
@@ -574,8 +613,9 @@ volatile uint32_t supJobTotal = 0;
 
 static void supJobTask(void* arg) {
     const uint32_t gen = (uint32_t)(uintptr_t)arg;
-    bool ok = (supJobKind == SUP_JOB_SELF) ? supportFlashSelf(supJobIdx)
-                                           : supportHandOff(supJobIdx, supJobTarget);
+    bool ok = (supJobKind == SUP_JOB_SELF)
+                  ? supportFlashSelf(supJobIdx)
+                  : supportHandOff(supJobIdx, supJobTarget, supJobKind == SUP_JOB_SLOW);
     slog("[SUP] запас стека задачи: %u Б\n", (unsigned)uxTaskGetStackHighWaterMark(NULL));
     if (gen == supJobGen) {          // нас не успели бросить по сроку
         supJobOk = ok;

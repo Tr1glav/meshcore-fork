@@ -34,8 +34,12 @@ function refresh(){
   $('go').textContent=isSelf()?'Прошить бота':'Прошить '+target;
   $('go').disabled=busy||!file||bad||downloading;
   // Медленный режим бота не касается: он про раздачу узлу по радиоканалу.
-  const gs=$('goslow');
-  if(gs){gs.hidden=isSelf();gs.disabled=busy||!file||bad||downloading||isSelf();}
+  const sb=$('slowbox');
+  if(sb){
+    sb.hidden=isSelf();
+    const si=$('slow');
+    if(si){si.disabled=busy||downloading;if(isSelf())si.checked=false;}
+  }
   $('fwgo')&&($('fwgo').disabled=busy||isSelf());
   $('scfgbox').hidden=isSelf();
 }
@@ -140,17 +144,28 @@ function renderTargets(){
 }
 async function loadSensors(){
   try{sensors=await (await fetch('/sensors')).json()}catch(e){return}
-  if(!isSelf()&&!sensors.some(s=>s.name==target))target='__self__';
+  // Цель считается живой, если она есть в списке узлов ИЛИ среди прошивальщиков. Проверка
+  // только по sensors сбрасывала выбор на бота каждую секунду: прошивальщика в этом списке
+  // может не быть вовсе — он показан по данным /info, а из эфира мы его не слышим.
+  const known=(n)=>sensors.some(s=>s.name==n)||(info.sups||[]).some(x=>x.n==n);
+  if(!isSelf()&&!known(target))target='__self__';
   renderTargets();refresh();
 }
 async function loadInfo(){
   try{
     info=await (await fetch('/info')).json();
-    $('info').innerHTML='<span class="dot'+(info.wifi?' on':'')+'"></span>WiFi'
-      +' <span class="dot'+(info.mqtt?' on':'')+'"></span>MQTT · '+info.ip
-      +' · '+upfmt(info.up)+' · '+info.temp.toFixed(0)+'°C · heap '+Math.round(info.heap/1024)+' КБ'
-      +(info.bat>=0?' · '+batHtml(info.bat)+' '+info.bat+'% ('+info.volt.toFixed(2)+' V)':'')
-      ;
+    // Состояние — рядом отдельных «пилюль», а не строкой через точки: каждая величина
+    // читается сама по себе, а связь и её отсутствие видно по цвету точки, не вчитываясь.
+    // WiFi здесь не показываем: страница пришла по нему же. Не работал бы — её бы не было,
+    // так что индикатор мог сообщить ровно одно значение и никогда не менялся.
+    const pill=(inner)=>'<span class="pill">'+inner+'</span>';
+    let h=pill('<span class="dot'+(info.mqtt?' on':'')+'"></span>MQTT')
+        + pill(info.ip)
+        + pill(upfmt(info.up))
+        + pill(info.temp.toFixed(0)+'°C')
+        + pill(Math.round(info.heap/1024)+' КБ');
+    if(info.bat>=0)h+=pill(batHtml(info.bat)+' '+info.bat+'%');
+    $('info').innerHTML=h;
     const fw=$('fw');
     if(info.fwready){
       fw.hidden=false;
@@ -361,21 +376,12 @@ async function flashStored(){
   busy=true;refresh();
   try{await startSession()}catch(e){st(e.message,'err');finish()}
 }
-$('goslow')&&($('goslow').onclick=async()=>{
-  if(isSelf())return;
-  if(!confirm('Медленный режим идёт по обычному каналу связи и занимает часы вместо минуты. Начать?'))return;
-  busy=true;refresh();
-  try{
-    // Файл сначала кладётся на бот тем же путём, что и в быстром режиме: раздаёт он его
-    // потом сам, только другим способом. Ответ проверяем — молчаливый отказ сохранения
-    // выглядел бы как начавшаяся сессия, которая никуда не едет.
-    const r=await upload('/savefw');
-    if(r.indexOf('OK')<0)throw new Error(r||'FAIL');
-    await startSession(true);
-  }catch(e){st(e.message,'err');finish()}
-});
 $('go').onclick=async()=>{
   if(isSelf()&&!confirm('Прошить сам бот? Он перезагрузится, связь ненадолго пропадёт.'))return;
+  // Галочка выбирает способ раздачи, кнопка одна. Подтверждение спрашиваем здесь: сессия по
+  // общему каналу занимает эфир на часы, и начинать её вслепую не стоит.
+  const slow=!isSelf()&&$('slow')&&$('slow').checked;
+  if(slow&&!confirm('Медленный режим идёт по обычному каналу связи и занимает часы вместо минуты. Начать?'))return;
   busy=true;refresh();
   try{
     if(isSelf()){
@@ -387,7 +393,7 @@ $('go').onclick=async()=>{
     }
     const r=await upload('/savefw');
     if(r.indexOf('OK')<0)throw new Error(r||'FAIL');
-    await startSession();
+    await startSession(slow);
   }catch(e){st(e.message,'err');finish()}
 };
 async function loadCfg(){

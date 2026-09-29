@@ -22,6 +22,8 @@ int supportIndexFor(const String& target);
 
 // Ход переданной сессии: опрос раз в секунду из главного цикла, обработчик страницы читает
 // готовое. 1 — ответ есть, 0 — ещё не спрашивали, -1 — ведущий молчит слишком долго.
+// Отменить сессию у ведущего: кнопка «Прервать» должна работать и при передаче.
+bool supportAbortDelegated();
 void supportStatusTick();
 int supportStatusCached(String& out);
 
@@ -42,7 +44,10 @@ bool supportFlashSelf();
 bool supportStatus(String& out);
 
 // Отдать сессию: образ уходит к нему по сети, следом команда начать.
-bool supportHandOff(const String& target);
+// slow — командовать начать медленную сессию вместо быстрой.
+bool supportHandOff(int idx, const String& target, bool slow);
+// Кто может вести медленную сессию к этой цели (хопы не обязательны): индекс или -1.
+int supportIndexForAny(const String& target);
 
 // Обе передачи идут фоновой задачей: в них мегабайт по сети, а обработчик страницы
 // на это время заблокировал бы веб-сервер целиком. enum SUP_JOB_* приходит из

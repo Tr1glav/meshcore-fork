@@ -1,74 +1,172 @@
+/* Оформление страницы координатора.
+   Светлая нейтральная тема: белые карточки на сером фоне, тёмный текст, единственное тёмное
+   пятно — главная кнопка и журнал. Цвет остаётся ровно там, где он означает состояние
+   (связь, заряд, ошибка), и больше нигде: интерфейс не должен спорить с содержанием.
+   Палитра в переменных — тон правится в одном месте. */
+:root{
+  --bg:#f5f6f8;          /* фон страницы */
+  --card:#ffffff;        /* карточки */
+  --card2:#f7f8fa;       /* вложенное: поля, строки списка */
+  --line:#e6e8ec;
+  --line2:#d3d7de;       /* граница под курсором и активное поле */
+  --tx:#14181f;
+  --tx2:#5b6472;         /* подписи */
+  --tx3:#8b95a3;
+  --ok:#16a34a;          /* только состояние */
+  --bad:#dc2626;
+  --r:10px;
+  --sh:0 1px 2px rgba(16,24,40,.05);   /* тень карточки: намёк, а не объём */
+}
 *{box-sizing:border-box}
-body{font-family:system-ui,sans-serif;background:#1c2333;color:#e8ecf3;margin:0;padding:10px;display:flex;justify-content:center}
-.wrap{display:grid;grid-template-columns:minmax(320px,390px) 1fr;gap:10px;width:100%;max-width:1220px;align-items:start}
-.card{background:#242d40;border:1px solid #35405a;border-radius:10px;padding:12px}
-.hdr{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-h2{margin:0;font-size:16px}#dev{color:#93a4c4;font-size:12px}
-.info{margin:6px 0 10px;font-size:11px;color:#93a4c4;line-height:1.6}
-label{display:block;font-size:11px;color:#93a4c4;margin:0 0 4px}
-.row{display:flex;gap:6px;margin-top:6px}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#f87171;margin-right:3px;vertical-align:middle}
-.dot.on{background:#34d399}
-.bat{display:inline-block;width:26px;height:9px;border:1px solid #4a5775;border-radius:2px;vertical-align:middle;overflow:hidden}
-.bat i{display:block;height:100%;background:#34d399}
-.bat.low i{background:#f87171}
-.tgt{display:flex;gap:8px;align-items:center;padding:7px 8px;border:1px solid #35405a;border-radius:8px;background:#1e2638;cursor:pointer;margin-bottom:6px}
-.tgt:hover{border-color:#4a5775}
-.tgt.sel{border-color:#0ea5e9;background:#1b2b3d}
-/* Координатор и его прошивальщик — один узел сети: общий прямоугольник, координатор
-   сверху, прошивальщик под ним строкой вполовину высоты. Вертикальная линия слева и
-   уголок к ней показывают, что прошивальщик относится к координатору. */
-.grp{position:relative;border:1px solid #35405a;border-radius:8px;background:#1e2638;margin-bottom:6px;padding:2px 4px 2px 22px}
-.grp::before{content:'';position:absolute;left:11px;top:10px;bottom:10px;width:1px;background:#35405a}
+body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);
+color:var(--tx);margin:0;padding:16px;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{display:grid;grid-template-columns:minmax(330px,400px) 1fr;gap:16px;width:100%;
+max-width:1280px;margin:0 auto;align-items:start}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;
+box-shadow:var(--sh)}
+
+/* Верхняя строка: где я и какая версия. Без рамок и подложек — только текст и линия. */
+.top{max-width:1280px;margin:0 auto 16px;display:flex;justify-content:space-between;
+align-items:baseline;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.brand{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.brand .sep{color:var(--tx3);font-weight:400;margin:0 6px}
+.brand #dev{font-weight:400;color:var(--tx2)}
+.topv{font-size:11px;color:var(--tx3);font-variant-numeric:tabular-nums}
+.hdr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:14px}
+h2{margin:0;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--tx3)}
+.hdr .sub{color:var(--tx3);font-size:11px}
+label{display:block;font-size:11px;color:var(--tx2);margin:0 0 6px}
+.row{display:flex;gap:8px;margin-top:8px}
+.grow{flex:1;min-width:0}
+
+/* Состояние: значения в строку через разделители, без рамок. Рамка вокруг каждого числа —
+   это двадцать лишних линий на экране, а читаются они не лучше. */
+.info{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11px;color:var(--tx2);
+font-variant-numeric:tabular-nums}
+.pill{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--bad);
+vertical-align:middle}
+.dot.on{background:var(--ok)}
+.bat{display:inline-block;width:22px;height:8px;border:1px solid var(--line2);border-radius:2px;
+vertical-align:middle;overflow:hidden}
+.bat i{display:block;height:100%;background:var(--ok)}
+.bat.low i{background:var(--bad)}
+
+/* Цели: выбранная отмечается светлой полосой слева и чуть более светлым фоном. */
+.tgt{display:flex;gap:9px;align-items:center;padding:9px 10px;border:1px solid var(--line);
+border-radius:6px;background:var(--card2);cursor:pointer;margin-bottom:6px;position:relative;
+transition:border-color .12s,background .12s}
+.tgt:hover{border-color:var(--line2)}
+.tgt.sel{border-color:var(--tx3);background:#eef1f6}
+.tgt.sel::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:3px;
+border-radius:0 3px 3px 0;background:var(--tx)}
+/* Координатор и его прошивальщики — один узел сети, и это должно быть видно с первого
+   взгляда: общая рамка, а внутри — вертикальная линия, от которой к каждому прошивальщику
+   отходит уголок. В серой палитре линии пришлось сделать заметно светлее фона: рамка тон в
+   тон с карточкой перестаёт читаться как «одно целое», и подпункт выглядит просто соседом. */
+.grp{position:relative;border:1px solid var(--line2);border-radius:8px;background:var(--card2);
+margin-bottom:6px;padding:3px 5px 3px 24px}
+.grp::before{content:'';position:absolute;left:12px;top:14px;bottom:14px;width:1px;background:var(--line2)}
 .grp>.tgt{background:transparent;border:0;margin-bottom:0;padding-left:0;padding-right:0}
 .grp>.tgt:hover{border-color:transparent}
-.grp>.tgt.sel{background:#1b2b3d;box-shadow:inset 0 0 0 1px #0ea5e9}
+.grp>.tgt.sel{background:#e8ecf2;border-radius:6px;padding-left:8px}
+.grp>.tgt.sel::before{left:-4px}
 .grp>.tgt .nm{font-size:12px}
 .grp>.tgt .meta{font-size:9px}
-.grp>.tgt.sub{margin-left:0;position:relative;padding:3px 6px;border-top:1px solid #33415c;border-radius:0;opacity:1}
-.grp>.tgt.sub::before{content:'';position:absolute;left:-11px;top:50%;width:8px;height:1px;background:#35405a}
+/* Подпункт: уголок к вертикальной линии и своя ступень отступа — дерево, а не список. */
+.grp>.tgt.sub{padding:5px 6px 5px 10px;border-top:1px dashed var(--line);border-radius:0;
+position:relative}
+.grp>.tgt.sub::before{content:'';position:absolute;left:-12px;top:50%;width:10px;height:1px;
+background:var(--line2);border-radius:0}
 .tgt .nm{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tgt .meta{font-size:10px;color:#93a4c4;margin-top:2px}
-.tgt .meta b{color:#c7d3e8;font-weight:600}
-/* Ссылка внутри строки цели (страница прошивальщика): по цвету видно, что это ссылка,
-   а не очередное поле — в общем тоне меты она терялась совсем. */
-.tgt .meta a{color:#38bdf8;text-decoration:none;border-bottom:1px dotted #38bdf8}
-.tgt .meta a:hover{color:#7dd3fc;border-bottom-color:#7dd3fc}
-.grow{flex:1;min-width:0}
-#drop{margin-top:8px;border:2px dashed #4a5775;border-radius:8px;padding:10px;text-align:center;cursor:pointer;background:#1e2638;font-size:12px;color:#93a4c4}
-#drop.hover{border-color:#5eead4;background:#1b2233}
-#fname{margin-top:4px;color:#5eead4;word-break:break-all;font-size:12px}#fver{font-size:11px}
-.fw{margin-top:8px;font-size:11px;color:#93a4c4;background:#1e2638;border:1px solid #35405a;border-radius:8px;padding:8px}
-.fw b{color:#c7d3e8}
-button{padding:8px;border:0;border-radius:6px;background:#0ea5e9;color:#fff;font-size:13px;font-weight:600;cursor:pointer}
-button:hover{background:#38bdf8}button:disabled{background:#33415c;color:#8391ab;cursor:not-allowed}
-button.sec{background:#475569}button.sec:hover{background:#64748b}
-button.sm{padding:5px 10px;font-size:12px;font-weight:500}
-#go{display:block;width:100%;margin-top:8px}
-#prog{margin-top:10px;background:#1e2638;border:1px solid #35405a;border-radius:8px;padding:10px}
-.pct{font-size:34px;font-weight:700;line-height:1}.pct small{font-size:16px;color:#93a4c4;margin-left:2px}
-.w{height:8px;background:#33415c;border-radius:5px;overflow:hidden;margin:8px 0 4px}
-#fill{height:100%;width:0;background:#0ea5e9;transition:width .3s}
-.t{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#93a4c4}
-#ab{width:100%;margin-top:8px}
-#st{margin-top:8px;font-size:12px;min-height:14px}#st.err{color:#f87171}#st.ok{color:#5eead4}
-.ft{margin-top:8px;font-size:10px;color:#64748b;text-align:right}
-.ft a{color:#64748b}
-details.cfg{margin-top:8px;border:1px solid #35405a;border-radius:8px;background:#1e2638;padding:8px}
-details.cfg summary{cursor:pointer;font-size:12px;color:#93a4c4}
-.cfgrow{display:flex;align-items:center;gap:8px;margin-top:6px}
-.cfgrow span{width:76px;flex:none;font-size:11px;color:#93a4c4}
-.cfgrow input{flex:1;min-width:0;padding:4px 6px;border:1px solid #35405a;border-radius:5px;background:#242d40;color:#e8ecf3;font-size:12px}
-.cfgrow input.dirty{border-color:#0ea5e9}
-.cfghint{margin-top:8px;font-size:10px;color:#64748b;line-height:1.5}
-.chk{display:block;font-size:11px;color:#93a4c4;margin-top:6px}
-.chk input{margin-right:6px;vertical-align:middle}
-.tools{display:flex;gap:6px}
-#q{flex:1;min-width:0;padding:5px 8px;border:1px solid #35405a;border-radius:6px;background:#1e2638;color:#e8ecf3;font-size:12px}
-.logwrap{position:relative;margin-top:8px}
-#logs{height:calc(100vh - 108px);min-height:260px;overflow:auto;margin:0;background:#1e2638;border:1px solid #35405a;border-radius:6px;padding:8px;
-font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;line-height:1.45}
+.tgt .meta{font-size:10px;color:var(--tx2);margin-top:3px;font-variant-numeric:tabular-nums}
+.tgt .meta b{color:var(--tx);font-weight:500}
+.tgt .meta a{color:var(--tx2);text-decoration:underline;text-underline-offset:2px}
+.tgt .meta a:hover{color:var(--tx)}
+
+#drop{margin-top:10px;border:1px dashed var(--line2);border-radius:6px;padding:18px 12px;
+text-align:center;cursor:pointer;background:var(--card2);font-size:12px;color:var(--tx2);
+transition:border-color .12s,background .12s}
+#drop:hover{border-color:var(--tx3)}
+#drop.hover{border-color:var(--tx2);background:#eef1f6}
+#fname{margin-top:6px;color:var(--tx);word-break:break-all;font-size:12px}
+#fver{font-size:11px;color:var(--tx2)}
+.fw{margin-top:10px;font-size:11px;color:var(--tx2);background:var(--card2);
+border:1px solid var(--line);border-radius:6px;padding:10px;line-height:1.6}
+.fw b{color:var(--tx)}
+
+/* Главное действие — белым по чёрному: на странице оно одно, и других залитых кнопок нет. */
+/* Главное действие — тёмная кнопка на светлой странице: она тут одна такая, и спутать её
+   со второстепенными нельзя. */
+button{padding:9px 14px;border:1px solid transparent;border-radius:7px;background:var(--tx);
+color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;
+transition:background .12s,border-color .12s,color .12s}
+button:hover{background:#000}
+button:disabled{background:var(--card2);color:var(--tx3);border-color:var(--line);cursor:not-allowed}
+button.sec{background:transparent;border-color:var(--line2);color:var(--tx2);font-weight:500}
+button.sec:hover{background:var(--card2);border-color:var(--tx3);color:var(--tx)}
+button.sec:disabled{background:transparent;border-color:var(--line);color:var(--tx3)}
+button.sm{padding:6px 10px;font-size:12px;font-weight:500}
+#go{display:block;width:100%;margin-top:10px}
+
+/* Ход прошивки: процент — единственное крупное число, на него смотрят издалека. */
+#prog{margin-top:12px;background:var(--card2);border:1px solid var(--line);border-radius:6px;padding:12px}
+.pct{font-size:30px;font-weight:600;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.pct small{font-size:14px;color:var(--tx2);margin-left:3px;font-weight:400}
+.w{height:5px;background:var(--line);border-radius:3px;overflow:hidden;margin:10px 0 6px}
+#fill{height:100%;width:0;background:var(--tx);border-radius:3px;transition:width .3s}
+.t{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--tx2);
+font-variant-numeric:tabular-nums}
+#ab{width:100%;margin-top:10px}
+#st{margin-top:10px;font-size:12px;min-height:16px;color:var(--tx2)}
+#st.err{color:var(--bad)}#st.ok{color:var(--tx)}
+.ft{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:10px;
+color:var(--tx3);text-align:right}
+.ft a{color:var(--tx3)}
+.ft a:hover{color:var(--tx2)}
+
+details.cfg{margin-top:10px;border:1px solid var(--line);border-radius:6px;background:var(--card2);padding:10px}
+details.cfg summary{cursor:pointer;font-size:12px;color:var(--tx2);list-style:none;user-select:none}
+details.cfg summary::-webkit-details-marker{display:none}
+details.cfg summary::before{content:'+ ';color:var(--tx3)}
+details.cfg[open] summary::before{content:'− '}
+details.cfg[open] summary{margin-bottom:10px}
+.cfgrow{display:flex;align-items:center;gap:10px;margin-top:7px}
+.cfgrow span{width:78px;flex:none;font-size:11px;color:var(--tx2)}
+.cfgrow input{flex:1;min-width:0;padding:7px 9px;border:1px solid var(--line2);border-radius:6px;
+background:var(--card);color:var(--tx);font-size:12px;font-family:inherit;
+transition:border-color .12s,box-shadow .12s}
+.cfgrow input:focus{outline:0;border-color:var(--tx2);box-shadow:0 0 0 3px rgba(20,24,31,.06)}
+.cfgrow input.dirty{border-color:var(--tx2)}
+.cfghint{margin-top:10px;font-size:10px;color:var(--tx3);line-height:1.6}
+.chk{display:block;font-size:11px;color:var(--tx2);margin-top:8px;cursor:pointer}
+.chk input{margin-right:7px;vertical-align:middle;accent-color:var(--tx2)}
+
+/* Журнал — по нему и разбирают, что произошло, поэтому места ему отдано больше всего. */
+.tools{display:flex;gap:8px}
+#q{flex:1;min-width:0;padding:7px 11px;border:1px solid var(--line2);border-radius:6px;
+background:var(--card);color:var(--tx);font-size:12px;font-family:inherit;
+transition:border-color .12s,box-shadow .12s}
+#q:focus{outline:0;border-color:var(--tx2);box-shadow:0 0 0 3px rgba(20,24,31,.06)}
+.logwrap{position:relative;margin-top:10px}
+/* Терминал: чистый чёрный фон, а не оттенок карточки, и плотная моноширинная строка. Высота
+   сознательно меньше прежней — журнал был выше всего остального вместе взятого и перетягивал
+   страницу на себя; хвост всё равно читают последними строками, а не целиком. */
+#logs{height:calc(100vh - 340px);min-height:200px;max-height:560px;overflow:auto;margin:0;
+background:#15181e;border:1px solid #23272f;border-radius:6px;padding:12px 14px;
+font-family:ui-monospace,SFMono-Regular,Menlo,"Cascadia Mono",monospace;font-size:11px;
+line-height:1.55;color:#c9d1d9;letter-spacing:-.01em}
 #logs div{white-space:pre-wrap;word-break:break-all}
-.l-e{color:#f87171}.l-o{color:#7dd3fc}.l-s{color:#a7f3d0}.l-w{color:#c4b5fd}
-.jump{position:absolute;right:12px;bottom:12px;padding:6px 10px;font-size:11px;background:#0ea5e9}
-@media(max-width:820px){.wrap{grid-template-columns:1fr}#logs{height:52vh}}
+#logs::-webkit-scrollbar{width:8px}
+#logs::-webkit-scrollbar-track{background:transparent}
+#logs::-webkit-scrollbar-thumb{background:#30363d;border-radius:4px}
+#logs::-webkit-scrollbar-thumb:hover{background:#434b54}
+/* Разметка — яркостью, а не цветом: выделен только сбой, остальное отличается тоном серого. */
+.l-e{color:#ff7b72}.l-o{color:#f0f6fc}.l-s{color:#d8dee4}.l-w{color:#8b949e}
+.jump{position:absolute;right:14px;bottom:14px;padding:6px 12px;font-size:11px;
+box-shadow:0 2px 8px rgba(0,0,0,.35)}
+@media(max-width:820px){
+  body{padding:12px}
+  .wrap{grid-template-columns:1fr;gap:12px}
+  #logs{height:52vh}
+}

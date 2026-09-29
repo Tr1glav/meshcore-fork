@@ -665,9 +665,13 @@ void otaHandleSensorsHello() {
 static const char PAGE_HTML[] PROGMEM = R"HTML(<!DOCTYPE html><html lang='ru'><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>MeshBot OTA</title><link rel='stylesheet' href='/style.css?v=__VER__'></head><body>
+<header class='top'>
+<div class='brand'>MeshCore<span class='sep'>/</span><span id='dev'>__NAME__</span></div>
+<div class='topv'>v__VER__</div>
+</header>
 <div class='wrap'>
 <section class='card'>
-<div class='hdr'><h2>MeshBot OTA</h2><span id='dev'>__NAME__</span></div>
+<div class='hdr'><h2>Обновление прошивки</h2><span class='sub'>узлы сети и этот бот</span></div>
 <div id='info' class='info'>…</div>
 <label>Куда прошиваем</label>
 <div id='targets'></div>
@@ -688,7 +692,7 @@ static const char PAGE_HTML[] PROGMEM = R"HTML(<!DOCTYPE html><html lang='ru'><h
 <input id='file' type='file' hidden>
 <div id='fw' class='fw' hidden></div>
 <button id='go' disabled>Начать обновление</button>
-<button id='goslow' class='sec' disabled title='Прошить по обычному каналу связи: медленно, но доходит через ретрансляторы'>Медленно, через сеть</button>
+<label class='chk' id='slowbox' hidden title='Прошивать обычными сообщениями канала: идёт часы, зато доходит через ретрансляторы'><input type='checkbox' id='slow'> медленно, через сеть</label>
 <div id='prog' hidden>
 <div class='pct'><span id='pctv'>0</span><small>%</small></div>
 <div class='w'><div id='fill'></div></div>
@@ -1017,15 +1021,28 @@ void otaHandleStartOta() {
 }
 
 void otaHandleAbort() {
-    if (otaPhase != OTA_PHASE_IDLE) otaBotAbort("manual");
+    // Медленный режим фазу быстрого не занимает, поэтому проверка по otaPhase его не видела:
+    // кнопка «Прервать» отвечала «aborted», а сессия продолжала идти. Прерываем то, что
+    // действительно идёт, — а если сессию ведёт прошивальщик, передаём команду ему.
+    if (otaSlowOn) {
+        otaSlowAbort("отменено вручную");
+    } else if (otaDelegate.length() > 0) {
+        if (supportAbortDelegated()) slog("[WEB] отмена передана %s\n", otaDelegate.c_str());
+        otaDelegate = "";
+    } else if (otaPhase != OTA_PHASE_IDLE) {
+        otaBotAbort("manual");
+    }
     otaServer.send(200, "text/plain", "aborted");
 }
 
 // Ход медленной сессии в тех же полях, что и быстрой: страница ничего нового не разбирает,
 // а «sent/total» считаются в чанках — по ним и видно движение.
 static bool otaSlowStatusJson(String& out) {
-    if (!otaSlowOn && otaPhase != OTA_PHASE_DONE) return false;
+    if (!otaSlowOn && !otaSlowFinishedOk) return false;
     if (otaSlowChunks == 0) return false;
+    // Фазу считаем сами, а не берём из otaPhase: он принадлежит быстрому режиму, и писать
+    // в него отсюда значит будить его машину сессии.
+    const unsigned phase = otaSlowOn ? (unsigned)OTA_PHASE_DATA : (unsigned)OTA_PHASE_DONE;
     char buf[320], tgt[48], err[64], note[80];
     jsonEscape(otaSlowTarget.c_str(), tgt, sizeof(tgt));
     jsonEscape(otaLastErr, err, sizeof(err));
@@ -1035,7 +1052,7 @@ static bool otaSlowStatusJson(String& out) {
              "\"retr\":%u,\"polls\":0,\"retrs\":0,\"sup\":0,"
              "\"err\":\"%s\",\"note\":\"%s\",\"target\":\"%s\",\"ver\":\"\","
              "\"back\":false,\"slow\":true}",
-             (unsigned)otaPhase, (unsigned)otaSlowAcked, (unsigned)otaSlowChunks,
+             phase, (unsigned)otaSlowAcked, (unsigned)otaSlowChunks,
              (unsigned)otaSlowRetries, err, note, tgt);
     out = buf;
     return true;
@@ -1043,7 +1060,7 @@ static bool otaSlowStatusJson(String& out) {
 
 void otaHandleStatus() {
     // Медленная сессия идёт у нас самих — показываем её, не спрашивая никого.
-    if (otaSlowOn) {
+    if (otaSlowOn || otaSlowFinishedOk) {
         String slow;
         if (otaSlowStatusJson(slow)) { otaServer.send(200, "application/json", slow); return; }
     }

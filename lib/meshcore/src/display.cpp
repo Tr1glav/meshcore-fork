@@ -326,7 +326,11 @@ void statusScreenTick() {
         #else
         bool rxScreenHeld = millis() - lastRxDisplay <= 5000;
         #endif
-        if (!otaFastMode && !rxScreenHeld) {
+        // otaSlowOn — то же, что otaFastMode, но для медленного режима: пока идёт сессия, на
+        // экране её ход, и обычный статус не должен его затирать. Без этого прогресс мигал —
+        // появлялся на долю секунды и сменялся статусом, потому что статус рисуется каждые
+        // полсекунды, а чанк в медленном режиме уходит раз в полторы.
+        if (!otaFastMode && !otaSlowOn && !rxScreenHeld) {
             drawIdleStatus();
         }
     }

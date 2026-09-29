@@ -39,7 +39,10 @@ void sensorTasksTick() {
     // Во время OTA mesh-отправки подавляем: радио слушает raw-чанки на быстром канале.
     static unsigned long lastHeartbeat = 0;
     static bool bootHelloSent = false;
-    if (!otaActive && cfgReady()) {
+    // Во время медленного приёма узел тоже молчит: heartbeat пришёлся бы на фазу данных и
+    // сбил бы чанк, который ведущий передаёт в этот момент. Отметиться он успеет после —
+    // в канале по очереди говорит кто-то один.
+    if (!otaActive && !otaSlowOn && cfgReady()) {
         if (!bootHelloSent) {
             bootHelloSent = true;
             sensorSendHello();   // стартовый hello сразу после включения

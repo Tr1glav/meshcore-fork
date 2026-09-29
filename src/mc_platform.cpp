@@ -210,6 +210,11 @@ float mcBatteryVoltage()  { return batteryVoltage(); }
 //
 // Кольцо маленькое намеренно: это дренаж до ближайшего POST, а не архив. Когда сеть лежит
 // и очередь переполняется, новые кадры вытесняют старые — старые и так никому не нужны.
+// Сколько ждём ответ на свой запрос. Коротко намеренно: пока мы стоим здесь, главный цикл
+// не крутится — не обслуживается ни радио, ни наш собственный веб-сервер. Снаружи это
+// выглядит как «страница прошивальщика не отвечает, а потом ожила». Ответ свой, он короткий,
+// и в локальной сети приходит за десятки миллисекунд; полторы секунды — это уже «не придёт».
+#define EARS_REPLY_MS 1500
 #if FEATURE_SUPPORT
 #define EARS_QUEUE_MAX 24
 #define EARS_FRAME_MAX 255
@@ -303,7 +308,7 @@ void earsTick() {
              coordIp.c_str(), earsNextTryMs - millis());
         return;
     }
-    c.setTimeout(4000);
+    c.setTimeout(EARS_REPLY_MS / 1000);
     // X-Support: кто прислал. Координатор запоминает его в мете кадра, чтобы ответ на
     // пинг ушёл обратно через ЭТОГО прошивальщика, а не через того, кто ближе к нему.
     c.print(String("POST /ears HTTP/1.1\r\nHost: ") + coordIp +
@@ -316,7 +321,7 @@ void earsTick() {
     // Ответ нам не нужен, но код статуса скажет честно, принял ли координатор кадры:
     // снятая с очереди пачка, уехавшая в пустоту, была бы потеряна навсегда.
     bool ok = false;
-    unsigned long deadline = millis() + 4000;
+    unsigned long deadline = millis() + EARS_REPLY_MS;
     String head;
     while (c.connected() && (long)(millis() - deadline) < 0) {
         if (!c.available()) { delay(1); continue; }
@@ -379,7 +384,7 @@ bool mcRelayFrameToSupport(const char* supName, const uint8_t* frame, int len) {
         Serial.printf("[RADIOTX] %s недоступен\n", supportIp.c_str());
         return false;
     }
-    c.setTimeout(4000);
+    c.setTimeout(EARS_REPLY_MS / 1000);
     c.print(String("POST /radiotx HTTP/1.1\r\nHost: ") + supportIp +
             "\r\nX-API-Key: " + cfg.apiKey +
             "\r\nContent-Type: text/plain\r\n"
@@ -388,7 +393,7 @@ bool mcRelayFrameToSupport(const char* supName, const uint8_t* frame, int len) {
     c.print(body);
 
     bool ok = false;
-    unsigned long deadline = millis() + 4000;
+    unsigned long deadline = millis() + EARS_REPLY_MS;
     String head;
     while (c.connected() && (long)(millis() - deadline) < 0) {
         if (!c.available()) { delay(1); continue; }
