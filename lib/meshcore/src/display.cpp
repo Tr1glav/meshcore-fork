@@ -82,26 +82,39 @@ bool batteryPresent() { return false; }
 #endif
 
 #ifdef SENSOR_NODE
-// Результат проверки связи держим на экране PING_SHOW_MS вместо обычного статуса
+// Экран проверки доступности: пока режим включён — он вместо обычного статуса, после
+// выключения держится ещё PING_SHOW_MS, чтобы выборку можно было прочитать.
+//
+// Показываем именно выборку, а не последнее измерение: на границе слышимости одно удачное
+// «rtt 1800 мс» ничего не значит, а «ушло 12, потеряно 5» — значит.
 static void drawPingResult() {
     display.clearDisplay();
     display.setTextSize(1);
     display.setCursor(0, 0);
     // Экран сенсора везде на английском — держим единый язык
-    display.println("LINK TEST");
-    if (pingFailed) {
+    display.println(pingModeOn ? "LINK TEST  ON" : "LINK TEST");
+    if (pingStatSent == 0) {
         display.println("");
-        display.println("no reply");
-        display.printf("waited %lu s\n", PING_TIMEOUT_MS / 1000);
+        display.println("no pings sent");
+        display.display();
+        return;
+    }
+    const unsigned lost = (unsigned)(pingStatSent - pingStatRecv);
+    display.printf("sent %u lost %u\n", (unsigned)pingStatSent, lost);
+    display.printf("loss %lu%%\n", (unsigned long)lost * 100UL / pingStatSent);
+    if (pingStatRecv == 0) {
+        // Ни одного ответа: либо ещё летит первый запрос, либо связи нет вовсе.
+        display.println(pingSentMs ? "waiting reply..." : "NO REPLY");
         display.display();
         return;
     }
     char a[12], b[12];
-    display.printf("rtt:  %lu ms\n", pingRttMs);
-    display.printf("rx:   %s dBm\n", fmtFix(pingRssi, 0, a, sizeof(a)));
-    display.printf("snr:  %s dB\n", fmtFix(pingSnr, 1, b, sizeof(b)));
-    display.printf("peer: %d dBm\n", pingPeerRssi);
-    display.printf("hops: %u%s\n", pingHops, pingHops == 0 ? " (direct)" : "");
+    // min/avg/max времени ответа: по разбросу видно, «на пределе» связь или ровная.
+    display.printf("rtt %lu/%lu/%lu\n", pingRttMin, pingRttSum / pingStatRecv, pingRttMax);
+    display.printf("rx   %s dBm\n", fmtFix(pingRssi, 0, a, sizeof(a)));
+    display.printf("snr  %s dB\n", fmtFix(pingSnr, 1, b, sizeof(b)));
+    display.printf("peer %d dBm\n", pingPeerRssi);
+    display.printf("hops %u%s\n", pingHops, pingHops == 0 ? " direct" : "");
     display.display();
 }
 #endif
@@ -214,7 +227,9 @@ static void drawBtIcon(int x, int y) {
 void drawIdleStatus() {
     #ifdef SENSOR_NODE
     if (!screenOn) return;          // панель выключена — не тратим шину I2C впустую
-    if (pingShowUntil != 0 && (long)(millis() - pingShowUntil) < 0) { drawPingResult(); return; }
+    // Пока режим включён, экран занят проверкой: на него и смотрят, пока ходят запросы.
+    if (pingModeOn ||
+        (pingShowUntil != 0 && (long)(millis() - pingShowUntil) < 0)) { drawPingResult(); return; }
     #endif
     #ifdef COMPANION_NODE
     // Пока телефон не подключился, экран занят кодом сопряжения: его вводят в приложении,
