@@ -99,9 +99,14 @@ static void drawPingResult() {
         display.display();
         return;
     }
-    const unsigned lost = (unsigned)(pingStatSent - pingStatRecv);
+    // Процент считается от ЗАВЕРШЁННЫХ обменов, а не от отправленных: запрос, который ещё
+    // в пути, не отвечен и не потерян, и включать его в знаменатель нечестно — процент
+    // дёргался бы вниз на каждой отправке.
+    const unsigned lost = (unsigned)pingStatLost;
+    const unsigned done = (unsigned)(pingStatRecv + pingStatLost);
     display.printf("sent %u lost %u\n", (unsigned)pingStatSent, lost);
-    display.printf("loss %lu%%\n", (unsigned long)lost * 100UL / pingStatSent);
+    if (done) display.printf("loss %lu%%\n", (unsigned long)lost * 100UL / done);
+    else      display.println("loss --");
     if (pingStatRecv == 0) {
         // Ни одного ответа: либо ещё летит первый запрос, либо связи нет вовсе.
         display.println(pingSentMs ? "waiting reply..." : "NO REPLY");
@@ -109,12 +114,16 @@ static void drawPingResult() {
         return;
     }
     char a[12], b[12];
-    // min/avg/max времени ответа: по разбросу видно, «на пределе» связь или ровная.
+    // Время ответа и хопы — выборкой, в порядке min/avg/max: так печатает ping, mtr и
+    // iperf, и на этом экране подписи нет — места хватает только на числа. Непривычный
+    // порядок здесь читался бы как привычный, и минимум принимали бы за максимум.
     display.printf("rtt %lu/%lu/%lu\n", pingRttMin, pingRttSum / pingStatRecv, pingRttMax);
     display.printf("rx   %s dBm\n", fmtFix(pingRssi, 0, a, sizeof(a)));
     display.printf("snr  %s dB\n", fmtFix(pingSnr, 1, b, sizeof(b)));
     display.printf("peer %d dBm\n", pingPeerRssi);
-    display.printf("hops %u%s\n", pingHops, pingHops == 0 ? " direct" : "");
+    if (pingHopsMax == 0) display.println("hops direct");
+    else display.printf("hops %u/%lu/%u\n", pingHopsMin,
+                        (unsigned long)(pingHopsSum / pingStatRecv), pingHopsMax);
     display.display();
 }
 #endif
