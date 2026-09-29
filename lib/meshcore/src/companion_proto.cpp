@@ -16,6 +16,51 @@
 static uint8_t appVer = 0;      // версия протокола приложения из DEVICE_QUERY
 static uint8_t out[MAX_FRAME_SIZE + 8];
 
+// ===== Короткие ответы =====
+// В каждой ветке один и тот же ответ повторялся тремя строками: код, код ошибки, отправка.
+// 16 раз на 400 строк switch. Теперь ветка читается как «что проверяем», а упаковка ответа
+// живёт здесь.
+static void sendRes(uint8_t code) {
+    out[0] = code;
+    sendFrameToApp(out, 1);
+}
+
+static void sendErr(uint8_t code) {
+    out[0] = RESP_CODE_ERR;
+    out[1] = code;
+    sendFrameToApp(out, 2);
+}
+
+// ===== Границы буферов =====
+// Две проверки, где длина приходит извне, а размер буфера — константа. Обе вынесены
+// отдельно от разбора кадров, потому что именно их стоит проверять на хосте: в одном
+// случае длина приезжает из NVS (то есть могла достаться от другой версии прошивки), в
+// другом — из очереди сообщений. В selftest.py обе гоняются на всём возможном входе под
+// asan/ubsan.
+
+// Длина пути рекламы упакована в байт: хопы в младших 6 битах, размер хэша хопа — в
+// старших. Произведение при максимальных хопах и двубайтовом хэше достигает 252, а в кадр
+// столько не влезает, поэтому лишнее отбрасываем и отдаём пустой путь. Раньше это была
+// арифметика посреди ветки CMD_GET_ADVERT_PATH, где её никто не проверял.
+static uint16_t advertPathBytes(uint8_t advPathLen, size_t cap) {
+    uint8_t hops = advPathLen & 0x3F, hsize = (advPathLen >> 6) + 1;
+    uint16_t bytes = (uint16_t)hops * hsize;
+    if (bytes > cap) return 0;
+    return bytes;
+}
+
+// Копирует текст в кадр, не давая ему выйти за предел cap, и возвращает длину кадра,
+// которая гарантированно не больше cap. Вызывается из CMD_SYNC_NEXT_MESSAGE, где текст
+// занимает хвост ответа целиком: без арифметики ниже длинное сообщение дописывалось
+// поверх следующего кадра.
+static size_t putTextBounded(uint8_t* dst, size_t used, size_t cap, const char* src, size_t srcLen) {
+    if (used >= cap) return cap;            // кадр уже полон: писать некуда и нечего
+    size_t room = cap - used;
+    size_t n = (srcLen < room) ? srcLen : room;
+    memcpy(dst + used, src, n);
+    return used + n;
+}
+
 static void handleFrame(const uint8_t* f, size_t len) {
     int i = 0;
     switch (f[0]) {
@@ -86,8 +131,7 @@ static void handleFrame(const uint8_t* f, size_t len) {
                 timeSyncMs = millis();
             }
         }
-        out[i++] = RESP_CODE_OK;
-        sendFrameToApp(out, i);
+        sendRes(RESP_CODE_OK);
         break;
     }
     case CMD_GET_CONTACTS: {
@@ -105,18 +149,14 @@ static void handleFrame(const uint8_t* f, size_t len) {
     case CMD_ADD_UPDATE_CONTACT: {
         // [09][ключ 32][тип][флаги][длина пути][путь 64][имя 32][время 4] + необязательные
         if (len < 1 + 32 + 3 + 64 + 32 + 4) {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_ILLEGAL_ARG;
-            sendFrameToApp(out, i);
+            sendErr(ERR_CODE_ILLEGAL_ARG);
             break;
         }
         const uint8_t* pub = &f[1];
         int idx = contactFind(pub);
         if (idx < 0) {
             if (contactCount >= COMPANION_MAX_CONTACTS) {
-                out[i++] = RESP_CODE_ERR;
-                out[i++] = ERR_CODE_TABLE_FULL;
-                sendFrameToApp(out, i);
+                sendErr(ERR_CODE_TABLE_FULL);
                 break;
             }
             idx = contactCount++;
@@ -138,56 +178,49 @@ static void handleFrame(const uint8_t* f, size_t len) {
         }
         c.lastmod = (uint32_t)time(NULL);
         contactTouch();
-        out[i++] = RESP_CODE_OK;
-        sendFrameToApp(out, i);
+        sendRes(RESP_CODE_OK);
         break;
     }
     case CMD_RESET_PATH: {
         // Забыть маршрут до узла: следующая отправка пойдёт флудом и путь построится заново
         int idx = (len >= 1 + 32) ? contactFind(&f[1]) : -1;
         if (idx < 0) {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_NOT_FOUND;
-        } else {
-            contacts[idx].outPathLen = 0xFF;
-            contactTouch();
-            out[i++] = RESP_CODE_OK;
+            sendErr(ERR_CODE_NOT_FOUND);
+            break;
         }
-        sendFrameToApp(out, i);
+        contacts[idx].outPathLen = 0xFF;
+        contactTouch();
+        sendRes(RESP_CODE_OK);
         break;
     }
     case CMD_REMOVE_CONTACT: {
         int idx = (len >= 33) ? contactFind(&f[1]) : -1;
         if (idx < 0) {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_NOT_FOUND;
-        } else {
-            for (int k = idx; k + 1 < contactCount; k++) contacts[k] = contacts[k + 1];
-            contactCount--;
-            contactTouch();
-            out[i++] = RESP_CODE_OK;
+            sendErr(ERR_CODE_NOT_FOUND);
+            break;
         }
-        sendFrameToApp(out, i);
+        for (int k = idx; k + 1 < contactCount; k++) contacts[k] = contacts[k + 1];
+        contactCount--;
+        contactTouch();
+        sendRes(RESP_CODE_OK);
         break;
     }
     case CMD_GET_ADVERT_PATH: {
         // [42][резерв][ключ 32] -> [22][когда слышали 4][длина пути][хэши ретрансляторов]
         int idx = (len >= 2 + 32) ? contactFind(&f[2]) : -1;
         if (idx < 0) {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_NOT_FOUND;
-        } else {
-            const Contact& c = contacts[idx];
-            uint8_t hops = c.advPathLen & 0x3F, hsize = (c.advPathLen >> 6) + 1;
-            uint16_t bytes = (uint16_t)hops * hsize;
-            // Длина пришла из NVS: запись могла остаться от другой версии, а в кадр
-            // влезает ограниченно — лучше отдать пустой путь, чем выйти за буфер.
-            if (bytes > sizeof(c.advPath)) bytes = 0;
-            out[i++] = RESP_CODE_ADVERT_PATH;
-            memcpy(&out[i], &c.lastmod, 4); i += 4;
-            out[i++] = c.advPathLen;
-            memcpy(&out[i], c.advPath, bytes); i += bytes;
+            sendErr(ERR_CODE_NOT_FOUND);
+            break;
         }
+        const Contact& c = contacts[idx];
+        // Длина пришла из NVS: запись могла остаться от другой версии, а в кадр влезает
+        // ограниченно. advertPathBytes() отдаёт 0 вместо невлезающего пути, проверяется
+        // на хосте на всех 256 значениях байта.
+        uint16_t bytes = advertPathBytes(c.advPathLen, sizeof(c.advPath));
+        out[i++] = RESP_CODE_ADVERT_PATH;
+        memcpy(&out[i], &c.lastmod, 4); i += 4;
+        out[i++] = c.advPathLen;
+        memcpy(&out[i], c.advPath, bytes); i += bytes;
         sendFrameToApp(out, i);
         break;
     }
@@ -200,9 +233,7 @@ static void handleFrame(const uint8_t* f, size_t len) {
                 if (memcmp(contacts[k].pub, &f[1], klen) == 0) idx = k;
         }
         if (idx < 0) {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_NOT_FOUND;
-            sendFrameToApp(out, i);
+            sendErr(ERR_CODE_NOT_FOUND);
         } else {
             sendFrameToApp(out, contactFrame(RESP_CODE_CONTACT, contacts[idx], out));
         }
@@ -211,9 +242,7 @@ static void handleFrame(const uint8_t* f, size_t len) {
     case CMD_SET_CHANNEL: {
         // [32][номер][имя 32][ключ 16]
         if (len < 2 + 32 + 16) {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_ILLEGAL_ARG;
-            sendFrameToApp(out, i);
+            sendErr(ERR_CODE_ILLEGAL_ARG);
             break;
         }
         char nm[33];
@@ -223,27 +252,21 @@ static void handleFrame(const uint8_t* f, size_t len) {
         // мы не можем (их держит конфиг), и после перезагрузки она молча откатится.
         if (f[1] < appChanBase) {
             Serial.printf("[CH] канал %u задан настройками устройства, из приложения не меняем\n", f[1]);
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_ILLEGAL_ARG;
-            sendFrameToApp(out, i);
+            sendErr(ERR_CODE_ILLEGAL_ARG);
             break;
         }
         int idx = channelSetSlot(f[1], nm, &f[2 + 32]);
         if (idx < 0) {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_TABLE_FULL;
-        } else {
-            appChannelsSave();
-            out[i++] = RESP_CODE_OK;
+            sendErr(ERR_CODE_TABLE_FULL);
+            break;
         }
-        sendFrameToApp(out, i);
+        appChannelsSave();
+        sendRes(RESP_CODE_OK);
         break;
     }
     case CMD_SET_ADVERT_NAME: {
         if (len < 2) {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_ILLEGAL_ARG;
-            sendFrameToApp(out, i);
+            sendErr(ERR_CODE_ILLEGAL_ARG);
             break;
         }
         String nn;
@@ -257,8 +280,7 @@ static void handleFrame(const uint8_t* f, size_t len) {
         // А вот сети о новом имени сказать стоит сразу, не дожидаясь планового адверта.
         sendAdvert(ADV_ROUTE_FLOOD);
         Serial.printf("[BLE] имя узла изменено на «%s»\n", cfg.name.c_str());
-        out[i++] = RESP_CODE_OK;
-        sendFrameToApp(out, i);
+        sendRes(RESP_CODE_OK);
         break;
     }
     case CMD_GET_CHANNEL: {
@@ -267,9 +289,7 @@ static void handleFrame(const uint8_t* f, size_t len) {
         // описанием канала на любой индекс, перебор не кончается никогда: телефон
         // бесконечно спрашивает следующий канал, а мы бесконечно отвечаем.
         if (idx >= numChannels) {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_NOT_FOUND;
-            sendFrameToApp(out, i);
+            sendErr(ERR_CODE_NOT_FOUND);
             break;
         }
         out[i++] = RESP_CODE_CHANNEL_INFO;
@@ -285,9 +305,7 @@ static void handleFrame(const uint8_t* f, size_t len) {
     case CMD_SEND_TXT_MSG: {
         // [02][тип][попытка][время 4][начало ключа 6][текст]
         if (len < 14) {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_ILLEGAL_ARG;
-            sendFrameToApp(out, i);
+            sendErr(ERR_CODE_ILLEGAL_ARG);
             break;
         }
         uint8_t txtType = f[1];
@@ -312,9 +330,7 @@ static void handleFrame(const uint8_t* f, size_t len) {
             if (fl > 0) { floodSend(-1, frame, fl); sent = true; }
         }
         if (!sent) {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = (idx < 0) ? ERR_CODE_NOT_FOUND : ERR_CODE_ILLEGAL_ARG;
-            sendFrameToApp(out, i);
+            sendErr((idx < 0) ? ERR_CODE_NOT_FOUND : ERR_CODE_ILLEGAL_ARG);
             break;
         }
         // Метка нулевая: подтверждений доставки мы не отслеживаем, а ненулевая метка
@@ -330,9 +346,7 @@ static void handleFrame(const uint8_t* f, size_t len) {
     case CMD_SEND_CHANNEL_TXT_MSG: {
         // [03][00][канал][время 4][текст]
         if (len < 7) {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_ILLEGAL_ARG;
-            sendFrameToApp(out, i);
+            sendErr(ERR_CODE_ILLEGAL_ARG);
             break;
         }
         uint8_t ch = f[2];
@@ -350,18 +364,15 @@ static void handleFrame(const uint8_t* f, size_t len) {
             // Оригинал отвечает одним байтом согласия. Мы отвечали кадром «отправлено»
             // с оценкой времени доставки — такого подтверждения приложение не ждёт, и
             // сообщение навсегда оставалось у него в состоянии «отправляется».
-            out[i++] = RESP_CODE_OK;
+            sendRes(RESP_CODE_OK);
         } else {
-            out[i++] = RESP_CODE_ERR;
-            out[i++] = ERR_CODE_NOT_FOUND;
+            sendErr(ERR_CODE_NOT_FOUND);
         }
-        sendFrameToApp(out, i);
         break;
     }
     case CMD_SYNC_NEXT_MESSAGE: {
         if (msgCount == 0) {
-            out[i++] = RESP_CODE_NO_MORE_MESSAGES;
-            sendFrameToApp(out, i);
+            sendRes(RESP_CODE_NO_MORE_MESSAGES);
             break;
         }
         QueuedMsg& m = msgQueue[msgHead];
@@ -377,9 +388,10 @@ static void handleFrame(const uint8_t* f, size_t len) {
         out[i++] = m.pathLen;
         out[i++] = 0;                        // тип текста: обычный
         memcpy(&out[i], &m.ts, 4); i += 4;
-        size_t tl = strlen(m.text);
-        if (i + tl > MAX_FRAME_SIZE) tl = MAX_FRAME_SIZE - i;
-        memcpy(&out[i], m.text, tl); i += tl;
+        // Текст занимает хвост кадра целиком, поэтому копируется с пределом: putTextBounded
+        // не даёт длинному сообщению дописать себя поверх следующего кадра. Предел здесь
+        // MAX_FRAME_SIZE, а не sizeof(out) — в лишние восемь байт кадр не должен вылезать.
+        i = (int)putTextBounded(out, (size_t)i, MAX_FRAME_SIZE, m.text, strlen(m.text));
         sendFrameToApp(out, i);
         msgHead = (msgHead + 1) % MSG_QUEUE_MAX;
         msgCount--;
@@ -388,8 +400,7 @@ static void handleFrame(const uint8_t* f, size_t len) {
     case CMD_SEND_SELF_ADVERT: {
         // Второй байт: 1 — разослать по всей сети, иначе только ближайшим соседям
         sendAdvert((len >= 2 && f[1] == 1) ? ADV_ROUTE_FLOOD : ADV_ROUTE_DIRECT);
-        out[i++] = RESP_CODE_OK;
-        sendFrameToApp(out, i);
+        sendRes(RESP_CODE_OK);
         break;
     }
     case CMD_GET_BATT_AND_STORAGE: {
@@ -413,15 +424,12 @@ static void handleFrame(const uint8_t* f, size_t len) {
     case CMD_SET_FLOOD_SCOPE_KEY: {
         // Команда просит либо сбросить область, либо слать без неё — мы всегда так и
         // делаем, так что согласие здесь не обещает ничего, чего мы не выполняем.
-        out[i++] = RESP_CODE_OK;
-        sendFrameToApp(out, i);
+        sendRes(RESP_CODE_OK);
         break;
     }
     default:
         Serial.printf("[BLE] команда %u пока не поддержана\n", f[0]);
-        out[i++] = RESP_CODE_ERR;
-        out[i++] = ERR_CODE_UNSUPPORTED_CMD;
-        sendFrameToApp(out, i);
+        sendErr(ERR_CODE_UNSUPPORTED_CMD);
         break;
     }
 }

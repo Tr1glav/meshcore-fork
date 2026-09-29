@@ -395,6 +395,92 @@ def page_js_test():
         check("синтаксис JavaScript страницы", run.returncode == 0, run.stderr.strip()[:400])
 
 
+COMPANION_PRELUDE = (
+    "#include <cstdint>\n#include <cstdio>\n#include <cstring>\n#include <cstddef>\n"
+    "#define MAX_FRAME_SIZE 240\n"
+)
+
+COMPANION_MAIN = r"""
+int main() {
+    // advertPathBytes: байт длины приезжает из NVS, то есть мог достаться от другой версии
+    // прошивки. Проверяем все 256 значений против вместимости буфера пути.
+    for (int v = 0; v < 256; v++) {
+        uint16_t b = advertPathBytes((uint8_t)v, 64);
+        if (b > 64) { printf("advertPathBytes: %u байт при advPathLen=%d\n", b, v); return 1; }
+        // разумные значения не должны теряться: 0 хопов, 1 хоп с 1-байтовым хэшем
+        if (v == 0x00 && b != 0) { printf("advertPathBytes: 0 хопов дало %u\n", b); return 1; }
+        if (v == 0x01 && b != 1) { printf("advertPathBytes: 1 хоп 1 байт дало %u\n", b); return 1; }
+        if (v == 0x41 && b != 2) { printf("advertPathBytes: 1 хоп 2 байта дало %u\n", b); return 1; }
+    }
+    // 63 хопа по 2 байта = 126 байт: в буфер 64 не влезает, отдаём пустой путь.
+    // Разряд хэша лежит в бите 6, поэтому двухбайтовый хэш — это 0x40 и выше.
+    if (advertPathBytes(0x7F, 64) != 0) { printf("advertPathBytes: не влезает, но не отброшено\n"); return 1; }
+    if (advertPathBytes(0x61, 64) != 0) { printf("advertPathBytes: 33 хопа по 2 байта не отброшены\n"); return 1; }
+    // ровно во вместимость: 32 хопа по 2 байта = 64 — пропускаем
+    if (advertPathBytes(0x60, 64) != 64) { printf("advertPathBytes: ровно 64 байта отброшены\n"); return 1; }
+    if (advertPathBytes(0x3F, 64) != 63) { printf("advertPathBytes: 63 хопа по 1 байту\n"); return 1; }
+
+    // putTextBounded: текст из очереди не должен вылезти за предел кадра при любой
+    // уже набранной длине и любой длине текста.
+    uint8_t frame[512];
+    for (int used = 0; used <= 300; used++) {
+        for (int tl = 0; tl <= 400; tl++) {
+            char text[401];
+            memset(text, 'T', sizeof(text));
+            memset(frame, 0, sizeof(frame));
+            size_t got = putTextBounded(frame, (size_t)used, MAX_FRAME_SIZE, text, (size_t)tl);
+            if (got > MAX_FRAME_SIZE) {
+                printf("putTextBounded: длина %u при used=%d tl=%d\n", (unsigned)got, used, tl);
+                return 1;
+            }
+            // сколько байт обязано было вписаться: столько, сколько влезает после used
+            size_t copied = 0;
+            if ((size_t)used < MAX_FRAME_SIZE) {
+                size_t room = MAX_FRAME_SIZE - (size_t)used;
+                copied = ((size_t)tl < room) ? (size_t)tl : room;
+            }
+            for (size_t k = 0; k < copied; k++) {
+                if (frame[used + k] != 'T') { printf("putTextBounded: байт %u не записан\n", (unsigned)k); return 1; }
+            }
+            for (size_t k = used + copied; k < MAX_FRAME_SIZE; k++) {
+                if (frame[k] != 0) { printf("putTextBounded: записано за пределом текста\n"); return 1; }
+            }
+        }
+    }
+    // предел превышен уже начатком кадра — вписать нельзя ничего, но и выйти нельзя
+    if (putTextBounded(frame, MAX_FRAME_SIZE + 10, MAX_FRAME_SIZE, "x", 1) != MAX_FRAME_SIZE) {
+        printf("putTextBounded: used больше предела\n"); return 1;
+    }
+    return 0;
+}
+"""
+
+
+def companion_bounds_test():
+    if not shutil.which("g++"):
+        print("SKIP g++ не найден — границы команд приложения не проверены")
+        return
+    code = (
+        COMPANION_PRELUDE
+        + grab("lib/meshcore/src/companion_proto.cpp", "static uint16_t advertPathBytes(") + "\n"
+        + grab("lib/meshcore/src/companion_proto.cpp", "static size_t putTextBounded(") + "\n"
+        + COMPANION_MAIN
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        src = pathlib.Path(tmp) / "c.cpp"
+        exe = pathlib.Path(tmp) / "c"
+        src.write_text(code, encoding="utf-8")
+        build = subprocess.run(
+            ["g++", "-std=c++17", "-fsanitize=address,undefined", "-g", str(src), "-o", str(exe)],
+            capture_output=True, text=True)
+        if build.returncode != 0:
+            check("сборка теста границ команд приложения", False, build.stderr.strip()[:400])
+            return
+        run = subprocess.run([str(exe)], capture_output=True, text=True)
+        check("границы команд приложения (путь рекламы, текст в кадре)",
+              run.returncode == 0, (run.stdout + run.stderr).strip()[:600])
+
+
 def core_check():
     """Ядро на месте? Половина проверок вырезает функции из соседнего репозитория, и без
     него они не «пропускаются», а валят запуск. Тихо урезанный selftest — это ровно то,
@@ -413,6 +499,7 @@ if __name__ == "__main__":
     host_functions_test()
     pure_functions_test()
     marker_scan_test()
+    companion_bounds_test()
     otaz_test()
     page_js_test()
     print()
