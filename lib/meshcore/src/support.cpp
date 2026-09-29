@@ -39,6 +39,11 @@ extern "C" {
 // по умолчанию несколько десятков секунд нельзя: этот вызов стоит в обработчике
 // страницы, и всё это время координатор не отвечает вообще ни на что.
 #define SUPPORT_CONNECT_MS 3000
+// Короткие частые запросы ждут соединения гораздо меньше. Отметка уходит раз в десять секунд,
+// и если координатора нет, трёхсекундный коннект съедал бы треть времени — а мы стоим в нём
+// в главном цикле и всё это время глухи к эфиру. В локальной сети рукопожатие занимает
+// единицы миллисекунд: секунды с запасом хватает, чтобы отличить «занят» от «нет его».
+#define SUPPORT_PING_CONNECT_MS 1000
 // Короткие опросы — состояние сессии и список узлов — спрашивают у него на каждом
 // обновлении страницы. Им общий пятнадцатисекундный срок не годится по той же причине.
 #define SUPPORT_SHORT_MS 2000
@@ -104,10 +109,11 @@ static bool supReadResponse(WiFiClient& c, uint32_t waitMs, String* body, size_t
 // короткий (имена узлов), поэтому ограничиваем и его, и время ожидания.
 static bool supportRequest(const String& ip, const String& req, String* body,
                            size_t bodyMax = 2048,
-                           uint32_t waitMs = SUPPORT_HTTP_TIMEOUT_MS) {
+                           uint32_t waitMs = SUPPORT_HTTP_TIMEOUT_MS,
+                           uint32_t connectMs = SUPPORT_CONNECT_MS) {
     WiFiClient c;
     if (ip.length() < 7) return false;
-    if (!c.connect(ip.c_str(), SUPPORT_PORT, SUPPORT_CONNECT_MS)) {
+    if (!c.connect(ip.c_str(), SUPPORT_PORT, connectMs)) {
         slog("[SUP] %s недоступен\n", ip.c_str());
         return false;
     }
@@ -427,7 +433,8 @@ void supportPingTick() {
                  "Content-Type: application/x-www-form-urlencoded\r\n"
                  "Content-Length: " + String((unsigned)body.length()) + "\r\n"
                  "Connection: close\r\n\r\n" + body;
-    if (supportRequest(cfg.coordHost, req, nullptr, 0, SUPPORT_SHORT_MS)) {
+    if (supportRequest(cfg.coordHost, req, nullptr, 0, SUPPORT_SHORT_MS,
+                       SUPPORT_PING_CONNECT_MS)) {
         // Отметка дошла — значит координатор на этом адресе есть и слушает. Это же и адрес
         // для «вторых ушей»: кадры уходят туда же, откуда пришло подтверждение.
         if (coordIp != cfg.coordHost) {
