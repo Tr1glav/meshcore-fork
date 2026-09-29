@@ -44,6 +44,11 @@ extern "C" {
 // в главном цикле и всё это время глухи к эфиру. В локальной сети рукопожатие занимает
 // единицы миллисекунд: секунды с запасом хватает, чтобы отличить «занят» от «нет его».
 #define SUPPORT_PING_CONNECT_MS 1000
+// Сколько раз пробуем скомандовать начать сессию и пауза между попытками. Пауза заметно
+// больше секунды: прошивальщик должен успеть выйти из своего исходящего запроса и вернуться
+// в handleClient, иначе повтор упрётся в то же самое.
+#define SUPPORT_START_TRIES 4
+#define SUPPORT_START_RETRY_MS 1500
 // Короткие опросы — состояние сессии и список узлов — спрашивают у него на каждом
 // обновлении страницы. Им общий пятнадцатисекундный срок не годится по той же причине.
 #define SUPPORT_SHORT_MS 2000
@@ -294,6 +299,52 @@ done:
 
 // Ход переданной сессии. Ответ отдаём как есть: формат у прошивальщика тот же, и
 // страница координатора разбирает его теми же полями, что и свой.
+// ===== ХОД ПЕРЕДАННОЙ СЕССИИ =====
+// Опрос вынесен из обработчика страницы в главный цикл, и вот почему. Страница дёргает
+// /ota/status раз в секунду, а обработчик ходил за ответом к прошивальщику по сети — и всё
+// это время веб-сервер координатора занят одним запросом и не отвечает никому, в том числе
+// на POST /ears от того же прошивальщика. Тот, в свою очередь, стоял в своём исходящем
+// запросе и не отвечал нам. Два однопоточных сервера, зовущие друг друга синхронно, глушили
+// друг друга по очереди — отсюда и «периодически не проходит».
+//
+// Теперь ответ забирается раз в секунду из главного цикла и кладётся в кэш, а обработчик
+// только читает кэш. И промах больше не означает «ведущий пропал»: он занят сессией, чанки
+// уходят каждые сорок миллисекунд, и не ответить один раз для него нормально.
+#define SUPPORT_STATUS_POLL_MS  1000
+#define SUPPORT_STATUS_FAILS_MAX 5
+
+static String supStatusJson;
+static unsigned long supStatusMs = 0;
+static uint8_t supStatusFails = 0;
+
+void supportStatusTick() {
+    if (otaDelegate.length() == 0) {
+        supStatusJson = "";
+        supStatusFails = 0;
+        supStatusMs = 0;
+        return;
+    }
+    if (supStatusMs != 0 && millis() - supStatusMs < SUPPORT_STATUS_POLL_MS) return;
+    supStatusMs = millis();
+    String out;
+    if (supportStatus(out)) {
+        supStatusJson = out;
+        supStatusFails = 0;
+    } else if (supStatusFails < 0xFF) {
+        supStatusFails++;
+        if (supStatusFails == SUPPORT_STATUS_FAILS_MAX)
+            slog("[SUP] %s не отвечает %d раз подряд — сессию больше не показываем\n",
+                 otaDelegate.c_str(), (int)SUPPORT_STATUS_FAILS_MAX);
+    }
+}
+
+int supportStatusCached(String& out) {
+    if (supStatusFails >= SUPPORT_STATUS_FAILS_MAX) return -1;   // молчит слишком долго
+    if (supStatusJson.length() == 0) return 0;                   // ещё не спрашивали
+    out = supStatusJson;
+    return 1;
+}
+
 // Ход сессии спрашиваем у ТОГО, кто её ведёт: otaDelegate держит его имя.
 bool supportStatus(String& out) {
     const String ip = supportIpOf(otaDelegate);
@@ -361,7 +412,21 @@ bool supportHandOff(int idx, const String& target) {
     String req = String("POST /ota/start?target=") + target + " HTTP/1.1\r\nHost: " +
                  ip + "\r\n" + apiHdr() +
                  "Content-Length: 0\r\nConnection: close\r\n\r\n";
-    if (!supportRequest(ip, req, nullptr)) {
+    // Команда повторяется, и это не перестраховка. Оба узла зовут друг друга синхронно из
+    // главного цикла, а HTTP-сервер у каждого однопоточный и обслуживается там же: пока
+    // прошивальщик стоит в своём исходящем POST /ears, он не отвечает на наш /ota/start.
+    // Мегабайт образа к этому моменту уже уехал, и терять его из-за одной неудачной секунды
+    // нельзя — так прошивка «периодически не проходила», и приходилось начинать заново.
+    bool started = false;
+    for (int attempt = 1; attempt <= SUPPORT_START_TRIES && !started; attempt++) {
+        started = supportRequest(ip, req, nullptr);
+        if (!started) {
+            slog("[SUP] %s не принял команду (попытка %d из %d)\n",
+                 supports[idx].name.c_str(), attempt, SUPPORT_START_TRIES);
+            if (attempt < SUPPORT_START_TRIES) delay(SUPPORT_START_RETRY_MS);
+        }
+    }
+    if (!started) {
         slog("[SUP] %s образ принял, но сессию не начал\n", supports[idx].name.c_str());
         return false;
     }
@@ -423,6 +488,11 @@ static uint8_t supPingFails = 0;
 
 void supportPingTick() {
     if (!mcWifiConnected()) return;
+    // Во время сессии прошивки сеть не трогаем вовсе. Чанки уходят каждые сорок миллисекунд,
+    // а блокирующий POST останавливает главный цикл на сотни: отметка подождёт, сессия — нет.
+    // Она же не даст нам ответить на входящий запрос, если координатор захочет что-то
+    // спросить в этот момент.
+    if (otaSessionActive() || otaActive) return;
     if (cfg.coordHost.length() < 7) return;      // адрес координатора не настроен
     if (cfg.apiKey.length() == 0) return;        // без ключа координатор отметку не примет
     if (supPingNextMs != 0 && (long)(millis() - supPingNextMs) < 0) return;

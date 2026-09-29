@@ -20,6 +20,11 @@ bool supportPresent();
 // Спрашиваем у каждого — его /sensors отдаёт хопы, а порог один на всех (otaHopsReachable).
 int supportIndexFor(const String& target);
 
+// Ход переданной сессии: опрос раз в секунду из главного цикла, обработчик страницы читает
+// готовое. 1 — ответ есть, 0 — ещё не спрашивали, -1 — ведущий молчит слишком долго.
+void supportStatusTick();
+int supportStatusCached(String& out);
+
 // Прошивальщик отмечается у координатора по сети (POST /support на адрес из настроек):
 // называет себя, свою версию и окружение. Зовётся из главного цикла.
 void supportPingTick();

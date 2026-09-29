@@ -267,6 +267,10 @@ static void earsFailed() {
 void earsTick() {
     if (earsCount == 0) return;
     if (!mcWifiConnected()) return;
+    // Идёт сессия прошивки — сеть не трогаем: блокирующий POST останавливает главный цикл на
+    // сотни миллисекунд, а чанки уходят каждые сорок. Кадры подождут в кольце; к тому же в
+    // быстром режиме радио их всё равно не принимает.
+    if (otaSessionActive() || otaActive) return;
     // Без ключа координатор нас и не примет: лучше не занимать эфир и сеть впустую.
     if (cfg.apiKey.length() == 0) return;
     if (coordIp.length() < 7) return;

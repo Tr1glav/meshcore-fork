@@ -1013,7 +1013,8 @@ void otaHandleStatus() {
     // ведущего, чтобы подпись говорила, чья это прошивка.
     if (otaDelegate.length() > 0) {
         String st;
-        if (supportStatus(st)) {
+        const int have = supportStatusCached(st);   // из кэша: в обработчике по сети не ходим
+        if (have > 0) {
             char who[48];
             jsonEscape(otaDelegate.c_str(), who, sizeof(who));
             int brace = st.lastIndexOf('}');
@@ -1026,8 +1027,13 @@ void otaHandleStatus() {
             otaServer.send(200, "application/json", st);
             return;
         }
-        otaDelegate = "";      // не отвечает — больше не притворяемся, что ведём сессию
-        snprintf(otaLastErr, sizeof(otaLastErr), "%s не отвечает", otaNote[0] ? otaNote : "узел");
+        if (have < 0) {
+            // Молчит не разово, а подряд — вот теперь считаем, что сессии там нет.
+            otaDelegate = "";
+            snprintf(otaLastErr, sizeof(otaLastErr), "%s не отвечает", otaNote[0] ? otaNote : "узел");
+        }
+        // have == 0: ответа ещё не было (только что передали) — показываем своё состояние,
+        // но делегирование не трогаем.
     }
     int idx = -1;
     for (int i = 0; i < sensorDeviceDiscCount; i++) {
