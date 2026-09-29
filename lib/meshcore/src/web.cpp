@@ -416,7 +416,20 @@ void otaHandleEars() {
     }
     char reply[80];
     snprintf(reply, sizeof(reply), "{\"recv\":%d,\"dup\":%d,\"new\":%d}", recv, dup, recv - dup);
-    slog("[EARS] принято %d кадров (дублей %d)\n", recv, dup);
+    // Сводкой, а не на каждый запрос: кадры приходят пачками постоянно, и строка на каждую
+    // вытесняла из журнала всё остальное. Дубли считаем отдельно — по ним видно, что
+    // прошивальщик шлёт то, что мы и так слышим сами.
+    static unsigned long earsRxSumMs = 0;
+    static uint32_t earsRxFrames = 0, earsRxDups = 0;
+    earsRxFrames += (uint32_t)recv;
+    earsRxDups += (uint32_t)dup;
+    if (earsRxSumMs == 0) earsRxSumMs = millis();
+    else if (millis() - earsRxSumMs >= 5UL * 60 * 1000) {
+        slog("[EARS] за 5 мин принято %u кадров (дублей %u)\n",
+             (unsigned)earsRxFrames, (unsigned)earsRxDups);
+        earsRxSumMs = millis();
+        earsRxFrames = earsRxDups = 0;
+    }
     otaServer.send(200, "application/json", reply);
 }
 #endif // !SENSOR_NODE

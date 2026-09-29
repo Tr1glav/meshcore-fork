@@ -1,5 +1,9 @@
 const $=id=>document.getElementById(id);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+// Опросы прекращаются, когда вкладку не смотрят. Страница стучалась четыре раза в секунду
+// независимо от того, открыта она или забыта в фоне, — а каждый запрос это работа
+// однопоточного веб-сервера устройства, которое в это время должно слушать эфир.
+const hidden=()=>document.hidden;
 const kb=b=>b>=1048576?(b/1048576).toFixed(2)+' МБ':Math.round(b/1024)+' КБ';
 const dur=s=>{s=Math.max(0,Math.round(s));return s>=60?Math.floor(s/60)+' мин '+(s%60)+' с':s+' с'};
 const ago=s=>s<60?s+' с':s<3600?Math.floor(s/60)+' мин':Math.floor(s/3600)+' ч';
@@ -226,6 +230,7 @@ $('fwchk').onclick=async()=>{
   $('fwchk').disabled=false;
 };
 let logPos=0,logTimer=null,logAll='',logLines=[],filterQ='';
+let logIdle=0;const LOG_IDLE_MAX=5;   // во сколько раз растягивается опрос в тишине
 const atBottom=()=>{const l=$('logs');return l.scrollTop+l.clientHeight>=l.scrollHeight-12};
 function scrollBottom(){const l=$('logs');l.scrollTop=l.scrollHeight;$('down').hidden=true}
 function lineClass(s){
@@ -259,12 +264,19 @@ function addChunk(t){
   if(stick)scrollBottom();else $('down').hidden=false;
 }
 async function pullLog(){
+  if(hidden())return;
   try{
     const r=await fetch('/logs/tail?from='+logPos);
     const t=await r.text();
     logPos=+r.headers.get('X-Log-Pos')||logPos;
-    if(t)addChunk(t);
+    if(t){addChunk(t);logIdle=0}
+    else if(logIdle<LOG_IDLE_MAX)logIdle++;
   }catch(e){}
+  // Период плавающий: идут строки — полторы секунды, в тишине растёт до девяти. Журнал молчит
+  // почти всё время, и спрашивать его так же часто, как во время прошивки, значит нагружать
+  // устройство ради пустых ответов.
+  clearInterval(logTimer);
+  logTimer=setInterval(pullLog,1500*(1+logIdle));
 }
 async function initLog(){
   try{
@@ -275,6 +287,7 @@ async function initLog(){
     renderLog();
   }catch(e){$('logs').textContent='нет связи с ботом'}
   clearInterval(logTimer);
+  logIdle=0;
   logTimer=setInterval(pullLog,1500);
 }
 $('logs').onscroll=()=>{if(atBottom())$('down').hidden=true};
@@ -310,6 +323,7 @@ async function waitBot(){
 function track(){
   let doneAt=0;
   poll=setInterval(async()=>{
+    if(hidden())return;
     let j;
     try{j=await (await fetch('/ota/status')).json()}catch(e){return}
     const sec=j.elapsed_ms/1000;
@@ -343,9 +357,16 @@ function track(){
 }
 async function fwTrack(){
   let wasDown=false;
-  setInterval(async()=>{
+  let fwTimer=null,fwSlow=true;
+  // Пока загрузки нет, спрашивать раз в секунду незачем: она начинается по кнопке или по
+  // расписанию проверки обновлений. Идёт — спрашиваем часто, кончилась — снова редко.
+  const arm=(ms)=>{clearInterval(fwTimer);fwTimer=setInterval(step,ms)};
+  async function step(){
+    if(hidden())return;
     let j;
     try{j=await (await fetch('/fw/status')).json()}catch(e){return}
+    if(j.phase==1&&fwSlow){fwSlow=false;arm(1000)}
+    else if(j.phase!=1&&!fwSlow){fwSlow=true;arm(10000)}
     if(busy)return;               // полоса занята переданной по радио сессией
     if(j.phase==1){
       wasDown=downloading=true;
@@ -358,7 +379,8 @@ async function fwTrack(){
       wasDown=downloading=false;
       refresh();
     }
-  },1000);
+  }
+  arm(10000);
 }
 async function startSession(slow){
   // slow=1 — принудительно медленным режимом. Сам по себе он включается и без этого, когда
@@ -493,6 +515,8 @@ loadSensors();
 loadCfg();
 initLog();
 fwTrack();
-setInterval(loadInfo,5000);
-setInterval(loadSensors,20000);
+setInterval(()=>{if(!hidden())loadInfo()},5000);
+setInterval(()=>{if(!hidden())loadSensors()},20000);
+// Вернулись к вкладке — обновляем сразу, не дожидаясь следующего такта.
+document.addEventListener('visibilitychange',()=>{if(!hidden()){loadInfo();loadSensors();pullLog()}});
 fetch('/ota/status').then(r=>r.json()).then(j=>{if((j.phase>=1&&j.phase<=3)||j.sup){busy=true;$('ab').hidden=false;$('prog').hidden=false;refresh();track()}}).catch(()=>{});

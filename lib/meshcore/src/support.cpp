@@ -127,11 +127,21 @@ static bool supportRequest(const String& ip, const String& req, String* body,
                            size_t bodyMax = 2048,
                            uint32_t waitMs = SUPPORT_HTTP_TIMEOUT_MS,
                            uint32_t connectMs = SUPPORT_CONNECT_MS) {
+    // О недоступности — один раз, а не на каждую попытку: отметка уходит раз в десять секунд,
+    // и при выключенном соседе журнал состоял бы из одной этой строки.
+    static bool wasDown = false;
     WiFiClient c;
     if (ip.length() < 7) return false;
     if (!c.connect(ip.c_str(), SUPPORT_PORT, connectMs)) {
-        slog("[SUP] %s недоступен\n", ip.c_str());
+        if (!wasDown) {
+            wasDown = true;
+            slog("[SUP] %s недоступен\n", ip.c_str());
+        }
         return false;
+    }
+    if (wasDown) {
+        wasDown = false;
+        slog("[SUP] %s снова отвечает\n", ip.c_str());
     }
     c.setTimeout((waitMs + 999) / 1000);
     c.print(req);

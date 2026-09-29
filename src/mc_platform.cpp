@@ -242,6 +242,14 @@ static uint8_t  earsHead = 0;    // самый старый кадр
 static uint8_t  earsCount = 0;
 static unsigned long earsNextTryMs = 0;   // раньше этого времени не пробуем
 static uint8_t earsFails = 0;             // неудач подряд: по ним растёт пауза
+// Журнал пишет ИЗМЕНЕНИЯ, а не такты. Успешная отправка — рутина: она случается постоянно,
+// и строка на каждую забивала журнал так, что в нём не оставалось места для того, ради чего
+// его читают. Поэтому об успехе — сводкой раз в EARS_SUM_MS, о неудаче — один раз при
+// первой, и отдельно о том, что связь восстановилась.
+#define EARS_SUM_MS (5UL * 60 * 1000)
+static unsigned long earsSumMs = 0;
+static uint32_t earsSumFrames = 0;
+static bool earsWasDown = false;
 
 void mcOnFreshFrame(const uint8_t* buf, size_t len, float rssi, float snr) {
     if (len == 0 || len > EARS_FRAME_MAX) return;
@@ -304,8 +312,12 @@ void earsTick() {
     WiFiClient c;
     if (!c.connect(coordIp.c_str(), 3232, EARS_CONNECT_MS)) {
         earsFailed();
-        slog("[EARS] %s недоступен, кадры остаются в очереди (следующая попытка через %lu мс)\n",
-             coordIp.c_str(), earsNextTryMs - millis());
+        // Об одном и том же молчим: пауза между попытками и так растёт, а строка на каждую
+        // означала бы, что чем хуже связь, тем шумнее журнал.
+        if (!earsWasDown) {
+            earsWasDown = true;
+            slog("[EARS] %s недоступен, кадры копятся в очереди\n", coordIp.c_str());
+        }
         return;
     }
     c.setTimeout(EARS_REPLY_MS / 1000);
@@ -339,11 +351,24 @@ void earsTick() {
         earsPop(drained);
         earsFails = 0;
         earsNextTryMs = 0;   // очередь ещё не пуста — остаток уйдёт следующим проходом
-        slog("[EARS] ушло %u кадров, в очереди %u\n", drained, earsCount);
+        earsSumFrames += drained;
+        if (earsWasDown) {
+            earsWasDown = false;
+            slog("[EARS] координатор снова принимает кадры\n");
+        }
+        if (earsSumMs == 0) earsSumMs = millis();
+        else if (millis() - earsSumMs >= EARS_SUM_MS) {
+            slog("[EARS] за %lu мин ушло %u кадров\n", EARS_SUM_MS / 60000UL,
+                 (unsigned)earsSumFrames);
+            earsSumMs = millis();
+            earsSumFrames = 0;
+        }
     } else {
         earsFailed();
-        slog("[EARS] POST /ears не принят (%u кадров остаются, следующая попытка через %lu мс)\n",
-             drained, earsNextTryMs - millis());
+        if (!earsWasDown) {
+            earsWasDown = true;
+            slog("[EARS] координатор не принимает кадры, копим в очереди\n");
+        }
     }
 }
 #endif // FEATURE_SUPPORT
