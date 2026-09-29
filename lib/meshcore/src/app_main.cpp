@@ -79,7 +79,9 @@ void appSetup() {
     Serial.println("FEM OK");
     #endif
     
-    #if BUTTON_PIN >= 0
+    #if FEATURE_BUTTON
+    buttonBegin();   // пин и прерывание: фронты защёлкиваются, а не опрашиваются
+    #elif BUTTON_PIN >= 0
     pinMode(BUTTON_PIN, INPUT_PULLUP);
     #endif
     
