@@ -2,7 +2,7 @@
 """Отправка кода в git после сборки и пометка релизных версий.
 
 Схема:
-  * каждая успешная сборка коммитит изменения и отправляет текущую ветку (develop);
+  * сборка с GIT=1 коммитит изменения и отправляет текущую ветку (develop);
   * с флагом --release дополнительно создаётся ветка release/v<версия> и уходит на origin.
 
 Сами файлы прошивки в репозиторий не кладутся. Их собирает и выкладывает GitHub Actions
@@ -17,10 +17,11 @@
     python3 scripts/release.py --no-push       только локально
     python3 scripts/release.py -m "текст"      своё описание коммита
 
-Из сборки вызывается автоматически (scripts/copy_firmware.py):
-    pio run                     коммит и отправка
-    RELEASE=1 pio run           плюс релизная ветка
-    NOGIT=1 pio run             ничего не трогать в git
+Из сборки вызывается только по требованию (scripts/copy_firmware.py):
+    GIT=1 pio run               коммит и отправка
+    RELEASE=1 GIT=1 pio run     плюс релизная ветка
+    pio run                     ничего не трогать в git
+    NOGIT=1 pio run             то же, явно запретить работу с git
 """
 import argparse
 import os
@@ -39,7 +40,7 @@ FORBIDDEN = ("secrets.ini", "secrets.json", ".env", "firmware_output/", "build_i
 # git add -A, и в публичный репозиторий уехал бы ЛЮБОЙ файл, случайно оказавшийся в дереве —
 # дамп, выгрузка логов, заметка с паролем. Чёрный список ниже поймал бы только пять имён,
 # которые в него вписаны; этот — пропускает только то, что действительно является исходником.
-ALLOW_NEW = ("src/", "lib/", "include/", "web/", "scripts/", "boards/", "variants/",
+ALLOW_NEW = ("src/", "lib/", "web/", "scripts/", "boards/", "variants/",
              ".github/", "platformio.ini", "version.txt", "core.ref", "README.md",
              "secrets.example.json", ".gitignore")
 

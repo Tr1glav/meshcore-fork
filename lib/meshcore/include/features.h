@@ -109,18 +109,10 @@
 #endif
 
 // Проверки сочетаний: молча собрать бессмысленную прошивку хуже, чем не собрать вовсе.
-#if FEATURE_MQTT && !FEATURE_WIFI
-  #error "FEATURE_MQTT требует FEATURE_WIFI"
-#endif
-#if FEATURE_WEB && !FEATURE_WIFI
-  #error "FEATURE_WEB требует FEATURE_WIFI"
-#endif
-#if FEATURE_AUTOUPDATE && !FEATURE_WIFI
-  #error "FEATURE_AUTOUPDATE требует FEATURE_WIFI"
-#endif
-#if FEATURE_SELFUPDATE && !FEATURE_WIFI
-  #error "FEATURE_SELFUPDATE требует FEATURE_WIFI: образ качается из релиза по сети"
-#endif
+//
+// Признак, который держится на сети, проверяется одним правилом ниже (FEATURE_WIFI), а не
+// по одному на признак: список сетевых признаков разошёлся бы с этим местом при первом же
+// добавлении (автообновление, NTP, self-update), и проверка молча перестала бы что-то ловить.
 #if FEATURE_COMPANION && !FEATURE_SENSOR
   #error "Компаньон собирается поверх сенсорного узла: нужен FEATURE_SENSOR"
 #endif
