@@ -113,7 +113,9 @@ void mcUiOtaProgress(const String& target, uint32_t pct, uint32_t pkts, float rs
     display.clearDisplay();
     display.setTextSize(1);
     display.setCursor(0, 0);
-    display.printf("OTA %s\n", target.c_str());
+    // SLOW/FAST в заголовке: режимы отличаются по времени в десятки раз, и с экрана должно
+    // быть видно, минуту ждать или час.
+    display.printf("OTA%s %s\n", otaSlowOn ? "-SLOW" : "", target.c_str());
     if (pct > 100) pct = 100;
     display.printf("%u%%\n", (unsigned)pct);
     int bw = (int)((long)pct * 128 / 100);
@@ -152,7 +154,7 @@ void mcUiOtaSensorProgress(uint32_t got, uint32_t total, uint32_t pkts, float rs
     display.clearDisplay();
     display.setTextSize(1);
     display.setCursor(0, 0);
-    display.println("OTA update");
+    display.println(otaSlowOn ? "OTA update SLOW" : "OTA update");
     uint32_t pct = total ? (got * 100 / total) : 0;
     if (pct > 100) pct = 100;
     display.printf("%u%%\n", (unsigned)pct);
