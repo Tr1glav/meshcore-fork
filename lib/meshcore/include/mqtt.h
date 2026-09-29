@@ -6,11 +6,9 @@
 // Сеть и время жили здесь же (и до того — в globals.h ядра). Теперь они в net.h: сеть нужна
 // и тому, у кого брокера нет вовсе, и держать их одним признаком было неправильно.
 //
-// Guard файла пока MQTT_ENABLED, а не FEATURE_MQTT: в mqtt.cpp вместе с публикацией лежит
-// РЕЕСТР УЗЛОВ (sensorIndex, publishSensorMessage), а он нужен и прошивальщику с
-// FEATURE_MQTT=0 — по его /sensors координатор выбирает ведущего сессии. Вынести реестр —
-// следующий шаг, и только он позволит убрать этот флаг совсем.
-#ifdef MQTT_ENABLED
+// Guard — признак брокера: реестр узлов уехал в ядро (sensor_registry.cpp), и у того, кто
+// ничего не публикует, этого файла в сборке нет вовсе.
+#if FEATURE_MQTT
 #include <WiFi.h>
 #include <PubSubClient.h>
 
@@ -37,7 +35,7 @@ void mqttConnectTick();
 #endif
 
 
-#ifdef MQTT_ENABLED
+#if FEATURE_MQTT
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 void publishDiscovery();
 void publishMessage();

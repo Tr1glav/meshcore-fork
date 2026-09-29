@@ -82,10 +82,14 @@ void coordinatorTasksTick() {
     webTick();        // очередь настроек узла: по одному сообщению раз в CFG_MSG_GAP_MS
     #endif
 
+    // Оба сброса — про топики Home Assistant, поэтому под признаком брокера: у кого его нет,
+    // тому и обнулять нечего.
+    #if FEATURE_MQTT
     // ===== Сброс lastmsg после паузы (чтобы повторный одинаковый текст триггерил HA) =====
     clearLastMsg();
     // ===== Сброс text-топика после триггера "button" (повторное нажатие = новый state_changed) =====
     clearSensorBtnText();
+    #endif
 }
 
 #endif

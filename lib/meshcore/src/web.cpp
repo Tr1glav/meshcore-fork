@@ -229,7 +229,12 @@ void otaHandleInfo() {
              "\"sups\":%s,"
              "\"fwready\":%s,\"fwname\":\"%s\",\"fwsize\":%u,\"fwimg\":%u}",
              (unsigned long)(millis() / 1000),
-             wifiConnected ? "true" : "false", mqttConnected ? "true" : "false",
+             wifiConnected ? "true" : "false",
+#if FEATURE_MQTT
+             mqttConnected ? "true" : "false",
+#else
+             "false",   // брокера в этой сборке нет — страница показывает «MQTT: -»
+#endif
              (unsigned)ESP.getFreeHeap(), temp,
              batteryPercent(), volt,
              wifiConnected ? WiFi.localIP().toString().c_str() : "-", packetCount,
@@ -769,10 +774,12 @@ void otaHandleUpdate() {
         // на время записи радио и сеть выключены
         radio.sleep();
         isListening = false;
+#if FEATURE_MQTT
         if (mqttConnected) {
             mqtt.disconnect();
             mqttConnected = false;   // при неудаче otaSelfUpdateResume не оставит ложь: цикл тут же переподключит
         }
+#endif
         #if HAS_FEM
         digitalWrite(FEM_EN_PIN, LOW);
         #endif

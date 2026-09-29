@@ -18,7 +18,7 @@ extern unsigned long wifiConnStartMs;
 extern unsigned long lastNetRetryMs;   // когда в последний раз заходили в netTick
 
 // Шаг машины состояния: поднять WiFi, если он лежит, и отдать ход брокеру, если он собран.
-// Зовётся из главного цикла не чаще раза в MQTT_RECONNECT_INTERVAL_MS.
+// Зовётся из главного цикла не чаще раза в NET_RETRY_INTERVAL_MS.
 void netTick();
 #endif
 

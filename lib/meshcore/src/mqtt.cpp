@@ -5,7 +5,7 @@
 #include "mqtt.h"
 #include "ota.h"
 
-#ifdef MQTT_ENABLED
+#if FEATURE_MQTT
 
 #include <esp_sntp.h>
 #include "net.h"   // wifiClient: брокер работает по нему
@@ -423,44 +423,6 @@ void publishSensorDisc(const String& sender, const char* slug, const String& env
     Serial.printf("[MQTT] sensor discovery published: %s\n", slug);
 }
 
-// Реестр сенсоров ведётся независимо от MQTT — его показывает страница OTA
-static int sensorIndex(const String& name) {
-    for (int i = 0; i < sensorDeviceDiscCount; i++) {
-        if (sensorDeviceDisc[i] == name) return i;
-    }
-    int idx;
-    if (sensorDeviceDiscCount < SENSOR_DEV_CACHE_MAX) {
-        idx = sensorDeviceDiscCount++;
-    } else {
-        // Реестр полон. Раньше здесь стоял отказ, и узел сверх шестнадцатого просто не
-        // появлялся ни на странице, ни в MQTT — без единой строки в журнале, так что со
-        // стороны это выглядело как пропавшая связь. Вытесняем того, кто дольше всех не
-        // выходил в эфир: он либо снят, либо всё равно не на связи, а живому узлу место
-        // нужнее.
-        idx = 0;
-        for (int i = 1; i < sensorDeviceDiscCount; i++)
-            if ((long)(sensorLastActive[i] - sensorLastActive[idx]) < 0) idx = i;
-        slog("[REG] реестр узлов полон (%d): '%s' вытеснен узлом '%s'\n",
-             (int)SENSOR_DEV_CACHE_MAX, sensorDeviceDisc[idx].c_str(), name.c_str());
-    }
-    // Слот может быть переиспользован, поэтому чистим ВСЕ поля узла, а не только те, у
-    // которых нет разумного нуля: версия и окружение прошлого жильца иначе показывались бы
-    // как версия нового.
-    sensorDeviceDisc[idx] = name;
-    sensorDiscPublished[idx] = false;
-    sensorPosPublished[idx] = false;
-    sensorBattery[idx] = -1;
-    sensorHops[idx] = 0xFF;      // пока не услышали — не «напрямую», а «неизвестно»
-    sensorViaSup[idx] = 0;
-    sensorViaRssi[idx] = 0;
-    sensorOnlineNow[idx] = false;
-    sensorLastActive[idx] = millis();
-    sensorFwVersion[idx] = "";
-    sensorEnv[idx] = "";
-    sensorRssi[idx] = 0;
-    return idx;
-}
-
 void publishSensorAvailability(int idx) {
     if (!mqttConnected) return;
     char slug[48], topic[128];
@@ -470,48 +432,18 @@ void publishSensorAvailability(int idx) {
 }
 
 bool publishSensorMessage() {
-    int idx = sensorIndex(lastSender);
-    bool cameOnline = false;
-    if (idx >= 0) {
-        sensorLastActive[idx] = millis();
-        if (lastRxViaSupport) {
-            // Кадр принёс прошивальщик по сети: и RSSI, и хопы в нём — ЕГО измерения, от его
-            // антенны. Свои этим не затираем — иначе узел, который мы слышим напрямую, после
-            // одного форварда выглядел бы неслышимым, и прошить его сами мы бы не взялись.
-            const int si = supportFind(lastRxSupport);
-            sensorViaSup[idx] = (si >= 0) ? (uint8_t)(si + 1) : 0xFF;
-            sensorViaRssi[idx] = lastRSSI;
-        } else {
-            sensorRssi[idx] = lastRSSI;
-            sensorHops[idx] = lastHopCount;
-        }
-        cameOnline = !sensorOnlineNow[idx];
-        sensorOnlineNow[idx] = true;
-    }
-    // heartbeat "hello:<версия>[:<заряд %>:<напряжение>]"; сенсоры постарше шлют просто "hello"
-    bool hello = lastMessage == SENSOR_MSG_HELLO || lastMessage.startsWith(SENSOR_MSG_HELLO ":");
-    // hello:<версия>:<заряд %>:<напряжение>:<окружение>[:<широта>:<долгота>]
-    // "-" = поля нет. Полей может быть меньше: координаты шлют только узлы с приёмником
-    // и только когда решение есть, — цикл сам остановится на конце строки.
-    //
-    // Кода платы в heartbeat больше нет: окружение и так называет плату, причём точнее
-    // (сенсор и компаньон живут на одной h43). Узел со старой прошивкой шлёт его пятым
-    // полем, и здесь оно прочтётся как окружение — такой узел нужно обновить один раз
-    // вручную или по USB, дальше он снова понятен.
-    String ver, batPct, batVolt, envName, lat, lon;
-    if (hello) {
-        String rest = lastMessage.substring(strlen(SENSOR_MSG_HELLO) + 1);
-        String* fields[] = { &ver, &batPct, &batVolt, &envName, &lat, &lon };
-        for (int i = 0; i < 6 && rest.length() > 0; i++) {
-            int p = rest.indexOf(':');
-            *fields[i] = (p < 0) ? rest : rest.substring(0, p);
-            rest = (p < 0) ? String() : rest.substring(p + 1);
-            if (*fields[i] == "-") *fields[i] = "";
-        }
-    }
-    if (idx >= 0 && ver.length() > 0) sensorFwVersion[idx] = ver;
-    if (idx >= 0 && envName.length() > 0) sensorEnv[idx] = envName;
-    if (idx >= 0 && batPct.length() > 0) sensorBattery[idx] = batPct.toInt();
+    // Реестр и разбор heartbeat сделало ядро (sensorRegistryNote): здесь только публикация,
+    // и поля берутся готовыми. Раньше эта функция делала и то, и другое, из-за чего весь
+    // файл собирался и там, где брокера нет.
+    const int idx = lastSensorIdx;
+    bool cameOnline = lastSensorCameOnline;
+    const bool hello = lastHello.isHello;
+    const String& ver = lastHello.ver;
+    const String& batPct = lastHello.batPct;
+    const String& batVolt = lastHello.batVolt;
+    const String& envName = lastHello.env;
+    const String& lat = lastHello.lat;
+    const String& lon = lastHello.lon;
 
     if (!mqttConnected) {
         Serial.printf("[SNS] %s: %s (MQTT not connected, skipped)\n",
@@ -520,17 +452,9 @@ bool publishSensorMessage() {
     }
     char slug[48];
     mqttSlug(lastSender.c_str(), slug, sizeof(slug));
-    // discovery — один раз на сенсор за подключение к брокеру
-    if (idx < 0) {
-        // Реестр полон: публиковать discovery некуда — иначе каждое сообщение такого
-        // сенсора заново рассылало бы весь набор retained-конфигов в брокер.
-        static bool regFullWarned = false;
-        if (!regFullWarned) {
-            regFullWarned = true;
-            slog("[SNS] реестр сенсоров полон (%d) — %s остаётся без сущностей в HA\n",
-                 SENSOR_DEV_CACHE_MAX, lastSender.c_str());
-        }
-    } else if (!sensorDiscPublished[idx]) {
+    // discovery — один раз на сенсор за подключение к брокеру. Ветки «реестр полон» здесь
+    // больше нет: реестр вытесняет самого молчаливого и всегда возвращает запись.
+    if (!sensorDiscPublished[idx]) {
         // Окружение разобрано строкой выше, поэтому карточка сразу получает верную роль
         publishSensorDisc(lastSender, slug, sensorEnv[idx]);
         sensorDiscPublished[idx] = true;
@@ -564,7 +488,7 @@ bool publishSensorMessage() {
         // Координаты. Приходят из эфира, поэтому перед тем как вклеить их в JSON,
         // проверяем, что это действительно числа: кадр мог прийти битым или подделанным,
         // а кавычка в «координате» сломала бы разбор атрибутов в Home Assistant.
-        if (idx >= 0 && isCoordText(lat) && isCoordText(lon)) {
+        if (isCoordText(lat) && isCoordText(lon)) {
             snprintf(t, sizeof(t), "%s/sensor/%s/latitude", mqttPrefix, slug);
             mqtt.publish(t, lat.c_str(), true);
             snprintf(t, sizeof(t), "%s/sensor/%s/longitude", mqttPrefix, slug);
@@ -705,4 +629,4 @@ void mqttConnectTick() {
 #endif // FEATURE_MQTT
 }
 
-#endif // MQTT_ENABLED
+#endif // FEATURE_MQTT

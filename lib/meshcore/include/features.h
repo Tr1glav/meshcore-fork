@@ -22,12 +22,12 @@
 #endif
 
 // --- сеть и её потребители ---
+// Сеть включается признаком, а не «есть ли в сборке брокер». Раньше FEATURE_WIFI выводился
+// из MQTT_ENABLED, и потому всё сетевое — страница, автообновление, раздача прошивок,
+// «вторые уши» — существовало ровно там, где собран MQTT. Окружения задают его сами
+// (см. группы [net] и [support] в platformio.ini).
 #ifndef FEATURE_WIFI
-  #ifdef MQTT_ENABLED
-    #define FEATURE_WIFI 1
-  #else
-    #define FEATURE_WIFI 0
-  #endif
+  #define FEATURE_WIFI 0
 #endif
 
 #ifndef FEATURE_MQTT          // публикация в MQTT и автообнаружение в Home Assistant
@@ -151,9 +151,13 @@
 #if FEATURE_BUTTON && BUTTON_PIN < 0
   #error "FEATURE_BUTTON требует -DPIN_USER_BTN: на этой плате кнопки нет"
 #endif
-// Код пока ветвится и по старому флагу MQTT_ENABLED, который задаёт platformio.ini: под ним
-// лежат wifi/mqtt/fwupdate/ota.cpp целиком. Если новый признак включён, а старого флага нет,
-// сборка молча упадёт на нехватке функций. Расхождение лучше видеть сразу.
-#if !defined(MQTT_ENABLED) && (FEATURE_WIFI || FEATURE_MQTT || FEATURE_WEB || FEATURE_AUTOUPDATE || FEATURE_NTP)
-  #error "FEATURE_WIFI/MQTT/WEB/AUTOUPDATE/NTP требуют MQTT_ENABLED (задаётся в platformio.ini)"
+// Проверки на несобираемые сочетания: признак включён, а того, на чём он держится, нет.
+#if FEATURE_MQTT && !FEATURE_WIFI
+  #error "FEATURE_MQTT требует FEATURE_WIFI: брокер живёт по сети"
+#endif
+#if FEATURE_WEB && !FEATURE_WIFI
+  #error "FEATURE_WEB требует FEATURE_WIFI: страницу отдавать некуда"
+#endif
+#if (FEATURE_AUTOUPDATE || FEATURE_SELFUPDATE || FEATURE_NTP) && !FEATURE_WIFI
+  #error "автообновление и NTP требуют FEATURE_WIFI: они ходят в интернет"
 #endif

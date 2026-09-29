@@ -282,7 +282,7 @@ void appLoop() {
     // Сеть и брокер — разные признаки: netTick поднимает WiFi и сам отдаёт ход брокеру,
     // mqtt.loop крутит клиента. У прошивальщика первое есть, второго нет.
     #if FEATURE_WIFI
-    if (millis() - lastNetRetryMs > MQTT_RECONNECT_INTERVAL_MS) {
+    if (millis() - lastNetRetryMs > NET_RETRY_INTERVAL_MS) {
         lastNetRetryMs = millis();
         netTick();
     }
