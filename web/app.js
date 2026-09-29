@@ -33,6 +33,9 @@ function refresh(){
   }
   $('go').textContent=isSelf()?'Прошить бота':'Прошить '+target;
   $('go').disabled=busy||!file||bad||downloading;
+  // Медленный режим бота не касается: он про раздачу узлу по радиоканалу.
+  const gs=$('goslow');
+  if(gs){gs.hidden=isSelf();gs.disabled=busy||!file||bad||downloading||isSelf();}
   $('fwgo')&&($('fwgo').disabled=busy||isSelf());
   $('scfgbox').hidden=isSelf();
 }
@@ -342,11 +345,15 @@ async function fwTrack(){
     }
   },1000);
 }
-async function startSession(){
-  const s=await fetch('/ota/start?target='+encodeURIComponent(target),{method:'POST'});
+async function startSession(slow){
+  // slow=1 — принудительно медленным режимом. Сам по себе он включается и без этого, когда
+  // узел дальше прямой слышимости; кнопка нужна, чтобы режим можно было ПРОВЕРИТЬ на узле,
+  // который слышно, а не только тогда, когда иначе уже не дотянуться.
+  const s=await fetch('/ota/start?target='+encodeURIComponent(target)+(slow?'&slow=1':''),
+                      {method:'POST'});
   if(!s.ok)throw new Error(await s.text());
   $('ab').hidden=false;
-  bar(0,'Ждём ответ сенсора…','');
+  bar(0,slow?'Медленный режим: раздаю по каналу…':'Ждём ответ сенсора…','');
   track();
 }
 async function flashStored(){
@@ -354,6 +361,19 @@ async function flashStored(){
   busy=true;refresh();
   try{await startSession()}catch(e){st(e.message,'err');finish()}
 }
+$('goslow')&&($('goslow').onclick=async()=>{
+  if(isSelf())return;
+  if(!confirm('Медленный режим идёт по обычному каналу связи и занимает часы вместо минуты. Начать?'))return;
+  busy=true;refresh();
+  try{
+    // Файл сначала кладётся на бот тем же путём, что и в быстром режиме: раздаёт он его
+    // потом сам, только другим способом. Ответ проверяем — молчаливый отказ сохранения
+    // выглядел бы как начавшаяся сессия, которая никуда не едет.
+    const r=await upload('/savefw');
+    if(r.indexOf('OK')<0)throw new Error(r||'FAIL');
+    await startSession(true);
+  }catch(e){st(e.message,'err');finish()}
+});
 $('go').onclick=async()=>{
   if(isSelf()&&!confirm('Прошить сам бот? Он перезагрузится, связь ненадолго пропадёт.'))return;
   busy=true;refresh();

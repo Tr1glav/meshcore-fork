@@ -278,6 +278,7 @@ void appLoop() {
     otaServer.handleClient();   // HTTP OTA: принимаем реквесты не блокируя радио
     #endif
     #if FEATURE_MESH_OTA_SENDER
+    otaSlowTick();              // медленный режим: чанки обычными сообщениями канала
     otaBotTick();               // mesh OTA: таймауты повтора чанков
     otaSupportTick();           // итог передачи образа прошивальщику (идёт фоновой задачей)
     supportStatusTick();        // ход переданной сессии: опрос отсюда, а не из обработчика
@@ -332,6 +333,9 @@ void appLoop() {
     // Sensor node: button = trigger ("button"), hello = heartbeat раз в N минут
     #if FEATURE_SENSOR
     sensorTasksTick();   // задачи узла: heartbeat, кнопка, экран, частота, BLE
+    #endif
+    #if FEATURE_MESH_OTA_RECEIVER
+    otaSlowRxTick();     // медленный приём: сторож тишины в канале
     #endif
 
     // «Вторые уши»: прошивальщик передаёт координатору услышанное по радио (POST /ears).

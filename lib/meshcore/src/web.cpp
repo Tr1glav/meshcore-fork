@@ -688,6 +688,7 @@ static const char PAGE_HTML[] PROGMEM = R"HTML(<!DOCTYPE html><html lang='ru'><h
 <input id='file' type='file' hidden>
 <div id='fw' class='fw' hidden></div>
 <button id='go' disabled>Начать обновление</button>
+<button id='goslow' class='sec' disabled title='Прошить по обычному каналу связи: медленно, но доходит через ретрансляторы'>Медленно, через сеть</button>
 <div id='prog' hidden>
 <div class='pct'><span id='pctv'>0</span><small>%</small></div>
 <div class='w'><div id='fill'></div></div>
@@ -990,6 +991,19 @@ void otaHandleStartOta() {
         otaServer.send(400, "text/plain", "bad target");
         return;
     }
+    // Принудительно медленным режимом. Нужен не для обхода отказа, а чтобы САМ режим можно
+    // было проверить: иначе он испытывается только на тех узлах, до которых иначе не
+    // дотянуться, то есть ровно тогда, когда что-то уже сломалось.
+    if (otaServer.arg("slow") == "1") {
+        if (!otaStartSessionSlow(target)) {
+            slog("[WEB] /ota/start?slow: отклонён: %s\n", otaLastErr[0] ? otaLastErr : "нельзя");
+            otaServer.send(409, "text/plain; charset=utf-8",
+                           otaLastErr[0] ? otaLastErr : "медленный режим начать нельзя");
+            return;
+        }
+        otaServer.send(200, "text/plain", "started slow");
+        return;
+    }
     // Запуск сессии — целиком в otaStartSession: здесь он раньше был выписан второй раз,
     // и одно поле (otaPolledMs) в копии не сбрасывалось — висящий POLL от прошлой сессии
     // сразу записывал новой первый повтор.
@@ -1007,7 +1021,32 @@ void otaHandleAbort() {
     otaServer.send(200, "text/plain", "aborted");
 }
 
+// Ход медленной сессии в тех же полях, что и быстрой: страница ничего нового не разбирает,
+// а «sent/total» считаются в чанках — по ним и видно движение.
+static bool otaSlowStatusJson(String& out) {
+    if (!otaSlowOn && otaPhase != OTA_PHASE_DONE) return false;
+    if (otaSlowChunks == 0) return false;
+    char buf[320], tgt[48], err[64], note[80];
+    jsonEscape(otaSlowTarget.c_str(), tgt, sizeof(tgt));
+    jsonEscape(otaLastErr, err, sizeof(err));
+    jsonEscape(otaNote, note, sizeof(note));
+    snprintf(buf, sizeof(buf),
+             "{\"phase\":%u,\"fw\":true,\"sent\":%u,\"total\":%u,\"elapsed_ms\":0,"
+             "\"retr\":%u,\"polls\":0,\"retrs\":0,\"sup\":0,"
+             "\"err\":\"%s\",\"note\":\"%s\",\"target\":\"%s\",\"ver\":\"\","
+             "\"back\":false,\"slow\":true}",
+             (unsigned)otaPhase, (unsigned)otaSlowAcked, (unsigned)otaSlowChunks,
+             (unsigned)otaSlowRetries, err, note, tgt);
+    out = buf;
+    return true;
+}
+
 void otaHandleStatus() {
+    // Медленная сессия идёт у нас самих — показываем её, не спрашивая никого.
+    if (otaSlowOn) {
+        String slow;
+        if (otaSlowStatusJson(slow)) { otaServer.send(200, "application/json", slow); return; }
+    }
     // Сессию ведёт прошивальщик — показываем ЕГО ход, а не свой простой. Ответ у него в
     // том же формате, поэтому страница разбирает его теми же полями; добавляем только имя
     // ведущего, чтобы подпись говорила, чья это прошивка.
