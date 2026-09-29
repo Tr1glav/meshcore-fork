@@ -467,7 +467,10 @@ void otaHandleSensors() {
         jsonEscape(sensorEnv[i].c_str(), env, sizeof(env));
         fmtFix(sensorRssi[i], 0, rssi, sizeof(rssi));   // без float-printf, как и везде
         // Хопы: по ним видно, можно ли узел прошить ИЗ ЭФИРА. -1 — из эфира не слышали.
-        const int hops = (sensorHops[i] == 0xFF) ? -1 : (int)sensorHops[i];
+        // Свежая оценка: страница должна показывать то же, по чему принимается решение о
+        // сессии, иначе «напрямую» на странице и отказ по кнопке противоречили бы друг другу.
+        const uint8_t hf = sensorHopsFresh(i);
+        const int hops = (hf == 0xFF) ? -1 : (int)hf;
         // Кто ещё его слышит: узел может быть неслышен нам, но прекрасно слышен
         // прошивальщику — тогда сессию поведёт он, и «хопы: ?» это не отказ, а объяснение.
         via[0] = 0;

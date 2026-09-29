@@ -451,7 +451,7 @@ static void fwAfterCheck() {
         // Но если в сети есть прошивальщик — дальний узел всё равно может оказаться ему
         // слышен. Спрашивать его про каждый узел на каждом цикле дорого (это HTTP-запрос),
         // поэтому здесь только не отсеиваем, а решает otaStartSession — он и спросит.
-        if (!otaHopsReachable(sensorHops[i]) && !supportPresent()) {
+        if (!otaHopsReachable(sensorHopsFresh(i)) && !supportPresent()) {
             slog("[FW] узел %s пропущен: %u хоп(ов), прошивальщика в сети нет\n",
                  sensorDeviceDisc[i].c_str(), sensorHops[i]);
             continue;
