@@ -334,9 +334,7 @@ void appLoop() {
     #if FEATURE_SENSOR
     sensorTasksTick();   // задачи узла: heartbeat, кнопка, экран, частота, BLE
     #endif
-    #if FEATURE_MESH_OTA_RECEIVER
-    otaSlowRxTick();     // медленный приём: сторож тишины в канале
-    #endif
+
 
     // «Вторые уши»: прошивальщик передаёт координатору услышанное по радио (POST /ears).
     // Отдельная задача из главного цикла, не из sensorTasks — сенсорные пакеты колбасит

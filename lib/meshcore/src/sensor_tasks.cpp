@@ -30,6 +30,7 @@ void sensorTasksTick() {
         Serial.printf("[PWR] частота процессора %d МГц\n", cpuFast ? CPU_MHZ_FAST : CPU_MHZ_IDLE);
     }
     otaSensorTick();   // mesh OTA: сторожевое время — при зависании прерываем сессию
+    otaSlowRxTick();   // медленный приём: своя очередь ответа и сторож тишины в канале
     sensorPingTick();  // не дождались ответа на проверку связи — показать это
     cfgPendingTick();  // правки настроек по радио без "save" откатываются перезагрузкой
     #ifdef COMPANION_NODE
