@@ -64,11 +64,22 @@ bool supportPresent() {
     return false;
 }
 
+// Успешный обмен — тоже доказательство, что узел жив, и куда более прямое, чем его отметка:
+// мы только что с ним разговаривали. Без этого запись устаревала посреди сессии прошивки —
+// во время неё прошивальщик намеренно не трогает сеть и отметок не шлёт, а сессия идёт
+// дольше, чем срок годности записи. Координатор решал, что ведущий пропал, ровно пока тот
+// спокойно шил узел.
+static void supportSeenByIp(const String& ip) {
+    for (int i = 0; i < supportCount; i++)
+        if (supports[i].ip == ip) { supports[i].seenMs = millis(); return; }
+}
+
 // Адрес по имени: ведущего сессии страница знает по имени (otaDelegate), а стучаться надо
-// по адресу.
+// по адресу. Срок годности записи здесь не спрашиваем намеренно: пока сессия передана, нам
+// важно дозвониться до ведущего, а «жив ли он» ответит сам запрос — и ответит точнее.
 static String supportIpOf(const String& name) {
     const int i = supportFind(name);
-    return supportLive(i) ? supports[i].ip : String("");
+    return (i >= 0) ? supports[i].ip : String("");
 }
 
 // Чтение ответа: строка состояния, заголовки и, если просят, тело. У всех трёх циклов
@@ -126,6 +137,7 @@ static bool supportRequest(const String& ip, const String& req, String* body,
     c.print(req);
     bool ok = supReadResponse(c, waitMs, body, bodyMax);
     c.stop();
+    if (ok) supportSeenByIp(ip);
     return ok;
 }
 
@@ -407,6 +419,7 @@ bool supportHandOff(int idx, const String& target) {
         slog("[SUP] образ не передан (%u из %u байт)\n", (unsigned)sent, (unsigned)fsize);
         return false;
     }
+    supportSeenByIp(ip);   // образ он принял — значит жив, и отметки для этого не нужно
     slog("[SUP] образ передан на %s (%u байт)\n", ip.c_str(), (unsigned)fsize);
 
     String req = String("POST /ota/start?target=") + target + " HTTP/1.1\r\nHost: " +
