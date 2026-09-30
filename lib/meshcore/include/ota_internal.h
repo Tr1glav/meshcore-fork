@@ -17,7 +17,8 @@ extern WebServer otaServer;
 #if FEATURE_WEB || FEATURE_MESH_OTA_SENDER
 extern unsigned long otaSessionMs; // старт сессии — для скорости и длительности на странице
 extern unsigned long otaDoneMs;    // когда узел подтвердил прошивку
-extern uint32_t otaImgSize;       // размер прошивки после распаковки
+// otaImgSize переехал в ota.h ядра: он нужен и самому ядру (ota_slow.cpp объявляет его
+// узлу в старте медленной сессии), а не только странице.
 extern char otaLastErr[48];       // причина последнего abort — показывается на странице
 extern String otaFwName;          // имя последнего загруженного файла — для страницы
 extern uint16_t otaPolls;         // сколько раз пришлось переспрашивать маску за сессию
