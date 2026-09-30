@@ -163,7 +163,14 @@ void mcUiOtaSensorProgress(uint32_t got, uint32_t total, uint32_t pkts, float rs
     display.drawRect(0, 28, 128, 10, SSD1306_WHITE);
     display.fillRect(0, 28, bw, 10, SSD1306_WHITE);
     display.setCursor(0, 44);
-    display.printf("Pkts: %d", (unsigned)pkts);
+    // Медленная сессия идёт часами, и «37%» само по себе ничего не говорит о том, сколько
+    // ещё ждать. Поэтому здесь именно «получено из скольких», а знаменатель берём из ядра:
+    // единицей приёма там является чанк, и на экране её знать неоткуда. В быстром режиме
+    // чанков нет, и строка остаётся прежней — сырые кадры эфира отвечают на другой вопрос
+    // («много ли повторов»), а ход всё равно показывает полоса выше.
+    if (otaSlowOn) display.printf("Pkt %u/%u", (unsigned)otaSlowRxChunksGot(),
+                                  (unsigned)otaSlowRxChunksTotal());
+    else display.printf("Pkts: %d", (unsigned)pkts);
     // Качество связи: RSSI/SNR последнего принятого чанка
     display.setCursor(0, 54);
     char pr[12], ps[12];

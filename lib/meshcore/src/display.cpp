@@ -4,6 +4,7 @@
 #include "globals.h"
 #include "crypto.h"
 #include "display.h"
+#include "ota.h"      // otaAnySessionActive(): идёт ЛИ БЫСТРАЯ сессия
 #include "companion.h"   // код сопряжения BLE на экране компаньона
 #include "net.h"
 #include "mqtt.h"
@@ -194,7 +195,13 @@ void screenTick() {
     if (!screenOn) return;
     // Прошивка по радио идёт — экран держим зажжённым и не гасим, иначе ход
     // сессии (проценты, счётчики) не будет виден на панели.
-    if (otaActive) { screenWakeMs = millis(); return; }
+    //
+    // Именно otaAnySessionActive(), а не otaActive: последний — это только БЫСТРЫЙ приём, и
+    // на медленной сессии он равен нулю все эти часы. Экран гас через SCREEN_DIM_MS и
+    // выключался совсем через две минуты — то есть ровно тогда, когда смотреть на него и
+    // нужно. Медленный режим намеренно не занимает otaPhase, поэтому общий предикат и есть
+    // тот единственный вопрос, которым можно узнать про любую сессию.
+    if (otaAnySessionActive()) { screenWakeMs = millis(); return; }
     #ifdef COMPANION_NODE
     // Пока приложение не сопряжено, на экране код сопряжения — гасить нельзя,
     // иначе подключиться будет нечем.
