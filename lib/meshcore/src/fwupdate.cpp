@@ -493,6 +493,12 @@ void fwUpdateTick() {
         return;
     }
     if (fwNetStage == FW_NET_FETCHED) {
+        // Образ скачан, но применять его к /ota.bin пока нельзя: медленная сессия читает
+        // этот файл, а финализация ниже делает remove + rename прямо под её хэндлом. Ждём —
+        // .part никуда не денется, а fwNetBusy() всё это время держит закрытыми /savefw и
+        // старт новой сессии. Сессия идёт часами, и это правильная цена: испорченная
+        // прошивка дальнего узла дороже отложенного обновления.
+        if (otaAnySessionActive()) return;
         fwNetStage = FW_NET_IDLE;
         if (!fwNetOk) {
             slog("[FW] образ для %s взять не удалось\n", fwFetchTarget.c_str());
@@ -525,12 +531,12 @@ void fwUpdateTick() {
         return;
     }
 
-    if (fwSelfPending && !otaSessionActive()) {
+    if (fwSelfPending && !otaAnySessionActive()) {
         fwSelfPending = false;
         fwSelfUpdate(fwLatest.binUrl);   // отсюда возврата обычно нет: плата перезагружается
         return;
     }
-    if (otaSessionActive()) return;
+    if (otaAnySessionActive()) return;
 
     if (fwCheckRequested) {
         fwCheckRequested = false;

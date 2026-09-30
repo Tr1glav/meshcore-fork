@@ -37,7 +37,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
             Serial.println("[MQTT] radio off, ignoring send cmd");
             return;
         }
-        if (otaSessionActive()) {
+        if (otaAnySessionActive()) {
             Serial.println("[MQTT] mesh OTA in progress, ignoring send cmd");
             return;
         }

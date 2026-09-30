@@ -554,7 +554,7 @@ void supportPingTick() {
     // а блокирующий POST останавливает главный цикл на сотни: отметка подождёт, сессия — нет.
     // Она же не даст нам ответить на входящий запрос, если координатор захочет что-то
     // спросить в этот момент.
-    if (otaSessionActive() || otaActive) return;
+    if (otaAnySessionActive()) return;   // любая сессия, в любой роли
     if (cfg.coordHost.length() < 7) return;      // адрес координатора не настроен
     if (cfg.apiKey.length() == 0) return;        // без ключа координатор отметку не примет
     if (supPingNextMs != 0 && (long)(millis() - supPingNextMs) < 0) return;

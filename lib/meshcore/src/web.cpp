@@ -150,7 +150,7 @@ void otaHandleConfigGet() {
 }
 
 void otaHandleConfigPost() {
-    if (otaSessionActive()) {
+    if (otaAnySessionActive()) {
         otaServer.send(409, "text/plain; charset=utf-8", "идёт прошивка сенсора");
         return;
     }
@@ -531,7 +531,7 @@ static bool cfgQueuePush(const String& msg) {
 
 void webTick() {
     if (cfgQCount == 0) return;
-    if (otaSessionActive()) return;      // идёт прошивка — эфир занят целиком, очередь ждёт
+    if (otaAnySessionActive()) return;   // идёт прошивка — эфир занят целиком, очередь ждёт
     if (cfgQNextMs != 0 && (long)(millis() - cfgQNextMs) < 0) return;
     String msg = cfgQueue[cfgQHead];
     cfgQueue[cfgQHead] = String();       // не держим текст в очереди дольше нужного
@@ -543,7 +543,7 @@ void webTick() {
 }
 
 void otaHandleSensorsConfig() {
-    if (otaSessionActive()) { otaServer.send(409, "text/plain; charset=utf-8", "идёт прошивка сенсора"); return; }
+    if (otaAnySessionActive()) { otaServer.send(409, "text/plain; charset=utf-8", "идёт прошивка сенсора"); return; }
     if (sensorChannelIdx < 0) { otaServer.send(503, "text/plain; charset=utf-8", "канал сенсоров не настроен"); return; }
     String target = otaServer.arg("target");
     if (target.length() == 0 || target.length() > 31) {
@@ -632,7 +632,7 @@ void otaHandleSensorsConfig() {
 // запускается он в главном цикле. Отвечать надо сразу: проверка ходит в сеть и качает
 // образ, и если делать это здесь, страница замолчит на всё время загрузки.
 void otaHandleFwCheck() {
-    if (otaSessionActive()) {
+    if (otaAnySessionActive()) {
         otaServer.send(409, "text/plain; charset=utf-8", "идёт прошивка узла");
         return;
     }
@@ -660,7 +660,7 @@ void otaHandleFwStatus() {
 }
 
 void otaHandleSensorsHello() {
-    if (otaSessionActive()) { otaServer.send(409, "text/plain", "идёт прошивка сенсора"); return; }
+    if (otaAnySessionActive()) { otaServer.send(409, "text/plain", "идёт прошивка сенсора"); return; }
     if (sensorChannelIdx < 0) { otaServer.send(503, "text/plain", "канал сенсоров не настроен"); return; }
     slog("[WEB] опрос сенсоров (%s)\n", SENSOR_MSG_HELLO_REQ);
     sensorSendMsg(SENSOR_MSG_HELLO_REQ);
@@ -932,6 +932,18 @@ void otaHandleSaveFw() {
             return;
         }
         if (otaPhase != OTA_PHASE_IDLE && otaPhase != OTA_PHASE_DONE) otaBotAbort("новый файл");
+        // Медленную сессию новый файл не прерывает, а губит молча: она читает /ota.bin
+        // часами, а открытие того же файла на запись ниже обрезает его под её хэндлом.
+        // Прерывать её за пользователя нельзя — это часы работы и, возможно, единственный
+        // способ дотянуться до узла, — поэтому отказываем и говорим, что идёт.
+        if (otaSlowOn) {
+            otaSaving = false;
+            otaSaveOk = false;
+            slog("[OTA-SAVE] отклонено: идёт медленная прошивка %s\n", otaSlowTarget.c_str());
+            otaServer.send(409, "text/plain; charset=utf-8",
+                           "идёт медленная прошивка — прервите её, если нужен новый образ");
+            return;
+        }
         // Идёт сетевая загрузка образа (задача fwFetch): она пишет /ota.bin.part, и её
         // финализация в главном цикле держит общие флаги. Свою заливку начинать нельзя —
         // обе писали бы /ota.bin и otaFwReady/otaFwName, и результат смешался бы.
