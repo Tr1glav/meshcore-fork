@@ -13,7 +13,33 @@ const errText=e=>ERRS[e]||e;
 let file=null,poll=null,busy=false,vErr=false,sensors=[],info={},target='__self__',
     downloading=false;
 const isSelf=()=>target=='__self__';
-function st(t,c){$('st').textContent=t;$('st').className=c||'';vErr=false}
+function st(t,c){$('st').textContent=t;$('st').className='status'+(c?' '+c:'');vErr=false;toast(t,c)}
+
+// Сообщения, пока открыта не та вкладка, показываем всплывающей подсказкой: иначе
+// результат нажатия уезжает на невидимый таб, и страница выглядит «зависшей».
+let toastT=null;
+function toast(t,c){
+  if(!t)return;
+  const el=$('toast');
+  if(curTab()==='flash')return;   // там сообщение и так на своём месте
+  el.textContent=t;
+  el.className='toast on'+(c?' '+c:'');
+  clearTimeout(toastT);
+  toastT=setTimeout(()=>{el.className='toast'},6000);
+}
+
+// Вкладки. Панели переключаются по data-tab, состояние не хранится: смысла в нём нет,
+// страница и так перерисовывается целиком при каждом опросе.
+const curTab=()=>{const o=document.querySelector('.tab.on');return o?o.dataset.tab:'flash'};
+document.querySelectorAll('.tab').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));
+    document.querySelectorAll('.panel').forEach(p=>
+      p.classList.toggle('on',p.id==='p-'+b.dataset.tab));
+    if(b.dataset.tab==='log')$('logdot').hidden=true;
+  };
+});
+
 function bar(p,l,r){$('prog').hidden=false;$('pctv').textContent=Math.round(p);$('fill').style.width=p+'%';$('pl').textContent=l;$('pr').textContent=r||''}
 function batHtml(p){return '<span class="bat'+(p<20?' low':'')+'"><i style="width:'+Math.max(0,Math.min(100,p))+'%"></i></span>'}
 // Узел сообщает своё имя и окружение по радио, то есть это данные от постороннего.
@@ -28,7 +54,7 @@ function el(tag,cls,text){
 }
 function refresh(){
   const need=isSelf()?'bin':'otaz';
-  $('hint').textContent=file?'':'Перетащи .'+need+' сюда или нажми';
+  $('hint').textContent='Перетащите .'+need+' сюда или нажмите, чтобы выбрать';
   $('file').accept='.'+need;
   const bad=!!file&&file.name.split('.').pop().toLowerCase()!=need;
   if(!busy){
@@ -58,7 +84,9 @@ function setFile(f){
 // parts — массив {t:'текст', b:1 если жирным}; между частями ставится разделитель.
 // sub — строка второго уровня (прошивальщик) в общем прямоугольнике координатора.
 // grp — элемент-родитель этого прямоугольника; пуст — строка идёт в общий список.
-function addTarget(id,name,parts,online,bat,sub,grp){
+// box — контейнер, куда кладём строку. Список узлов нужен в двух местах страницы, и строки
+// строятся в каждом заново: у копий должны быть свои обработчики клика.
+function addTarget(box,id,name,parts,online,bat,sub,grp){
   const d=el('div','tgt'+(target==id?' sel':'')+(sub?' sub':''));
   d.appendChild(el('span','dot'+(online?' on':'')));
   const grow=el('span','grow');
@@ -66,18 +94,13 @@ function addTarget(id,name,parts,online,bat,sub,grp){
   const meta=el('div','meta');
   parts.forEach((p,i)=>{
     if(i)meta.appendChild(document.createTextNode(' · '));
-    if(p.href){
-      const a=el('a',null,p.t);
-      a.href=p.href; a.target='_blank';
-      a.onclick=e=>e.stopPropagation();   // ссылка ведёт на страницу, а не выбирает цель
-      meta.appendChild(a);
-    }else meta.appendChild(p.b?el('b',null,p.t):document.createTextNode(p.t));
+    meta.appendChild(p.b?el('b',null,p.t):document.createTextNode(p.t));
   });
   grow.appendChild(meta);
   d.appendChild(grow);
   if(bat>=0)d.insertAdjacentHTML('beforeend',batHtml(bat));   // bat — число
   d.onclick=()=>{target=id;renderTargets();refresh()};
-  (grp||$('targets')).appendChild(d);
+  (grp||box).appendChild(d);
 }
 // 1 хоп, 2 хопа, 5 хопов: без этого строка читается как машинный вывод
 function hopw(n){
@@ -88,7 +111,14 @@ function hopw(n){
 }
 
 function renderTargets(){
-  $('targets').innerHTML='';
+  renderTargetBox($('pick'));
+  renderTargetBox($('targets'));
+}
+// Один и тот же список раскладывается в два контейнера: компактный выбор цели в шаге 1
+// и подробный — во вкладке «Узлы». Данные читаются из info/sensors, поэтому второй список
+// может оказаться беднее (там наверху ещё и кнопки опроса), но набор строк один.
+function renderTargetBox(box){
+  box.innerHTML='';
   // Координатор и его прошивальщик — один узел сети: сессии ведёт прошивальщик, но это
   // часть того же узла. Они в общем прямоугольнике: координатор сверху, прошивальщик
   // под ним, строкой вполовину высоты. Если прошивальщик не объявился — одна строка.
@@ -97,7 +127,7 @@ function renderTargets(){
   // координатор по хопам до цели.
   const sups=info.sups||[];
   const grp=sups.length?el('div','grp'):null;
-  addTarget('__self__',$('dev').textContent+' — этот бот',
+  addTarget(box,'__self__',$('dev').textContent+' — этот бот',
             [{t:info.env||'?',b:1},{t:'v'+(info.ver||'?')},{t:'файл .bin'}],true,
             info.bat>=0?info.bat:-1,false,grp);
   for(const sup of sups){
@@ -115,9 +145,9 @@ function renderTargets(){
     // где координатора не слышно, так что отсутствие его в эфире — норма, а не тревога.
     const parts=[{t:sup.e||'?',b:1},{t:ver?'v'+ver:'версия ?'},{t:'на связи по сети'}];
     if(sp&&sp.rssi)parts.push({t:'в эфире '+sp.rssi+' dBm'});
-    addTarget(sup.n,sup.n,parts,true,sp?sp.bat:-1,true,grp);   // в списке — значит на связи
+    addTarget(box,sup.n,sup.n,parts,true,sp?sp.bat:-1,true,grp);   // в списке — значит на связи
   }
-  if(grp)$('targets').appendChild(grp);
+  if(grp)box.appendChild(grp);
 
   for(const s of sensors){
     if(sups.some(x=>x.n==s.name))continue;   // уже показан подпунктом выше
@@ -137,13 +167,10 @@ function renderTargets(){
     // Из эфира не слышали ни разу. Если его слышит прошивальщик — это уже сказано выше,
     // и «сами не слышим» точнее, чем «хопы неизвестны».
     else parts.push({t:s.via?'сами не слышим':'хопы: ?'});
-    addTarget(s.name,s.name,parts,s.online,s.bat);
+    addTarget(box,s.name,s.name,parts,s.online,s.bat);
   }
   if(!sensors.length){
-    const d=document.createElement('div');
-    d.style.cssText='font-size:11px;color:#93a4c4;margin-bottom:6px';
-    d.textContent='сенсоры ещё не выходили на связь';
-    $('targets').appendChild(d);
+    box.appendChild(el('div','empty','сенсоры ещё не выходили на связь'));
   }
 }
 async function loadSensors(){
@@ -169,6 +196,14 @@ async function loadInfo(){
         + pill(info.temp.toFixed(0)+'°C')
         + pill(Math.round(info.heap/1024)+' КБ');
     if(info.bat>=0)h+=pill(batHtml(info.bat)+' '+info.bat+'%');
+    // Счётчики потерь. Показываем только ненулевые: строка нулей ничего не объясняет
+    // читающему, а молчание страницы выглядит как «всё хорошо» — и это тоже неправда,
+    // потому что молчит она и о потерях у соседей, которых здесь не видно.
+    const los=[['cadg','передали поверх чужой передачи'],['rlq','очередь ретрансляции полна'],
+               ['rdr','ответов пропущено'],['rdf','ответов отложено прошивкой'],
+               ['dmn','не нашли ключ: advert не дошёл']];
+    const lost=los.filter(([k])=>info[k]).map(([k,t])=>t+' — '+info[k]);
+    if(lost.length)h+='<div class="loss">Потери: '+lost.join('; ')+'</div>';
     $('info').innerHTML=h;
     const fw=$('fw');
     if(info.fwready){
@@ -179,9 +214,9 @@ async function loadInfo(){
       fw.appendChild(document.createElement('br'));
       fw.appendChild(document.createTextNode(
         kb(info.fwsize)+' сжато, образ '+kb(info.fwimg)+' '));
-      const go=el('button','sec sm','Прошить сохранённым');
+      const go=el('button','sec sm grow','Прошить сохранённым');
       go.id='fwgo';
-      go.style.marginTop='6px';
+      go.style.marginTop='10px';
       go.onclick=flashStored;
       fw.appendChild(go);
     }else fw.hidden=true;
@@ -261,7 +296,13 @@ function addChunk(t){
   logLines.push(...lines);
   if(logLines.length>3000)logLines=logLines.slice(-2000);
   appendLines(lines);
-  if(stick)scrollBottom();else $('down').hidden=false;
+  if(stick)scrollBottom();
+  else{
+    $('down').hidden=false;
+    // Журнал свёрнут в другую вкладку: подсказываем точкой на её заголовке, иначе о том,
+    // что на устройстве что-то напечатали, узнать можно только случайно открыв вкладку.
+    if(curTab()!=='log')$('logdot').hidden=false;
+  }
 }
 async function pullLog(){
   if(hidden())return;

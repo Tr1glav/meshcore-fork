@@ -118,7 +118,7 @@ void buttonTick() {
         // На компаньоне короткие нажатия в сеть не уходят: это телефон в кармане,
         // случайные 1-2 нажатия не должны слать "button"/"button2" в MQTT. Остаются
         // тройное нажатие (проверка) и долгое (экран). На сенсоре как было.
-        else if (FEATURE_COMPANION == 0) sensorSendMsg(presses == 2 ? SENSOR_MSG_BUTTON2 : SENSOR_MSG_BUTTON);
+        else if (FEATURE_COMPANION == 0) sensorSendMsgUnique(presses == 2 ? SENSOR_MSG_BUTTON2 : SENSOR_MSG_BUTTON);
     }
 }
 

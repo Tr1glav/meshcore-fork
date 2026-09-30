@@ -301,6 +301,28 @@ static bool isCoordText(const String& v) {
     return dots == 1 && digits >= 2;
 }
 
+// Кнопка приходит с номером отправки: "button:7". Номер нужен только в эфире, чтобы два
+// одинаковых нажатия в одну секунду не стали одним кадром (см. sensorSendMsgUnique);
+// наружу уходит прежнее «button», иначе сломались бы все автоматизации на это значение.
+//
+// Проверяем строго по двум основам, а не режем любой «:хвост из цифр»: у прочих сообщений
+// такой хвост — обычные данные («t:25»), и молча срезать его нельзя.
+static bool bareButton(const String& m, String& bare) {
+    const char* bases[2] = { SENSOR_MSG_BUTTON, SENSOR_MSG_BUTTON2 };
+    for (const char* b : bases) {
+        size_t bl = strlen(b);
+        if (!m.startsWith(b)) continue;
+        if (m.length() == bl) { bare = m; return true; }
+        if (m[bl] != ':' || m.length() == bl + 1) continue;
+        bool digits = true;
+        for (size_t i = bl + 1; i < m.length(); i++) {
+            if (m[i] < '0' || m[i] > '9') { digits = false; break; }
+        }
+        if (digits) { bare = m.substring(0, bl); return true; }
+    }
+    return false;
+}
+
 // Точка узла на карте. Отдельной функцией, а не строкой в publishSensorDisc: сущность
 // заводится не при появлении узла, а при первых пришедших координатах.
 static void publishSensorPosDisc(const String& sender, const char* slug, const String& env) {
@@ -515,27 +537,31 @@ bool publishSensorMessage() {
         return true;
     }
     // --- данные: text + rssi ---
+    // Кнопка приходит с номером отправки: "button:7". Наружу уходит прежнее «button» —
+    // номер существует ради дедупликации в эфире, а в MQTT ему не место.
+    String btnMsg;
+    const bool isBtn = bareButton(lastMessage, btnMsg);
     char tText[128], tRssi[128], rssiStr[24];
     snprintf(tText, sizeof(tText), "%s/sensor/%s/text", mqttPrefix, slug);
     snprintf(tRssi, sizeof(tRssi), "%s/sensor/%s/rssi", mqttPrefix, slug);
     fmtFix(lastRSSI, 1, rssiStr, sizeof(rssiStr));
-    mqtt.publish(tText, lastMessage.c_str());
+    mqtt.publish(tText, isBtn ? btnMsg.c_str() : lastMessage.c_str());
     mqtt.publish(tRssi, rssiStr);
     // --- button: event entity trigger для автоматизаций ---
-    if ((lastMessage == SENSOR_MSG_BUTTON) || (lastMessage == SENSOR_MSG_BUTTON2)) {
+    if (isBtn) {
         char tEvt[128];
         snprintf(tEvt, sizeof(tEvt), "%s/sensor/%s/button", mqttPrefix, slug);
         // MQTT event entity ожидает JSON с "event_type" (docs event.mqtt),
         // ретранслированные retained-сообщения отбрасываются.
         char evtJson[64];
-        snprintf(evtJson, sizeof(evtJson), "{\"event_type\":\"%s\"}", lastMessage.c_str());
+        snprintf(evtJson, sizeof(evtJson), "{\"event_type\":\"%s\"}", btnMsg.c_str());
         mqtt.publish(tEvt, evtJson, false);
         // auto-clear: через SNS_BTN_CLEAR_MS текст сбрасывается "",
         // чтобы следующее нажатие снова вызвало "state_changed" в HA.
         snsBtnClearAt = millis() + SNS_BTN_CLEAR_MS;
         snsBtnPendingClear = true;
         strlcpy(snsBtnSlug, slug, sizeof(snsBtnSlug));
-        Serial.printf("[SNS] %s from %s — trigger published\n", lastMessage.c_str(), lastSender.c_str());
+        Serial.printf("[SNS] %s from %s — trigger published\n", btnMsg.c_str(), lastSender.c_str());
     } else {
         Serial.printf("[SNS] %s: %s (rssi %s)\n", lastSender.c_str(), lastMessage.c_str(), rssiStr);
     }
@@ -559,10 +585,15 @@ void publishStatus() {
     snprintf(payload, sizeof(payload),
         "{\"version\":\"" FW_VERSION "\",\"board\":\"" BOARD_CODE "\",\"wifi\":true,\"mqtt\":true,\"lora_rx\":%s,"
         "\"uptime\":%lu,\"packets\":%d,\"duplicates\":%lu,"
+        "\"sent\":%lu,\"cad_giveups\":%lu,\"relay_full\":%lu,\"reply_dropped\":%lu,"
+        "\"reply_deferred\":%lu,\"no_pubkey\":%lu,"
         "\"temp\":%s,\"ip\":\"%s\","
         "\"channel\":\"%s\",\"private\":\"%s\"}",
         isListening ? "true" : "false",
         upSec, packetCount, duplicateCount,
+        (unsigned long)framesSentCount, (unsigned long)cadGiveUps,
+        (unsigned long)relayQueueDrops, (unsigned long)replyDropped,
+        (unsigned long)replyDeferred, (unsigned long)dmNoPubkey,
         tempS,
         wifiConnected ? WiFi.localIP().toString().c_str() : "0.0.0.0",
         chEsc, prvEsc);

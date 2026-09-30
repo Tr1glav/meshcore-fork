@@ -1,168 +1,302 @@
-/* Оформление страницы координатора: монохромный терминал.
-   Зелёный люминофор на чёрном, моноширинный шрифт, лёгкое свечение и развёртка — вид старых
-   консольных машин. Выбор не только эстетический: устройство и правда пульт управления сетью,
-   а монохром снимает вопрос «что значит этот цвет» — значение несёт только яркость.
-   Исключение одно: сбой красный, потому что его нужно видеть не читая.
-   Палитра в переменных — тон правится в одном месте. */
+/* ===== Страница OTA: оформление =====
+   Тёмная тема, вкладки, две колонки. Разметка и стили — единый набор: страница собирается
+   прямо на устройстве, поэтому здесь нет ни фреймворка, ни сборки.
+
+   Плотность выбрана осознанно: страницу открывают с телефона и ею же прошивают, поэтому
+   выбор узла, файл и кнопка запуска обязаны помещаться в один экран. Всё, что для запуска
+   не нужно (журнал, настройки бота, сенсоры), уехало на отдельные вкладки, а список узлов
+   ограничен по высоте и прокручивается сам. */
+
 :root{
-  --bg:#050b06;          /* почти чёрный с зеленцой */
-  --card:#081108;
-  --card2:#0b170c;       /* вложенное: поля, строки, журнал */
-  --line:#14421f;        /* рамки: тусклый люминофор */
-  --line2:#1e6b31;       /* активная рамка */
-  --tx:#4dff7c;          /* основной текст */
-  --tx2:#2fae55;         /* подписи */
-  --tx3:#1c6b36;         /* совсем тусклое */
-  --bad:#ff5f56;         /* сбой — единственное отступление от монохрома */
-  --glow:0 0 6px rgba(77,255,124,.35);
-  --r:3px;               /* терминалы не скругляют углы */
+  --bg:#0b0f16; --bg2:#0e141d; --card:#141c28; --row:#121a26;
+  --line:#22303f; --line2:#2c3d50;
+  --tx:#e6edf6; --tx2:#9fb0c6; --tx3:#6b7f97;
+  --acc:#38bdf8; --acc2:#6366f1; --ok:#34d399; --warn:#fbbf24; --err:#fb7185;
+  --r:12px; --r2:9px;
 }
 *{box-sizing:border-box}
-body{font-family:ui-monospace,SFMono-Regular,Menlo,"Cascadia Mono","Courier New",monospace;
-background:var(--bg);color:var(--tx);margin:0;padding:16px;font-size:13px;line-height:1.5;
-text-shadow:var(--glow);position:relative}
-/* Развёртка: тонкие строки поверх всего, как у лучевой трубки. Слабая настолько, чтобы не
-   мешать чтению, — эффект должен узнаваться, а не утомлять. */
-body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9;
-background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px)}
-.wrap{display:grid;grid-template-columns:minmax(330px,400px) 1fr;gap:14px;width:100%;
-max-width:1280px;margin:0 auto;align-items:start}
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px}
-
-.top{max-width:1280px;margin:0 auto 14px;display:flex;justify-content:space-between;
-align-items:baseline;gap:12px;padding-bottom:10px;border-bottom:1px solid var(--line)}
-.brand{font-size:14px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
-.brand .sep{color:var(--tx3);margin:0 6px}
-.brand #dev{font-weight:400;color:var(--tx2);letter-spacing:.08em}
-.topv{font-size:11px;color:var(--tx3);letter-spacing:.08em}
-.hdr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:12px;
-padding-bottom:8px;border-bottom:1px solid var(--line)}
-h2{margin:0;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:var(--tx)}
-.hdr .sub{color:var(--tx3);font-size:11px}
-label{display:block;font-size:11px;color:var(--tx2);margin:0 0 6px;text-transform:uppercase;
-letter-spacing:.1em}
-.row{display:flex;gap:8px;margin-top:8px}
-.grow{flex:1;min-width:0}
-
-/* Состояние: значения в строку, разделённые символом — как вывод команды, а не плитки. */
-.info{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:11px;color:var(--tx2)}
-.pill{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
-.pill::before{content:'·';color:var(--tx3);margin-right:4px}
-.pill:first-child::before{content:''}
-.dot{display:inline-block;width:7px;height:7px;background:var(--tx3);vertical-align:middle;
-box-shadow:none}
-.dot.on{background:var(--tx);box-shadow:var(--glow)}
-.bat{display:inline-block;width:22px;height:8px;border:1px solid var(--line2);vertical-align:middle;
-overflow:hidden}
-.bat i{display:block;height:100%;background:var(--tx)}
-.bat.low i{background:var(--bad)}
-
-/* Цели: выбранная отмечается маркером-стрелкой, как курсор в текстовом меню. */
-.tgt{display:flex;gap:9px;align-items:center;padding:8px 10px 8px 20px;border:1px solid var(--line);
-border-radius:var(--r);background:var(--card2);cursor:pointer;margin-bottom:6px;position:relative}
-.tgt:hover{border-color:var(--line2)}
-.tgt::before{content:'';position:absolute;left:7px;color:var(--tx);font-weight:700}
-.tgt.sel{border-color:var(--tx2);background:#0e2312}
-.tgt.sel::before{content:'>'}
-.grp{position:relative;border:1px solid var(--line2);border-radius:var(--r);background:var(--card2);
-margin-bottom:6px;padding:3px 5px 3px 22px}
-.grp::before{content:'';position:absolute;left:11px;top:12px;bottom:12px;width:1px;background:var(--line2)}
-.grp>.tgt{background:transparent;border:0;margin-bottom:0;padding-left:14px;padding-right:0}
-.grp>.tgt::before{left:0}
-.grp>.tgt:hover{border-color:transparent}
-.grp>.tgt.sel{background:#0e2312}
-.grp>.tgt .nm{font-size:12px}
-.grp>.tgt .meta{font-size:9px}
-.grp>.tgt.sub{padding:5px 6px 5px 14px;border-top:1px dashed var(--line);border-radius:0}
-.grp>.tgt.sub::after{content:'';position:absolute;left:-11px;top:50%;width:9px;height:1px;
-background:var(--line2)}
-.tgt .nm{font-size:13px;font-weight:700;letter-spacing:.04em;overflow:hidden;
-text-overflow:ellipsis;white-space:nowrap}
-.tgt .meta{font-size:10px;color:var(--tx2);margin-top:2px}
-.tgt .meta b{color:var(--tx);font-weight:700}
-.tgt .meta a{color:var(--tx2);text-decoration:underline}
-.tgt .meta a:hover{color:var(--tx)}
-
-#drop{margin-top:10px;border:1px dashed var(--line2);border-radius:var(--r);padding:16px 12px;
-text-align:center;cursor:pointer;background:var(--card2);font-size:12px;color:var(--tx2);
-text-transform:uppercase;letter-spacing:.08em}
-#drop:hover,#drop.hover{border-color:var(--tx2);background:#0e2312;color:var(--tx)}
-#fname{margin-top:6px;color:var(--tx);word-break:break-all;font-size:12px;text-transform:none;
-letter-spacing:0}
-#fver{font-size:11px;color:var(--tx2);text-transform:none}
-.fw{margin-top:10px;font-size:11px;color:var(--tx2);background:var(--card2);
-border:1px solid var(--line);border-radius:var(--r);padding:10px;line-height:1.6}
-.fw b{color:var(--tx)}
-
-/* Кнопки — рамка и заглавные буквы, как подписи клавиш на пульте. Главная отличается тем,
-   что светится: заливки на таком экране не бывает. */
-button{padding:8px 14px;border:1px solid var(--tx2);border-radius:var(--r);background:transparent;
-color:var(--tx);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;
-text-transform:uppercase;letter-spacing:.1em;text-shadow:var(--glow);
-transition:background .1s,color .1s,border-color .1s}
-button:hover{background:var(--tx);color:var(--bg);text-shadow:none}
-button:disabled{border-color:var(--line);color:var(--tx3);cursor:not-allowed;text-shadow:none}
-button:disabled:hover{background:transparent;color:var(--tx3)}
-button.sec{border-color:var(--line2);color:var(--tx2);font-weight:400}
-button.sec:hover{background:var(--tx2);color:var(--bg)}
-button.sm{padding:5px 10px;font-size:11px}
-#go{display:block;width:100%;margin-top:10px;border-color:var(--tx);box-shadow:0 0 10px rgba(77,255,124,.15)}
-
-/* Ход прошивки: процент крупно, полоса — из блоков, как индикатор загрузки на терминале. */
-#prog{margin-top:12px;background:var(--card2);border:1px solid var(--line);border-radius:var(--r);padding:12px}
-.pct{font-size:30px;font-weight:700;line-height:1;letter-spacing:.02em}
-.pct small{font-size:14px;color:var(--tx2);margin-left:3px;font-weight:400}
-.w{height:10px;background:#071007;border:1px solid var(--line);overflow:hidden;margin:10px 0 6px}
-#fill{height:100%;width:0;background:var(--tx);box-shadow:var(--glow);transition:width .3s}
-.t{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--tx2)}
-#ab{width:100%;margin-top:10px}
-#st{margin-top:10px;font-size:12px;min-height:16px;color:var(--tx2)}
-#st.err{color:var(--bad);text-shadow:0 0 6px rgba(255,95,86,.35)}
-#st.ok{color:var(--tx)}
-.ft{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:10px;
-color:var(--tx3);text-align:right}
-.ft a{color:var(--tx3)}
-.ft a:hover{color:var(--tx2)}
-
-details.cfg{margin-top:10px;border:1px solid var(--line);border-radius:var(--r);
-background:var(--card2);padding:10px}
-details.cfg summary{cursor:pointer;font-size:11px;color:var(--tx2);list-style:none;
-text-transform:uppercase;letter-spacing:.1em;user-select:none}
-details.cfg summary::-webkit-details-marker{display:none}
-details.cfg summary::before{content:'[+] ';color:var(--tx3)}
-details.cfg[open] summary::before{content:'[-] '}
-details.cfg[open] summary{margin-bottom:10px}
-.cfgrow{display:flex;align-items:center;gap:10px;margin-top:6px}
-.cfgrow span{width:78px;flex:none;font-size:11px;color:var(--tx2)}
-.cfgrow input{flex:1;min-width:0;padding:5px 8px;border:1px solid var(--line);border-radius:var(--r);
-background:#040804;color:var(--tx);font-size:12px;font-family:inherit;text-shadow:var(--glow)}
-.cfgrow input:focus{outline:0;border-color:var(--tx2)}
-.cfgrow input.dirty{border-color:var(--tx)}
-.cfghint{margin-top:10px;font-size:10px;color:var(--tx3);line-height:1.6}
-.chk{display:block;font-size:11px;color:var(--tx2);margin-top:8px;cursor:pointer;
-text-transform:uppercase;letter-spacing:.06em}
-.chk input{margin-right:7px;vertical-align:middle;accent-color:var(--tx2)}
-
-/* Журнал: то, ради чего терминал и существует. */
-.tools{display:flex;gap:8px}
-#q{flex:1;min-width:0;padding:5px 10px;border:1px solid var(--line);border-radius:var(--r);
-background:#040804;color:var(--tx);font-size:12px;font-family:inherit;text-shadow:var(--glow)}
-#q:focus{outline:0;border-color:var(--tx2)}
-.logwrap{position:relative;margin-top:10px}
-#logs{height:calc(100vh - 330px);min-height:200px;max-height:560px;overflow:auto;margin:0;
-background:#040804;border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;
-font-family:inherit;font-size:11px;line-height:1.5;color:var(--tx2)}
-#logs div{white-space:pre-wrap;word-break:break-all}
-#logs::-webkit-scrollbar{width:8px}
-#logs::-webkit-scrollbar-track{background:transparent}
-#logs::-webkit-scrollbar-thumb{background:var(--line)}
-#logs::-webkit-scrollbar-thumb:hover{background:var(--line2)}
-/* Разметка яркостью: важное светится ярче, обычное тусклее. Цветной только сбой. */
-.l-e{color:var(--bad)}.l-o{color:var(--tx)}.l-s{color:var(--tx)}.l-w{color:var(--tx3)}
-.jump{position:absolute;right:14px;bottom:14px;padding:5px 10px;font-size:11px;
-background:var(--bg);border-color:var(--tx2)}
-@media(max-width:820px){
-  body{padding:12px}
-  .wrap{grid-template-columns:1fr;gap:12px}
-  #logs{height:52vh}
+[hidden]{display:none!important}
+html,body{margin:0;padding:0}
+body{
+  background:
+    radial-gradient(1100px 620px at 12% -12%, #16273c 0%, transparent 60%),
+    radial-gradient(900px 520px at 108% 0%, #1b2340 0%, transparent 55%),
+    var(--bg);
+  color:var(--tx);
+  font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
 }
+b,strong{font-weight:600}
+a{color:var(--acc);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* ===== Шапка: одна строка, вкладки прижаты к низу ===== */
+.appbar{
+  position:sticky; top:0; z-index:20;
+  background:rgba(11,15,22,.9);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);
+}
+.appbar-in{
+  max-width:1240px; margin:0 auto; padding:9px 16px 6px;
+  display:flex; align-items:center; gap:10px;
+}
+.logo{display:flex; align-items:center; gap:6px; font-weight:650; font-size:14px; white-space:nowrap}
+.logo-mark{
+  width:21px; height:21px; border-radius:6px; display:grid; place-items:center;
+  background:linear-gradient(135deg,var(--acc),var(--acc2));
+  color:#06121c; font-size:12px; font-weight:800;
+}
+.logo-sep{color:var(--tx3); font-weight:400}
+.logo-dev{color:var(--tx2); font-weight:500; overflow:hidden; text-overflow:ellipsis; max-width:22ch}
+.topv{margin-left:auto; font-size:11px; color:var(--tx3); font-variant-numeric:tabular-nums; white-space:nowrap}
+
+/* «Пилюли» состояния */
+.pills{display:flex; flex-wrap:nowrap; gap:5px; align-items:center; min-width:0; overflow:hidden}
+.pill{
+  display:inline-flex; align-items:center; gap:4px; white-space:nowrap;
+  background:var(--card); border:1px solid var(--line);
+  border-radius:999px; padding:2px 9px; font-size:11px; color:var(--tx2);
+  font-variant-numeric:tabular-nums;
+}
+.pill .dot{width:6px; height:6px; border-radius:50%; background:var(--tx3); flex:none}
+.pill .dot.on{background:var(--ok); box-shadow:0 0 0 2.5px rgba(52,211,153,.15)}
+/* Счётчики потерь — отдельной строкой и только когда они ненулевые: показывать нули
+   незачем, а молчание страницы выглядит как «всё хорошо», и это тоже неправда, ведь молчит
+   она и о потерях у соседей, которых здесь не видно. */
+.pills-w{flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:4px}
+.loss{font-size:11px; color:var(--warn); line-height:1.4; font-variant-numeric:tabular-nums}
+
+/* ===== Вкладки ===== */
+.tabs{max-width:1240px; margin:0 auto; padding:0 12px; display:flex; gap:2px; overflow-x:auto; scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{
+  appearance:none; background:none; border:0; cursor:pointer;
+  color:var(--tx3); font:inherit; font-size:13px; font-weight:550;
+  padding:5px 12px 8px; border-bottom:2px solid transparent;
+  display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+}
+.tab:hover{color:var(--tx2)}
+.tab.on{color:var(--tx); border-bottom-color:var(--acc)}
+.dot-alert{width:6px; height:6px; border-radius:50%; background:var(--acc); animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+
+/* ===== Каркас ===== */
+.shell{max-width:1240px; margin:0 auto; padding:14px 16px 40px}
+.panel{display:none}
+.panel.on{display:block}
+.card{
+  background:linear-gradient(180deg,var(--card) 0%,var(--bg2) 100%);
+  border:1px solid var(--line); border-radius:var(--r);
+  padding:14px;
+}
+.hd{display:flex; align-items:baseline; gap:8px; margin:0 0 10px; flex-wrap:wrap}
+.hd h2{margin:0; font-size:14.5px; font-weight:650; letter-spacing:.2px}
+.hd .sub{color:var(--tx3); font-size:11.5px}
+.cfghint{color:var(--tx3); font-size:11.5px; line-height:1.5; margin-top:8px}
+.chk{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--tx2); margin-top:6px; cursor:pointer}
+.chk input{accent-color:var(--acc); width:14px; height:14px}
+
+/* ===== Прошивка: две колонки, чтобы не тянуть страницу вниз ===== */
+.flash{display:grid; grid-template-columns:minmax(230px,1fr) minmax(290px,1.2fr); gap:12px; align-items:start}
+@media (max-width:860px){.flash{grid-template-columns:1fr}}
+.box{background:var(--row); border:1px solid var(--line); border-radius:var(--r2); padding:11px}
+.box-h{
+  display:flex; align-items:center; gap:7px; margin-bottom:9px;
+  font-size:10.5px; font-weight:700; color:var(--tx3); letter-spacing:.5px; text-transform:uppercase;
+}
+.box-h .n{
+  width:17px; height:17px; border-radius:5px; flex:none;
+  display:grid; place-items:center; font-size:10.5px; font-weight:700;
+  background:rgba(56,189,248,.12); color:var(--acc); border:1px solid rgba(56,189,248,.25);
+}
+
+/* ===== Список узлов ===== */
+.pick,.targets{display:grid; gap:6px; align-content:start}
+.grp{background:#0f1621; border:1px solid var(--line); border-radius:var(--r2); padding:7px; display:grid; gap:6px}
+.tgt{
+  display:flex; align-items:center; gap:9px; cursor:pointer;
+  background:#0f1621; border:1px solid var(--line); border-radius:var(--r2);
+  padding:7px 10px; position:relative; overflow:hidden;
+  transition:border-color .12s,background .12s;
+}
+.tgt:hover{border-color:var(--line2); background:#182231}
+.tgt.sel{border-color:var(--acc); background:rgba(56,189,248,.08)}
+.tgt.sel::before{content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--acc)}
+.tgt.sub{margin-left:20px; padding:6px 10px; background:transparent}
+.tgt .dot{width:7px; height:7px; border-radius:50%; background:var(--tx3); flex:none}
+.tgt .dot.on{background:var(--ok); box-shadow:0 0 0 2.5px rgba(52,211,153,.13)}
+.grow{flex:1; min-width:0}
+.nm{display:block; font-weight:600; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.meta{color:var(--tx3); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px}
+.meta b{color:var(--tx2); font-weight:600}
+.empty{color:var(--tx3); font-size:11.5px; padding:3px 2px}
+/* Список ограничен по высоте и прокручивается сам: иначе он растёт вместе с числом узлов
+   и выталкивает кнопку запуска за пределы экрана. */
+.scroll{max-height:min(44vh,340px); overflow:auto; overscroll-behavior:contain}
+
+/* Батарея */
+.bat{display:inline-flex; align-items:center; width:26px; height:11px; flex:none;
+  border:1.5px solid var(--tx3); border-radius:3px; padding:1.5px; position:relative}
+.bat::after{content:''; position:absolute; right:-4.5px; top:3px; width:2.5px; height:4px;
+  background:var(--tx3); border-radius:0 1px 1px 0}
+.bat i{display:block; height:100%; background:var(--ok); border-radius:1px}
+.bat.low i{background:var(--err)}
+.bat.low{border-color:var(--err)}
+.bat.low::after{background:var(--err)}
+
+/* ===== Файл ===== */
+.drop{
+  display:flex; align-items:center; gap:11px; cursor:pointer;
+  border:1.5px dashed var(--line2); border-radius:var(--r2);
+  background:rgba(15,22,33,.6); padding:10px 12px;
+  transition:border-color .15s,background .15s;
+}
+.drop:hover,.drop.hover{border-color:var(--acc); background:rgba(56,189,248,.06)}
+.drop-ico{
+  width:32px; height:32px; flex:none; border-radius:9px; display:grid; place-items:center;
+  background:#0f1621; border:1px solid var(--line2); color:var(--acc); font-size:16px;
+}
+.drop-main{min-width:0; flex:1}
+.drop-main>div:first-child{color:var(--tx2); font-size:12.5px}
+.drop-file{color:var(--tx); font-size:12.5px; font-weight:600; margin-top:1px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.drop-ver{color:var(--acc); font-size:11.5px}
+
+/* ===== Переключатель ===== */
+.switch{display:flex; align-items:flex-start; gap:10px; cursor:pointer; user-select:none; margin-top:10px}
+.switch input{position:absolute; opacity:0; width:0; height:0}
+.switch i{
+  width:34px; height:20px; flex:none; border-radius:999px; background:#0f1621;
+  border:1px solid var(--line2); position:relative; transition:background .15s,border-color .15s;
+  margin-top:1px;
+}
+.switch i::after{
+  content:''; position:absolute; left:2px; top:2px; width:14px; height:14px; border-radius:50%;
+  background:var(--tx3); transition:transform .15s,background .15s;
+}
+.switch input:checked+i{background:rgba(56,189,248,.28); border-color:var(--acc)}
+.switch input:checked+i::after{transform:translateX(14px); background:var(--acc)}
+.switch input:disabled+i{opacity:.45; cursor:not-allowed}
+.sw-txt b{display:block; font-size:12.5px; font-weight:600}
+.sw-txt small{display:block; color:var(--tx3); font-size:11px; margin-top:1px; line-height:1.4}
+
+/* ===== Кнопки ===== */
+.go{
+  width:100%; margin-top:11px; appearance:none; cursor:pointer;
+  border:0; border-radius:10px; padding:11px 16px;
+  font:inherit; font-size:14px; font-weight:650; color:#04121c;
+  background:linear-gradient(135deg,var(--acc),var(--acc2));
+  box-shadow:0 5px 16px rgba(56,189,248,.18);
+  transition:filter .12s,transform .08s,box-shadow .12s;
+}
+.go:hover:not(:disabled){filter:brightness(1.08)}
+.go:active:not(:disabled){transform:translateY(1px); box-shadow:0 3px 9px rgba(56,189,248,.14)}
+.go:disabled{background:#0f1621; color:var(--tx3); cursor:not-allowed; box-shadow:none; border:1px solid var(--line)}
+.row{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px}
+.row>.grow{flex:1 1 0; min-width:0}
+.sec{
+  appearance:none; cursor:pointer; font:inherit; font-size:12.5px; font-weight:550;
+  color:var(--tx2); background:#0f1621; border:1px solid var(--line2);
+  border-radius:9px; padding:7px 12px; transition:color .12s,border-color .12s,background .12s;
+}
+.sec:hover:not(:disabled){color:var(--tx); border-color:var(--tx3); background:#182231}
+.sec:disabled{opacity:.45; cursor:not-allowed}
+.sec.sm{font-size:12px; padding:6px 10px}
+.ab{
+  appearance:none; cursor:pointer; font:inherit; font-size:12.5px; font-weight:600;
+  margin-top:9px; color:var(--err); background:rgba(251,113,133,.09);
+  border:1px solid rgba(251,113,133,.35); border-radius:9px; padding:7px 12px;
+}
+.ab:hover{background:rgba(251,113,133,.16)}
+
+/* ===== Прогресс: строка, а не блок во всю ширину ===== */
+.prog{margin-top:11px; background:#0f1621; border:1px solid var(--line); border-radius:var(--r2); padding:10px 11px}
+.prog-top{display:flex; align-items:baseline; gap:10px; margin-bottom:7px}
+.pct{font-size:19px; font-weight:700; line-height:1; font-variant-numeric:tabular-nums; flex:none;
+  background:linear-gradient(135deg,var(--acc),var(--acc2)); -webkit-background-clip:text;
+  background-clip:text; color:transparent}
+.pct small{font-size:11px; font-weight:600; opacity:.7; margin-left:1px}
+.prog-labels{min-width:0; flex:1}
+#pl{font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+#pr{color:var(--tx3); font-size:11px; font-variant-numeric:tabular-nums;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.track{height:6px; border-radius:999px; background:#0a0f16; overflow:hidden; border:1px solid var(--line)}
+.fill{height:100%; width:0; border-radius:999px; transition:width .3s ease;
+  background:linear-gradient(90deg,var(--acc),var(--acc2)); position:relative}
+.fill::after{
+  content:''; position:absolute; inset:0; border-radius:999px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);
+  animation:sheen 1.6s linear infinite;
+}
+@keyframes sheen{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+
+/* Статус */
+.status{margin-top:8px; font-size:12.5px; min-height:17px; color:var(--tx2)}
+.status.ok{color:var(--ok)}
+.status.err{color:var(--err)}
+.fw{margin-top:9px; font-size:12.5px; color:var(--tx2); background:#0f1621;
+  border:1px solid var(--line); border-radius:var(--r2); padding:9px 11px}
+.fw button{margin-top:6px}
+
+/* ===== Настройки ===== */
+details.cfg{border-top:1px solid var(--line); margin-top:12px; padding-top:10px}
+details.cfg>summary{
+  cursor:pointer; font-size:12.5px; font-weight:600; color:var(--tx2); list-style:none;
+  display:flex; align-items:center; gap:7px;
+}
+details.cfg>summary::-webkit-details-marker{display:none}
+details.cfg>summary::before{content:'▸'; color:var(--tx3); font-size:11px; transition:transform .15s}
+details.cfg[open]>summary::before{transform:rotate(90deg)}
+details.cfg>summary:hover{color:var(--tx)}
+.cfgrow{display:flex; align-items:center; gap:10px; margin-top:6px}
+.cfgrow>span{flex:0 0 40%; color:var(--tx3); font-size:12px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.cfgrow input{
+  flex:1; min-width:0; appearance:none; font:inherit; font-size:12.5px; color:var(--tx);
+  background:#0a0f16; border:1px solid var(--line2); border-radius:8px; padding:7px 10px;
+}
+.cfgrow input:focus{outline:0; border-color:var(--acc); box-shadow:0 0 0 3px rgba(56,189,248,.14)}
+.cfgrow input.dirty{border-color:var(--acc); background:rgba(56,189,248,.07)}
+
+/* ===== Журнал ===== */
+.tools{display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap}
+.tools input{
+  flex:1 1 160px; min-width:0; appearance:none; font:inherit; font-size:12.5px; color:var(--tx);
+  background:#0a0f16; border:1px solid var(--line2); border-radius:9px; padding:7px 11px;
+}
+.tools input:focus{outline:0; border-color:var(--acc); box-shadow:0 0 0 3px rgba(56,189,248,.14)}
+.logwrap{position:relative}
+#logs{
+  margin:0; background:#0a0f16; border:1px solid var(--line); border-radius:var(--r2);
+  padding:10px 12px; height:calc(100vh - 180px); min-height:280px; overflow:auto;
+  font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--tx2);
+  white-space:pre-wrap; word-break:break-word;
+}
+#logs div{min-height:1.2em}
+#logs .l-e{color:var(--err)}
+#logs .l-o{color:var(--acc)}
+#logs .l-s{color:var(--ok)}
+#logs .l-w{color:#c4b5fd}
+.jump{
+  position:absolute; right:12px; bottom:12px; appearance:none; cursor:pointer;
+  font:inherit; font-size:12px; font-weight:600; color:#04121c;
+  background:var(--acc); border:0; border-radius:999px; padding:6px 12px;
+  box-shadow:0 4px 14px rgba(0,0,0,.4);
+}
+.jump:hover{filter:brightness(1.08)}
+
+/* Подсказка «всплывающая» для сообщений, пока открыта не та вкладка */
+.toast{
+  position:fixed; left:50%; bottom:16px; transform:translateX(-50%) translateY(12px);
+  max-width:min(560px,92vw); padding:9px 14px; border-radius:10px; z-index:40;
+  background:var(--card2, #18212f); border:1px solid var(--line2); color:var(--tx);
+  font-size:12.5px; box-shadow:0 10px 30px rgba(0,0,0,.5);
+  opacity:0; pointer-events:none; transition:opacity .18s,transform .18s;
+}
+.toast.on{opacity:1; transform:translateX(-50%) translateY(0)}
+.toast.ok{border-color:rgba(52,211,153,.45)}
+.toast.err{border-color:rgba(251,113,133,.5)}
+
+.ft{max-width:1240px; margin:0 auto; padding:0 16px 24px; color:var(--tx3); font-size:11px}

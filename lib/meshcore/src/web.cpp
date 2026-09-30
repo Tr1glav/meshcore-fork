@@ -227,6 +227,7 @@ void otaHandleInfo() {
              "\"bat\":%d,\"volt\":%s,\"ip\":\"%s\",\"pkts\":%d,"
              "\"env\":\"" FW_ENV "\",\"ver\":\"" FW_VERSION "\","
              "\"sups\":%s,"
+             "\"fsent\":%lu,\"cadg\":%lu,\"rlq\":%lu,\"rdr\":%lu,\"rdf\":%lu,\"dmn\":%lu,"
              "\"fwready\":%s,\"fwname\":\"%s\",\"fwsize\":%u,\"fwimg\":%u}",
              (unsigned long)(millis() / 1000),
              wifiConnected ? "true" : "false",
@@ -239,6 +240,9 @@ void otaHandleInfo() {
              batteryPercent(), volt,
              wifiConnected ? WiFi.localIP().toString().c_str() : "-", packetCount,
              sups,
+             (unsigned long)framesSentCount, (unsigned long)cadGiveUps,
+             (unsigned long)relayQueueDrops, (unsigned long)replyDropped,
+             (unsigned long)replyDeferred, (unsigned long)dmNoPubkey,
              otaFwReady ? "true" : "false", fwname,
              (unsigned)otaFwSize, (unsigned)otaImgSize);
     otaServer.send(200, "application/json", json);
@@ -678,54 +682,106 @@ void otaHandleSensorsHello() {
 static const char PAGE_HTML[] PROGMEM = R"HTML(<!DOCTYPE html><html lang='ru'><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>MeshBot OTA</title><link rel='stylesheet' href='/style.css?v=__VER__'></head><body>
-<header class='top'>
-<div class='brand'>MeshCore<span class='sep'>/</span><span id='dev'>__NAME__</span></div>
+<header class='appbar'>
+<div class='appbar-in'>
+<div class='logo'><span class='logo-mark'>M</span><span>MeshCore</span>
+<span class='logo-sep'>/</span><span class='logo-dev' id='dev'>__NAME__</span></div>
+<div class='pills-w'><div id='info' class='pills'>…</div></div>
 <div class='topv'>v__VER__</div>
+</div>
+<nav class='tabs'>
+<button class='tab on' data-tab='flash'>Прошивка</button>
+<button class='tab' data-tab='nodes'>Узлы</button>
+<button class='tab' data-tab='cfg'>Настройки</button>
+<button class='tab' data-tab='log'>Журнал<span class='dot-alert' id='logdot' hidden></span></button>
+</nav>
 </header>
-<div class='wrap'>
-<section class='card'>
-<div class='hdr'><h2>Обновление прошивки</h2><span class='sub'>узлы сети и этот бот</span></div>
-<div id='info' class='info'>…</div>
-<label>Куда прошиваем</label>
-<div id='targets'></div>
-<div class='row'><button id='ask' class='sec sm grow'>Опросить сенсоры</button>
-<button id='fwchk' class='sec sm grow'>Проверить обновления</button></div>
+<div class='shell'>
+
+<section class='panel on' id='p-flash'>
+<div class='flash'>
+<div class='box'>
+<div class='box-h'><span class='n'>1</span>кому прошиваем</div>
+<div class='scroll'><div id='pick' class='pick'></div></div>
+</div>
+<div class='box'>
+<div class='box-h'><span class='n'>2</span>файл прошивки</div>
+<div id='drop' class='drop'>
+<div class='drop-ico'>↓</div>
+<div class='drop-main'>
+<div id='hint'>Перетащите файл сюда или нажмите, чтобы выбрать</div>
+<div id='fname' class='drop-file'></div>
+<div id='fver' class='drop-ver'></div>
+</div>
+</div>
+<input id='file' type='file' hidden>
+<div id='fw' class='fw' hidden></div>
+<label class='switch' id='slowbox' hidden title='Прошивать обычными сообщениями канала: идёт часы, зато доходит через ретрансляторы'>
+<input type='checkbox' id='slow'><i></i>
+<span class='sw-txt'><b>Медленно, через сеть</b>
+<small>Обычными сообщениями канала: идёт часы вместо минуты, зато доходит через ретрансляторы</small></span>
+</label>
+<button id='go' class='go' disabled>Начать обновление</button>
+<div id='st' class='status'></div>
+<div id='prog' class='prog' hidden>
+<div class='prog-top'>
+<div class='pct'><span id='pctv'>0</span><small>%</small></div>
+<div class='prog-labels'><div id='pl'></div><div id='pr'></div></div>
+</div>
+<div class='track'><div id='fill' class='fill'></div></div>
+<button id='ab' class='ab' hidden>Прервать</button>
+</div>
+</div>
+</div>
+</section>
+
+<section class='panel' id='p-nodes'>
+<div class='card'>
+<div class='hd'><h2>Узлы сети</h2><span class='sub'>кого видно в эфире</span></div>
+<div class='scroll'><div id='targets' class='targets'></div></div>
+<div class='row'>
+<button id='ask' class='sec sm grow'>Опросить сенсоры</button>
+<button id='fwchk' class='sec sm grow'>Проверить обновления</button>
+</div>
 <details class='cfg' id='scfgbox' hidden><summary>Настройки сенсора по радио</summary>
 <div id='scfg'></div>
 <div class='cfghint'>Заполняйте только те поля, которые меняете. Сенсор применяет их в памяти,
 в NVS они попадут лишь при отметке «сохранить» — до этого всё чинится снятием питания.
 Смена имени, ключа канала или параметров радио уводит сенсор из сети: он вернётся, только
-если настройки совпадут с ботом. Ответы сенсора видны в журнале справа.</div>
+если настройки совпадут с ботом. Ответы сенсора видны в журнале.</div>
 <label class='chk'><input type='checkbox' id='scfgsave' checked> сохранить в NVS</label>
 <label class='chk'><input type='checkbox' id='scfgreboot'> перезагрузить после сохранения</label>
 <div class='row'><button id='scfgget' class='sec sm grow'>Запросить текущие</button>
 <button id='scfgsend' class='sec sm grow'>Отправить</button></div>
 </details>
-<div id='drop'>&#128190; <span id='hint'></span><div id='fname'></div><div id='fver'></div></div>
-<input id='file' type='file' hidden>
-<div id='fw' class='fw' hidden></div>
-<button id='go' disabled>Начать обновление</button>
-<label class='chk' id='slowbox' hidden title='Прошивать обычными сообщениями канала: идёт часы, зато доходит через ретрансляторы'><input type='checkbox' id='slow'> медленно, через сеть</label>
-<div id='prog' hidden>
-<div class='pct'><span id='pctv'>0</span><small>%</small></div>
-<div class='w'><div id='fill'></div></div>
-<div class='t'><span id='pl'></span><span id='pr'></span></div>
-<button id='ab' class='sec' hidden>Прервать</button>
 </div>
-<div id='st'></div>
-<details class='cfg'><summary>Настройки бота</summary>
+</section>
+
+<section class='panel' id='p-cfg'>
+<div class='card'>
+<div class='hd'><h2>Настройки бота</h2><span class='sub'>применяются после перезагрузки</span></div>
 <div id='cfg'></div>
 <div class='cfghint'>Поле с подсказкой «задано» — пароль или ключ: оставьте пустым, чтобы не менять.
 Параметры радио должны совпадать у всех узлов сети. После сохранения бот перезагрузится.</div>
-<button id='cfgsave' class='sec sm' style='margin-top:8px;width:100%'>Сохранить и перезагрузить</button>
-</details>
-<div class='ft'>MeshBot v__VER__ · <a href='/selftest' target='_blank'>проверить LittleFS</a></div>
-</section>
-<section class='card'>
-<div class='tools'><input id='q' placeholder='фильтр по тексту'><button id='dl' class='sec sm'>Скачать</button><button id='clr' class='sec sm'>Очистить</button></div>
-<div class='logwrap'><pre id='logs'>загрузка…</pre><button id='down' class='jump' hidden>&#8595; новые строки</button></div>
-</section>
+<button id='cfgsave' class='sec sm' style='margin-top:10px;width:100%'>Сохранить и перезагрузить</button>
 </div>
+</section>
+
+<section class='panel' id='p-log'>
+<div class='card'>
+<div class='tools'>
+<input id='q' placeholder='фильтр по тексту'>
+<button id='dl' class='sec sm'>Скачать</button>
+<button id='clr' class='sec sm'>Очистить</button>
+</div>
+<div class='logwrap'><pre id='logs'>загрузка…</pre>
+<button id='down' class='jump' hidden>&#8595; новые строки</button></div>
+</div>
+</section>
+
+</div>
+<div class='ft'>MeshBot v__VER__ · <a href='/selftest' target='_blank'>проверить LittleFS</a></div>
+<div id='toast' class='toast'></div>
 <script src='/app.js?v=__VER__'></script>
 </body></html>)HTML";
 
