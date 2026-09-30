@@ -42,6 +42,20 @@ jobs:
           ref: ${{ steps.core.outputs.ref }}
           path: mesh-network-core
 
+      # Проверки на ПК тоже живут отдельным репозиторием и одни на все прошивки: ядро у них
+      # общее, и держать его проверки в потребителе значило проверять ядро из форка. Версия
+      # берётся из tools.ref — по той же причине, что и core.ref: CI должен гонять те
+      # проверки, которые объявлены в ЭТОЙ ветке, а не «что там сейчас в main».
+      - name: Версия проверок из tools.ref
+        id: tools
+        run: echo "ref=$(head -1 tools.ref)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Tr1glav/mesh-network-tools
+          ref: ${{ steps.tools.outputs.ref }}
+          path: mesh-network-tools
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
