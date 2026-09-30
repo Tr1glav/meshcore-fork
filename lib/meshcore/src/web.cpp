@@ -221,13 +221,31 @@ void otaHandleInfo() {
         }
         snprintf(sups + at, sizeof(sups) - at, "]");
     }
+    // Счётчики потерь: в ответ идут только те, что в ЭТОЙ сборке могут стать ненулевыми.
+    // Решение принимает ядро (MESH_HAS_* в globals.h), страница его лишь спрашивает — здесь
+    // же собирается фрагмент JSON, потому что это единственное место, где вердикт ядра может
+    // дойти до статического app.js. Отсутствующее поле скрипт не покажет: он фильтрует по
+    // самому значению, а undefined в фильтр не проходит.
+    char loss[160];
+    int la = snprintf(loss, sizeof(loss), "\"cadg\":%lu", (unsigned long)cadGiveUps);
+#if MESH_HAS_RELAY_QUEUE
+    la += snprintf(loss + la, sizeof(loss) - la, ",\"rlq\":%lu",
+                   (unsigned long)relayQueueDrops);
+#endif
+#if MESH_HAS_REPLY_QUEUE
+    la += snprintf(loss + la, sizeof(loss) - la, ",\"rdr\":%lu,\"rdf\":%lu,\"dmn\":%lu",
+                   (unsigned long)replyDropped, (unsigned long)replyDeferred,
+                   (unsigned long)dmNoPubkey);
+#endif
+    (void)la;
+
     char json[768];
     snprintf(json, sizeof(json),
              "{\"up\":%lu,\"wifi\":%s,\"mqtt\":%s,\"heap\":%u,\"temp\":%s,"
              "\"bat\":%d,\"volt\":%s,\"ip\":\"%s\",\"pkts\":%d,"
              "\"env\":\"" FW_ENV "\",\"ver\":\"" FW_VERSION "\","
              "\"sups\":%s,"
-             "\"fsent\":%lu,\"cadg\":%lu,\"rlq\":%lu,\"rdr\":%lu,\"rdf\":%lu,\"dmn\":%lu,"
+             "\"fsent\":%lu,%s,"
              "\"fwready\":%s,\"fwname\":\"%s\",\"fwsize\":%u,\"fwimg\":%u}",
              (unsigned long)(millis() / 1000),
              wifiConnected ? "true" : "false",
@@ -240,9 +258,7 @@ void otaHandleInfo() {
              batteryPercent(), volt,
              wifiConnected ? WiFi.localIP().toString().c_str() : "-", packetCount,
              sups,
-             (unsigned long)framesSentCount, (unsigned long)cadGiveUps,
-             (unsigned long)relayQueueDrops, (unsigned long)replyDropped,
-             (unsigned long)replyDeferred, (unsigned long)dmNoPubkey,
+             (unsigned long)framesSentCount, loss,
              otaFwReady ? "true" : "false", fwname,
              (unsigned)otaFwSize, (unsigned)otaImgSize);
     otaServer.send(200, "application/json", json);
