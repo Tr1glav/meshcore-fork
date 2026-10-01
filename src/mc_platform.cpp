@@ -200,9 +200,6 @@ bool mcWifiConnected() {
     return WiFi.status() == WL_CONNECTED;
 }
 
-String mcLocalIp() {
-    return WiFi.localIP().toString();
-}
 
 // ===== Батарея (узел) — срез на локальные функции display.cpp =====
 #if HAS_BATTERY
