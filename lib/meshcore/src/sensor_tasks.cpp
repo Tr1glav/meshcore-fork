@@ -33,6 +33,7 @@ void sensorTasksTick() {
     otaSlowRxTick();   // медленный приём: своя очередь ответа и сторож тишины в канале
     sensorPingTick();  // не дождались ответа на проверку связи — показать это
     cfgPendingTick();  // правки настроек по радио без "save" откатываются перезагрузкой
+    cfgReplyTick();    // части ответа на "cfg get" — из очереди, а не с delay() в разборе
     #ifdef COMPANION_NODE
     companionTick();   // кадры от приложения разбираем здесь, а не в колбэке BLE
     #endif
