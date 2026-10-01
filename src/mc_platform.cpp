@@ -20,6 +20,8 @@
 #include "crypto.h"      // fmtFix: печать RSSI/SNR без float-printf
 #include "ota.h"         // slog: журнал показывается на странице координатора
 #include "display.h"
+#include "companion.h"
+#include "button.h"
 #include <WiFi.h>
 
 // Экран рисуем на локальном дисплее платы; нет экрана (HAS_OLED=0) — хуки молчат.
@@ -55,6 +57,31 @@ void mcUiIncoming(const String& channelName, const String& sender, const String&
     #else
     (void)channelName; (void)sender; (void)msg; (void)rssi; (void)snr;
     (void)hopCount; (void)path;
+    #endif
+}
+
+// ===== ПЕРИОДИЧЕСКОЕ В ЦИКЛЕ УЗЛА =====
+// Расписание узла держит ядро (sensorTasksTick), а эти три вызова зависят от платы и потому
+// остались здесь. Раньше весь файл sensor_tasks.cpp лежал копией в lib/meshcore — ровно из-за
+// них, и копии разошлись.
+void mcUiTick() {
+    // Гашение экрана объявлено только под SENSOR_NODE (см. display.h): у координатора экран
+    // живёт по другому расписанию, statusScreenTick'ом. Без этого условия не собирались пять
+    // окружений из двенадцати — те, где роли узла нет.
+    #ifdef SENSOR_NODE
+    screenTick();      // экран гаснет в простое, будит длинное нажатие кнопки
+    #endif
+}
+
+void mcButtonTick() {
+    #if FEATURE_BUTTON
+    buttonTick();      // счёт нажатий и переключение экрана, без блокировки
+    #endif
+}
+
+void mcCompanionTick() {
+    #ifdef COMPANION_NODE
+    companionTick();   // кадры от приложения разбираем здесь, а не в колбэке BLE
     #endif
 }
 
