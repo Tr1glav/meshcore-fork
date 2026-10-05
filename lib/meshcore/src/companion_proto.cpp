@@ -315,10 +315,11 @@ static void handleFrame(const uint8_t* f, size_t len) {
             break;
         }
         uint8_t txtType = f[1];
-        const uint8_t* prefix = &f[7];       // приложение шлёт только первые 6 байт ключа
-        int idx = -1;
-        for (int k = 0; k < contactCount && idx < 0; k++)
-            if (memcmp(contacts[k].pub, prefix, 6) == 0) idx = k;
+        // Приложение адресует личное сообщение шестью байтами ключа. Поиск общий со всеми
+        // остальными запросами: именно расхождение между соседними местами, которые ищут
+        // контакт каждый по-своему, дважды за день приводило к поломке — сначала маршрут не
+        // показывался, потом контакт не находился.
+        int idx = contactFindPrefix(&f[7], 6);
 
         String text;
         for (size_t k = 13; k < len; k++) text += (char)f[k];
