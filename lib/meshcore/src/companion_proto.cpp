@@ -333,7 +333,10 @@ static void handleFrame(const uint8_t* f, size_t len) {
             uint8_t frame[256];
             int fl = buildPrivateTextFrame(contacts[idx].pub[0], contacts[idx].pub,
                                            text, frame, sizeof(frame));
-            if (fl > 0) { floodSend(-1, frame, fl); sent = true; }
+            // floodSendQueued, а не floodSend: приложение ждёт подтверждения этой команды,
+            // и выходить в эфир ДО ответа значит задержать ответ на ожидание канала плюс
+            // время кадра — до двух секунд. Снаружи это «приложение притормаживает».
+            if (fl > 0) { floodSendQueued(-1, frame, fl); sent = true; }
         }
         if (!sent) {
             sendErr((idx < 0) ? ERR_CODE_NOT_FOUND : ERR_CODE_ILLEGAL_ARG);
@@ -364,7 +367,8 @@ static void handleFrame(const uint8_t* f, size_t len) {
         if (ch < numChannels && text.length() > 0) {
             uint8_t frame[256];
             int fl = buildGroupFrameFlood(ch, text, frame, sizeof(frame));
-            if (fl > 0) { floodSend(ch, frame, fl); sent = true; }
+            // См. CMD_SEND_TXT_MSG: ответ приложению не должен ждать эфира.
+            if (fl > 0) { floodSendQueued(ch, frame, fl); sent = true; }
         }
         if (sent) {
             // Оригинал отвечает одним байтом согласия. Мы отвечали кадром «отправлено»
