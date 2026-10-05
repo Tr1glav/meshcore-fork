@@ -23,6 +23,9 @@
 #include "companion.h"
 #include "button.h"
 #include <WiFi.h>
+#if FEATURE_BUTTON
+#include <driver/gpio.h>   // уровень пина кнопки из обработчика прерывания
+#endif
 
 // Экран рисуем на локальном дисплее платы; нет экрана (HAS_OLED=0) — хуки молчат.
 
@@ -73,9 +76,47 @@ void mcUiTick() {
     #endif
 }
 
-void mcButtonTick() {
+// ===== КНОПКА: ЖЕЛЕЗО =====
+// Смысл нажатия держит ядро (его src/button.cpp): серия коротких, долгое удержание, окно
+// ожидания, правило про проверку доступности. Здесь остались пин, подтяжка, прерывание и
+// уровень — то, что у плат разное, а у части плат отсутствует вовсе.
+
+#if FEATURE_BUTTON
+// В обработчике только то, что безопасно вызывать из прерывания: esp_timer_get_time и
+// gpio_get_level лежат в IRAM, digitalRead и millis() — не гарантированно, а обработчик
+// может сработать в момент операции с флешем. Время и уровень уходят в ядро, и больше здесь
+// не делается ничего.
+static void IRAM_ATTR buttonIsr() {
+    buttonEdgeCaptured((uint32_t)(esp_timer_get_time() / 1000),
+                       gpio_get_level((gpio_num_t)BUTTON_PIN) == 0);
+}
+#endif
+
+bool mcButtonAttach() {
     #if FEATURE_BUTTON
-    buttonTick();      // счёт нажатий и переключение экрана, без блокировки
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonIsr, CHANGE);
+    return true;
+    #else
+    return false;      // окружение без кнопки: ядру разбирать нечего
+    #endif
+}
+
+bool mcButtonDown() {
+    #if FEATURE_BUTTON
+    return digitalRead(BUTTON_PIN) == LOW;
+    #else
+    return false;
+    #endif
+}
+
+void mcScreenToggle() {
+    // Под SENSOR_NODE, как и mcUiTick: display.h объявляет экранные функции узла только там,
+    // и у координатора screenToggle() не существует. Кнопки у него тоже нет (FEATURE_BUTTON
+    // выведен из FEATURE_SENSOR), так что ядру здесь звать нечего — переопределение остаётся
+    // пустым, и это правильно.
+    #ifdef SENSOR_NODE
+    screenToggle();    // панель у этой платы OLED; как гасить — её дело, не ядра
     #endif
 }
 
