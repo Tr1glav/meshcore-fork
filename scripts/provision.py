@@ -39,6 +39,59 @@ PROJECT = ROOT
 SECRETS = ROOT / "secrets.json"
 BAUD = 115200
 
+# ===== Сколько ждать ответ консоли настроек =====
+# Главный цикл прошивки на время передачи стоит ЦЕЛИКОМ: radio.transmit() блокирующий, а
+# floodSend между копиями берёт delay(). Пока цикл стоит, cfgConsoleTick() не читает порт —
+# значит ответа на "set" не будет, и это не отказ платы, а очередь.
+#
+# Худший случай берётся не на глаз, а из config.h ядра, по тому же правилу, по которому в
+# прошивке выведены PING_TIMEOUT_MS и прочие бюджеты: FLOOD_REPEATS копий по
+# (CAD_WAIT_BUDGET_MS + FRAME_AIRTIME_MS) плюс паузы между ними по
+# (FLOOD_RETRY_MAX_MS + FLOOD_JITTER_MS). При нынешних числах это 10.6 с, то есть пока
+# берёт нижняя граница 15 с (она досталась от пробного запроса "show all"). Формула здесь не
+# для красоты: вырастет число копий или пауза между ними — таймаут поднимется сам, и никто не
+# будет искать, почему запись стала падать.
+#
+# В скрипте стояло 4 с, и запись падала ровно тогда, когда узел что-то передавал: в ответе на
+# "set wifi_ssid" приходило "[TX] OK" — то есть плата в этот момент была в эфире. Выглядело
+# это как отказ устройства, хотя команда просто не была прочитана.
+def console_reply_timeout(core_dir=None, floor=15.0):
+    """Таймаут ответа консоли, выведенный из худшего случая занятости цикла.
+
+    core_dir — каталог ядра; по умолчанию сосед рабочего дерева. Ядра может не быть рядом
+    (скрипт запускают и из распакованного релиза), тогда берётся floor — с запасом.
+    """
+    core = pathlib.Path(core_dir) if core_dir else (ROOT.parent / "mesh-network-core")
+    try:
+        txt = (core / "include" / "config.h").read_text(encoding="utf-8")
+    except OSError:
+        return floor
+    def val(name):
+        m = re.search(r"(?m)^#define\s+%s\s+(\d+)" % name, txt)
+        if not m:
+            raise KeyError(name)
+        return int(m.group(1))
+    try:
+        repeats = val("FLOOD_REPEATS")
+        tx_worst = val("CAD_WAIT_BUDGET_MS") + val("FRAME_AIRTIME_MS")
+        gap_worst = val("FLOOD_RETRY_MAX_MS") + val("FLOOD_JITTER_MS")
+    except KeyError:
+        return floor
+    worst_ms = repeats * tx_worst + (repeats - 1) * gap_worst
+    # Запас сверх флуда: сам разбор команды, печать ответа и UART на 115200.
+    return max(floor, worst_ms / 1000.0 + 2.0)
+
+
+CONSOLE_TIMEOUT_S = console_reply_timeout()
+
+# Явный отказ платы. Ждать таймаут незачем, и повторять команду тоже: ответ не изменится.
+REFUSALS = ("неизвестн", "нужно:", "вне диапазона")
+
+
+def refused(buf):
+    return any(r in buf for r in REFUSALS)
+
+
 # Какие поля отправлять устройству в зависимости от роли. Сенсору WiFi и MQTT не нужны:
 # он живёт только на радио, и лишние поля только занимали бы место в NVS.
 RADIO_FIELDS = ["lora_freq", "lora_bw", "lora_sf", "lora_cr", "lora_tx",
@@ -220,8 +273,15 @@ def drain_until_quiet(ser, quiet=1.0, limit=20.0):
     return False
 
 
-def talk(ser, line, expect, timeout=4.0, echo_field=None):
-    """Отправляет строку и ждёт подтверждения. Асинхронные логи радио игнорируются."""
+def talk(ser, line, expect, timeout=None, echo_field=None):
+    """Отправляет строку и ждёт подтверждения. Асинхронные логи радио игнорируются.
+
+    Таймаут по умолчанию выведен из худшего случая занятости главного цикла прошивки, см.
+    console_reply_timeout(). Числа на месте тут не годятся: цикл стоит на время флуда,
+    и короткий таймаут превращает занятость платы в «устройство не подтвердило».
+    """
+    if timeout is None:
+        timeout = CONSOLE_TIMEOUT_S
     ser.reset_input_buffer()
     ser.write((line + "\n").encode("utf-8"))
     ser.flush()
@@ -235,7 +295,7 @@ def talk(ser, line, expect, timeout=4.0, echo_field=None):
         if expect in buf:
             return True, buf
         # Ранний выход по явному отказу: иначе ждали бы весь таймаут на каждую ошибку
-        if "неизвестн" in buf or "нужно:" in buf or "вне диапазона" in buf:
+        if refused(buf):
             return False, buf
     return False, buf
 
@@ -257,11 +317,11 @@ def do_config(port, values, quiet=False, force=False):
         # Читаем с секретами, чтобы сверка была точной: пароль той же длины, но другой,
         # иначе молча остался бы старым. В вывод скрипта значения всё равно не попадают.
         drain_until_quiet(ser)   # дать плате договорить загрузочный вывод
-        ok, probe = talk(ser, "show all", "настроено:", timeout=15.0)
+        ok, probe = talk(ser, "show all", "настроено:")
         if not ok:
             reset_board(ser)   # не отвечает — перезагружаем и ждём баннер
             drain_until_quiet(ser)
-            ok, probe = talk(ser, "show all", "настроено:", timeout=15.0)
+            ok, probe = talk(ser, "show all", "настроено:")
         if not ok:
             print("  консоль настроек не отвечает: плата не загрузилась "
                   "или на ней прошивка без поддержки настроек")
@@ -271,7 +331,7 @@ def do_config(port, values, quiet=False, force=False):
         # Если что-то пришло маской, значит мы всё же прочитали не ответ, а баннер —
         # переспрашиваем, иначе секреты будут переписываться впустую.
         if any(kind == "len" for kind, _ in current.values()):
-            ok2, probe2 = talk(ser, "show all", "настроено:", timeout=10.0)
+            ok2, probe2 = talk(ser, "show all", "настроено:")
             if ok2:
                 current = parse_show(probe2)
         pending = {}
@@ -291,21 +351,40 @@ def do_config(port, values, quiet=False, force=False):
         for field, value in pending.items():
             value = "" if value is None else str(value)
             if value == "":
-                ok, buf = talk(ser, f"clear {field}", "очищено (нужен save)")
-                action = "очищено"
+                cmd, want, action = f"clear {field}", "очищено (нужен save)", "очищено"
             else:
                 # Ждём именно "задано (нужен save)": подстрока "задано" есть и в отказе
                 # "<поле> не задано: значение вне диапазона", и такой ответ засчитывался
                 # как успех — скрипт сообщал, что всё записано, а поле оставалось прежним.
-                ok, buf = talk(ser, f"set {field} {value}", "задано (нужен save)")
-                action = "задано"
+                cmd, want, action = f"set {field} {value}", "задано (нужен save)", "задано"
+            ok, buf = talk(ser, cmd, want)
+            # Вторая попытка — не «надёжность ради надёжности»: передачи идут подряд
+            # (heartbeat, а в режиме проверки доступности — пинги каждые ~12 с), и цикл
+            # способен простоять дольше одного флуда. set и clear идемпотентны, повтор
+            # ничего не портит. На ЯВНЫЙ отказ платы повтора нет: ответ не изменится.
+            if not ok and not refused(buf):
+                print(f"  {field}: плата не ответила за {CONSOLE_TIMEOUT_S:.0f} с, повторяю")
+                ok, buf = talk(ser, cmd, want)
             if not ok:
                 print(f"  {field}: ОШИБКА — устройство не подтвердило ({action})")
                 print("  ответ:", buf.strip().splitlines()[-1] if buf.strip() else "(пусто)")
+                if "[TX]" in buf and not refused(buf):
+                    print("  в ответе лог передачи: плата была в эфире, и консоль команду "
+                          "не читала. Это занятость, а не отказ.")
+                # Молчание НЕ означает, что команда не дошла: плата могла прочитать её и
+                # ответить позже, уже после таймаута. Тогда поле применено в ОЗУ, а в NVS
+                # не записано (save не дошёл), и узел продолжает работать с половиной новых
+                # настроек — невидимо, до следующего сброса. Так и вышло 5 октября 2026:
+                # после «не подтвердило» плата показывала новое значение, а в NVS лежало
+                # старое. Перезагрузка возвращает её к сохранённому состоянию.
+                print("  перезагружаю плату: применённое в ОЗУ сбрасывается, "
+                      "в NVS остаётся прежнее")
+                ser.write(b"reboot\n")
+                ser.flush()
                 return False
             if not quiet:
                 print(f"  {field}: {action} {mask(field, value)}")
-        ok, buf = talk(ser, "save", "сохранено", timeout=6.0)
+        ok, buf = talk(ser, "save", "сохранено")
         if not ok:
             print("  save: ОШИБКА — настройки не записаны")
             return False
@@ -347,7 +426,7 @@ def same_value(got, want):
 def do_verify(port, values):
     print(f"[проверка] порт {port}")
     with open_port(port) as ser:
-        ok, buf = talk(ser, "show", "настроено:", timeout=8.0)
+        ok, buf = talk(ser, "show", "настроено:")
         if not ok:
             reset_board(ser)
             ok, buf = talk(ser, "show", "настроено:", timeout=15.0)
