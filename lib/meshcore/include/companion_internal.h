@@ -119,6 +119,10 @@ struct Contact {
 };
 extern Contact contacts[];
 int  contactFrame(uint8_t code, const Contact& c, uint8_t* buf);
+// Минимальная длина префикса ключа, по которой разрешено опознавать узел. Семь байт — как у
+// оригинала (AdvertPath::pubkey_prefix); короче нельзя, иначе ответ уйдёт про чужой узел.
+#define CONTACT_KEY_PREFIX_MIN 7
+int  contactFindPrefix(const uint8_t* pub, size_t n);
 
 // --- контакты и каналы: хранилище в companion.cpp, ими пользуется и разбор кадров ---
 void sendFrameToApp(const uint8_t* data, size_t len);
