@@ -45,6 +45,35 @@ ALLOW_NEW = ("src/", "lib/", "web/", "scripts/", "boards/", "variants/",
              "secrets.example.json", ".gitignore")
 
 
+def core_pin_covers_local():
+    """Покрывает ли core.ref то ядро, с которым прошивка собиралась только что.
+
+    Локально ядро подключено symlink'ом на рабочее дерево, то есть сборка идёт с ЖИВЫМ ядром,
+    а CI берёт ядро строго по core.ref. Если локальное ядро ушло вперёд пина, прошивка
+    собирается здесь и ломается в Actions — ровно это и случилось 1 октября 2026: T-Deck
+    отправился с убранной копией sensor_tasks.cpp, а core.ref указывал на v0.9.0, где этого
+    файла в ядре ещё нет. `fatal error: sensor_tasks.h: No such file or directory`.
+
+    Возвращает (ок, пояснение). Коммит при расхождении делается — он локальный и никому не
+    мешает; запрещается именно отправка.
+    """
+    core = pathlib.Path(ROOT).parent / "mesh-network-core"
+    try:
+        pinned = (ROOT / "core.ref").read_text().split()[0]
+    except (OSError, IndexError):
+        return True, ""                      # нет пина — нечему расходиться
+    if not (core / ".git").exists():
+        return True, ""                      # ядра рядом нет: в CI так и бывает
+    r = subprocess.run(["git", "describe", "--tags", "--always", "--dirty"],
+                       cwd=str(core), capture_output=True, text=True)
+    actual = (r.stdout or "").strip()
+    if not actual or actual == pinned:
+        return True, ""
+    # Пин может быть предком локального ядра (это и есть «ушло вперёд»), а может и
+    # разойтись по-настоящему. Для отправки разницы нет: CI соберёт не то, что собрали мы.
+    return False, ("ядро в сборке %s, а core.ref пинует %s" % (actual, pinned))
+
+
 def git(*args, check=True):
     r = subprocess.run(["git", *args], cwd=str(ROOT), check=False, text=True,
                        capture_output=True)
@@ -164,6 +193,15 @@ def main():
 
     if args.no_push:
         print("[release] отправка отключена (--no-push)")
+        return
+
+    # Отправлять прошивку, собранную с ядром новее пина, нельзя: в Actions она соберётся по
+    # core.ref и упадёт. Коммит при этом уже сделан — он локальный и ничего не ломает.
+    covered, why = core_pin_covers_local()
+    if not covered:
+        print("[release] отправка ОТМЕНЕНА: " + why)
+        print("[release] CI собирает прошивку по core.ref, а не по рабочему дереву. Выпустите "
+              "ядро тегом и переведите core.ref на него — тогда отправляйте.")
         return
 
     ok, msg = git_try("push", "-u", "origin", branch)
