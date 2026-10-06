@@ -69,6 +69,23 @@ def sources_hash():
     return h.hexdigest()[:12]
 
 
+# Номер сборки держится двузначным: правило владельца — «если версия 0.5.99 становится
+# 0.5.100, то она становится 0.6.1». Трёхзначный хвост читается плохо и ничего не сообщает:
+# номер сборки растёт от каждой правки исходников, и его смысл — «насколько новее», а не
+# «сколько всего». Поэтому сотая сборка внутри минорной версии переводит счётчик: минорная
+# увеличивается, сборка начинается с ЕДИНИЦЫ (не с нуля — нулевой сборки не бывает, версия
+# всегда собрана хотя бы раз).
+BUILD_MAX = 99
+
+
+def next_version(major, minor, build):
+    build += 1
+    if build > BUILD_MAX:
+        minor += 1
+        build = 1
+    return major, minor, build
+
+
 def write_if_changed(path, content):
     # не трогаем файл без нужды: для SCons перезапись того же содержимого — лишняя работа
     try:
@@ -91,7 +108,7 @@ current_hash = sources_hash()
 if not NO_BUMP_TARGETS & set(COMMAND_LINE_TARGETS):
     # без сохранённого хэша текущая версия просто привязывается к текущему коду
     if saved_hash is not None and saved_hash != current_hash:
-        build += 1
+        major, minor, build = next_version(major, minor, build)
         build_time = int(time.time())
     write_if_changed(VERSION_FILE, f"{major}.{minor}.{build}\n{current_hash}\n{build_time}\n")
 
