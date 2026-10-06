@@ -34,10 +34,16 @@ uint32_t inDropped = 0;
 
 void sendFrameToApp(const uint8_t* data, size_t len) {
     if (!bleConnected || txChar == nullptr || len == 0) return;
-    // Сырой журнал приёма уходит на КАЖДЫЙ принятый кадр, и строка в UART на каждый из них
-    // стоит миллисекунды главного цикла — а сам кадр и так уже напечатан строкой [RX].
-    if (data[0] != PUSH_CODE_LOG_RX_DATA)
+    if (data[0] != PUSH_CODE_LOG_RX_DATA) {
+        // Сырой журнал приёма уходит на КАЖДЫЙ принятый кадр, и строка в UART на каждый из
+        // них стоит миллисекунды главного цикла — а сам кадр и так уже напечатан строкой
+        // [RX]. Но и совсем молчать нельзя: сколько кадров 0x88 реально ушло приложению —
+        // не видно ниоткуда. Поэтому для 0x88 печатается КОРОТКИЙ счётчик, а не дамп.
         Serial.printf("[BLE] -> код %u, %u байт\n", data[0], (unsigned)len);
+    } else {
+        diagLogRxPushed++;
+        Serial.printf("[BLE] 0x88 ушёл приложению (#%lu)\n", (unsigned long)diagLogRxPushed);
+    }
     txChar->setValue((uint8_t*)data, len);
     txChar->notify();
 }
@@ -53,6 +59,13 @@ unsigned long contactsDirtyMs = 0;
 int contactIterIdx = -1;               // -1 — перебор списка не идёт
 int appChanBase = 0;                   // с этого номера идут каналы из приложения
 uint32_t contactIterSince = 0, contactIterNewest = 0;
+
+// ===== Диагностика сырого журнала (0x88) =====
+// Приложение ставит отметку «принято ретранслятором» по потоку 0x88, который уходит на
+// КАЖДЫЙ принятый радио-кадр до дедупа. Чтобы по UART было видно, где этот поток рвётся,
+// считаем по концам и печатаем эхо собственного пакета (такое эхо — и есть переиздание
+// ретранслятором). Счётчики общие с companion_proto.cpp, где раз в 30 с печатается сводка.
+uint32_t diagLogRxRecv = 0, diagLogRxPushed = 0, diagLogRxLost = 0, diagEchoOwn = 0;
 
 static const char* COMPANION_NS = "companion";
 
@@ -491,7 +504,27 @@ void companionOnDirectText(const uint8_t* srcPub, const String& text, float snr,
 // собственный пакет переиздал ретранслятор, и показывает это в переписке. Длинные кадры
 // оригинал молча пропускает — кадр приложения короче эфирного.
 void mcOnRawRx(const uint8_t* raw, int len, float snr, float rssi) {
-    if (!bleConnected || len <= 0 || len + 3 > MAX_FRAME_SIZE) return;
+    diagLogRxRecv++;
+    // Эхо собственного пакета. У лички (TXT_MSG) и возврата маршрута (PATH) в конверте
+    // после заголовка, пути и адресата стоит короткий хэш ИСТОЧНИКА на байте 3. Когда
+    // такой кадр ловится снова, его переиздал ретранслятор — это и есть событие, по
+    // которому приложение ставит отметку. У канального кадра хэша источника нет вовсе:
+    // своё сообщение в канал этим признаком не увидеть.
+    if (len >= 4) {
+        const uint8_t ptype = (raw[0] >> 2) & 0x0F;
+        if ((ptype == PAYLOAD_TYPE_TXT_MSG || ptype == PAYLOAD_TYPE_PATH)
+            && raw[3] == ownShortHash) {
+            diagEchoOwn++;
+            Serial.printf("[DIAG] эхо СВОЕГО кадра (тип %u, src %02X), всего %lu\n",
+                          (unsigned)ptype, raw[3], (unsigned long)diagEchoOwn);
+        }
+    }
+    if (!bleConnected || len <= 0 || len + 3 > MAX_FRAME_SIZE) {
+        diagLogRxLost++;
+        Serial.printf("[DIAG] кадр %u Б приложению не ушёл, потерь %lu\n",
+                      (unsigned)(len > 0 ? (size_t)len : 0), (unsigned long)diagLogRxLost);
+        return;
+    }
     uint8_t buf[MAX_FRAME_SIZE];
     long s4 = lround(snr * 4.0f);
     buf[0] = PUSH_CODE_LOG_RX_DATA;

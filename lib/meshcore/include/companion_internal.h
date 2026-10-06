@@ -198,4 +198,8 @@ extern int contactIterIdx, appChanBase;
 extern uint32_t contactIterSince, contactIterNewest;
 extern uint8_t contactCount;
 
+// Диагностика потока 0x88 (сырые принятые кадры -> приложению): считают компаньон и разбор
+// кадров вместе, сводку печатает companionTick. См. комментарий у определения.
+extern uint32_t diagLogRxRecv, diagLogRxPushed, diagLogRxLost, diagEchoOwn;
+
 #endif // FEATURE_COMPANION

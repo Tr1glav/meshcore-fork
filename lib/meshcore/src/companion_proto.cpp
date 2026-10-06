@@ -455,6 +455,18 @@ static void handleFrame(const uint8_t* f, size_t len) {
 }
 
 void companionTick() {
+    // Сводка счётчиков потока 0x88 раз в 30 с: по ней видно, сколько сырых кадров приняло
+    // радио, сколько ушло приложению, сколько потеряно и сколько раз эхом вернулся наш
+    // собственный пакет (ретранслятор его переиздал). Строку на каждый кадр не печатаем —
+    // она и так есть там, где кадр печатается.
+    static unsigned long diagLastMs = 0;
+    if ((long)(millis() - diagLastMs) >= 30000) {
+        diagLastMs = millis();
+        Serial.printf("[DIAG] 0x88: принято %lu, ушло в BLE %lu, потерь %lu, эхо своих %lu\n",
+                      (unsigned long)diagLogRxRecv, (unsigned long)diagLogRxPushed,
+                      (unsigned long)diagLogRxLost, (unsigned long)diagEchoOwn);
+    }
+
     // Частая реклама держится ограниченное время: подключения уже не ждут, а объявляться
     // каждые 30 мс сутками незачем.
     if (bleAdvFastUntil != 0 && !bleConnected
