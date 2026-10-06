@@ -133,6 +133,53 @@ static void contactsLoad() {
 
 void contactTouch() { contactsDirty = true; contactsDirtyMs = millis(); }
 
+// ===== Ожидаемые подтверждения доставки =====
+// Хэш считает ядро при сборке кадра (buildPrivateTextFrame), сверяет — приёмная сторона
+// ядра через хук mcOnAckRecv. Здесь только память о том, чего мы ждём, и отметка времени:
+// приложению интересно не только «доставлено», но и за сколько.
+static struct {
+    uint8_t ack[4];
+    unsigned long sentMs;
+    bool used;
+} expectedAck[EXPECTED_ACK_MAX];
+static int expectedAckNext = 0;
+
+void ackExpect(const uint8_t ack4[4]) {
+    int slot = -1;
+    for (int i = 0; i < EXPECTED_ACK_MAX && slot < 0; i++)
+        if (!expectedAck[i].used) slot = i;
+    if (slot < 0) {                       // все заняты — вытесняем самое давнее по кругу
+        slot = expectedAckNext;
+        expectedAckNext = (expectedAckNext + 1) % EXPECTED_ACK_MAX;
+    }
+    memcpy(expectedAck[slot].ack, ack4, 4);
+    expectedAck[slot].sentMs = millis();
+    expectedAck[slot].used = true;
+}
+
+// Переопределение хука ядра: пришло подтверждение. Сверяем с тем, чего ждём, и говорим
+// приложению — иначе отправленное сообщение навсегда останется у него без галочки.
+//
+// Одно и то же подтверждение приходит несколько раз (копии флуда и переиздания), поэтому
+// слот освобождается на первом совпадении: второй пуш приложению про то же сообщение ему
+// не нужен.
+void mcOnAckRecv(const uint8_t ack4[4]) {
+    for (int i = 0; i < EXPECTED_ACK_MAX; i++) {
+        if (!expectedAck[i].used) continue;
+        if (memcmp(expectedAck[i].ack, ack4, 4) != 0) continue;
+        const uint32_t trip = (uint32_t)(millis() - expectedAck[i].sentMs);
+        expectedAck[i].used = false;
+        Serial.printf("[ACK] наше сообщение доставлено за %lu мс\n", (unsigned long)trip);
+        if (!blePaired) return;
+        uint8_t buf[9];
+        buf[0] = PUSH_CODE_SEND_CONFIRMED;
+        memcpy(&buf[1], ack4, 4);
+        memcpy(&buf[5], &trip, 4);
+        sendFrameToApp(buf, sizeof(buf));
+        return;
+    }
+}
+
 int contactFrame(uint8_t code, const Contact& c, uint8_t* buf) {
     int i = 0;
     buf[i++] = code;

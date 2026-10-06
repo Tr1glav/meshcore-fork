@@ -332,8 +332,12 @@ static void handleFrame(const uint8_t* f, size_t len) {
         bool sent = false;
         if (idx >= 0 && txtType == 0 && text.length() > 0) {   // 0 — обычный текст
             uint8_t frame[256];
+            // Хэш подтверждения запоминаем здесь же: ждать его будем мы, а посчитать его
+            // может только тот, кто собрал кадр, — по тому же открытому тексту.
+            uint8_t expAck[4];
             int fl = buildPrivateTextFrame(contacts[idx].pub[0], contacts[idx].pub,
-                                           text, frame, sizeof(frame));
+                                           text, frame, sizeof(frame), expAck);
+            if (fl > 0) ackExpect(expAck);
             // floodSendQueued, а не floodSend: приложение ждёт подтверждения этой команды,
             // и выходить в эфир ДО ответа значит задержать ответ на ожидание канала плюс
             // время кадра — до двух секунд. Снаружи это «приложение притормаживает».
