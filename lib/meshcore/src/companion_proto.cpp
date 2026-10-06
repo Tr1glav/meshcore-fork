@@ -5,6 +5,14 @@
 #include "mesh.h"
 #include "appconfig.h"
 #include "display.h"
+#include "radio.h"        // radioAirtimeMs: оценка времени кадра для метки est в CMD_SEND_TXT_MSG
+
+// Оценка времени до подтверждения доставки — как в оригинальном companion_radio
+// (MyMesh.cpp): база плюс копии флуда, каждая по времени кадра в эфире. Приложение ждёт
+// ACK ровно столько, сколько мы ему здесь назвали: занизишь — оно перестанет ждать раньше,
+// чем придёт подтверждение, и сообщение останется без галочки.
+#define SEND_TIMEOUT_BASE_MS       500
+#define FLOOD_SEND_TIMEOUT_FACTOR  16.0f
 
 // ===== Разбор кадров телефонного приложения =====
 // Выделено из companion.cpp: команды приложения, ответы на них и главный тик, который
@@ -315,6 +323,9 @@ static void handleFrame(const uint8_t* f, size_t len) {
             break;
         }
         uint8_t txtType = f[1];
+        uint8_t attempt = f[2];               // номер попытки, 2 бита — входит в хэш ACK
+        uint32_t msgTs = 0;
+        memcpy(&msgTs, &f[3], 4);             // метка времени приложения — тоже в хэш ACK
         // Приложение адресует личное сообщение шестью байтами ключа. Поиск общий со всеми
         // остальными запросами: именно расхождение между соседними местами, которые ищут
         // контакт каждый по-своему, дважды за день приводило к поломке — сначала маршрут не
@@ -330,13 +341,19 @@ static void handleFrame(const uint8_t* f, size_t len) {
         }
 
         bool sent = false;
+        uint8_t expAck[4];
+        memset(expAck, 0, sizeof(expAck));
+        int fl = 0;
         if (idx >= 0 && txtType == 0 && text.length() > 0) {   // 0 — обычный текст
             uint8_t frame[256];
             // Хэш подтверждения запоминаем здесь же: ждать его будем мы, а посчитать его
-            // может только тот, кто собрал кадр, — по тому же открытому тексту.
-            uint8_t expAck[4];
-            int fl = buildPrivateTextFrame(contacts[idx].pub[0], contacts[idx].pub,
-                                           text, frame, sizeof(frame), expAck);
+            // может только тот, кто собрал кадр, — по тому же открытому тексту. Метку
+            // времени и номер попытки ИЗ КОМАНДЫ ПРИЛОЖЕНИЯ отдаём в сборщик кадра: они
+            // входят в открытый текст, а значит и в хэш ACK. Раньше кадр собирался с
+            // time(NULL)/0 — подтверждение приходило на другой хэш, и метка в ответе ниже
+            // была «вечный ноль», по которому приложение не могло сопоставить ответ.
+            fl = buildPrivateTextFrame(contacts[idx].pub[0], contacts[idx].pub,
+                                       text, frame, sizeof(frame), expAck, msgTs, attempt);
             if (fl > 0) ackExpect(expAck);
             // floodSendQueued, а не floodSend: приложение ждёт подтверждения этой команды,
             // и выходить в эфир ДО ответа значит задержать ответ на ожидание канала плюс
@@ -347,12 +364,15 @@ static void handleFrame(const uint8_t* f, size_t len) {
             sendErr((idx < 0) ? ERR_CODE_NOT_FOUND : ERR_CODE_ILLEGAL_ARG);
             break;
         }
-        // Метка нулевая: подтверждений доставки мы не отслеживаем, а ненулевая метка
-        // заставила бы приложение ждать подтверждения, которое никогда не придёт.
+        // Метка подтверждения — НАСТОЯЩИЙ хэш, который придёт на это сообщение: приложение
+        // ждёт подтверждение ровно по этой метке. Оценка времени — как в оригинале: база
+        // плюс копии флуда, каждая по длине кадра в эфире. Раньше здесь стояли ноль и 3000 —
+        // приложение ждало подтверждение по метке «всегда ноль», которое не приходит никогда.
         out[i++] = RESP_CODE_SENT;
         out[i++] = 1;                        // ушло флудом
-        uint32_t tag = 0, est = 3000;
-        memcpy(&out[i], &tag, 4); i += 4;
+        memcpy(&out[i], expAck, 4); i += 4;
+        uint32_t est = SEND_TIMEOUT_BASE_MS + (uint32_t)(FLOOD_SEND_TIMEOUT_FACTOR *
+                                                         (float)radioAirtimeMs(fl));
         memcpy(&out[i], &est, 4); i += 4;
         sendFrameToApp(out, i);
         break;

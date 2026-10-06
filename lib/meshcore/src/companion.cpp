@@ -220,6 +220,12 @@ void mcOnPathRecv(uint8_t srcHash, uint8_t pathLen, const uint8_t* path,
     c.outPathLen = pathLen;
     memcpy(c.outPath, path, bytes);
     contactTouch();
+    // Новый путь обязан дойти до приложения инкрементальной синхронизацией контактов
+    // (команда 4): фильтр c.lastmod <= contactIterSince выбрасывает записи, которые
+    // приложение «уже знает». Пока lastmod не поднимался, маршрут лёг в контакт, но пуш
+    // 0x81 ушёл один раз, а синк молча пропускал контакт — приложение работало со старым
+    // outPath, и обратный маршрут продолжал не показываться.
+    if (changed) c.lastmod = (uint32_t)time(NULL);
     Serial.printf("[PATH] маршрут до %s: %u хопов%s\n", c.name, hops,
                   changed ? "" : " (прежний)");
 
