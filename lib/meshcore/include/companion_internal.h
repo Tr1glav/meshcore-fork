@@ -32,6 +32,16 @@
 #define CMD_GET_ADVERT_PATH       42
 #define CMD_SET_FLOOD_SCOPE_KEY   54
 #define CMD_GET_DEFAULT_FLOOD_SCOPE 64
+// ===== Управление ретранслятором и метрики =====
+// Вход на чужой ретранслятор, запросы к нему и метрики своего узла. Номера — из оригинала:
+// их шлёт то же самое приложение, и выбирать их нам нечем.
+#define CMD_SEND_LOGIN            26   // вход по паролю (кадр ANON_REQ)
+#define CMD_SEND_STATUS_REQ       27   // метрики ретранслятора
+#define CMD_HAS_CONNECTION        28   // держится ли сессия входа
+#define CMD_LOGOUT                29   // выйти
+#define CMD_SEND_TELEMETRY_REQ    39   // телеметрия: чужая (с ключом) или своя (кадр из 4 Б)
+#define CMD_SEND_BINARY_REQ       50   // произвольный запрос: тело задаёт приложение
+#define CMD_GET_STATS             56   // метрики СВОЕГО узла, второй байт — какие именно
 
 #define RESP_CODE_OK                0
 #define RESP_CODE_ERR               1
@@ -50,12 +60,22 @@
 #define RESP_CODE_CHANNEL_MSG_RECV_V3 17
 #define RESP_CODE_CHANNEL_INFO     18
 #define RESP_CODE_ADVERT_PATH      22
+#define RESP_CODE_STATS            24   // метрики своего узла, второй байт — их вид
+// Виды метрик своего узла для CMD_GET_STATS/RESP_CODE_STATS.
+#define STATS_TYPE_CORE            0    // питание, время работы, очередь
+#define STATS_TYPE_RADIO           1    // качество связи и занятый эфир
+#define STATS_TYPE_PACKETS         2    // счётчики пакетов
 #define RESP_CODE_DEFAULT_FLOOD_SCOPE 28
 #define PUSH_CODE_ADVERT         0x80    // знакомый узел объявился снова
 #define PUSH_CODE_PATH_UPDATED   0x81    // маршрут к контакту изменился — перезапросить командой 42
 #define PUSH_CODE_SEND_CONFIRMED 0x82    // наше сообщение доставлено: [хэш 4][время в пути 4]
 #define PUSH_CODE_MSG_WAITING    0x83
+#define PUSH_CODE_LOGIN_SUCCESS  0x85    // вход на ретранслятор разрешён
+#define PUSH_CODE_LOGIN_FAIL     0x86    // пароль не подошёл
+#define PUSH_CODE_STATUS_RESPONSE 0x87   // метрики ретранслятора пришли
 #define PUSH_CODE_LOG_RX_DATA    0x88    // сырой принятый кадр: [SNR*4][RSSI][кадр]
+#define PUSH_CODE_TELEMETRY_RESPONSE 0x8B
+#define PUSH_CODE_BINARY_RESPONSE 0x8C
 #define PUSH_CODE_NEW_ADVERT     0x8A    // узел услышан впервые, кадр целиком
 #define PUSH_CODE_CONTACT_DELETED 0x8F   // контакт вытеснен из памяти узла: [ключ 32]
 #define PUSH_CODE_CONTACTS_FULL  0x90    // места нет и вытеснять нечего (все избранные)
@@ -137,6 +157,36 @@ struct Contact {
 };
 extern Contact contacts[];
 int  contactFrame(uint8_t code, const Contact& c, uint8_t* buf);
+
+// ===== Сессии входа на ретранслятор =====
+// Войдя на ретранслятор, приложение держит сессию и шлёт команды командной строкой. Узел
+// на той стороне забывает клиента по тишине, поэтому сессию надо продлевать запросом
+// REQ_TYPE_KEEP_ALIVE — интервал называет сам ретранслятор в ответе на вход. Четыре
+// сессии: приложение управляет своими узлами, а не всей сетью.
+#define LOGIN_SESSION_MAX 4
+// Телеметрия кодируется как CayenneLPP — так её читает приложение: [канал][тип][значение
+// старшим байтом вперёд]. Канал 1 означает «сам узел», тип 116 — напряжение с ценой
+// деления 0.01 В. Числа взяты из той же библиотеки, что у оригинала.
+#define TELEM_CHANNEL_SELF 1
+#define TELEM_TYPE_VOLTAGE 116
+#define TELEM_VOLTAGE_MULT 100
+// Продлеваем чуть раньше названного срока: запрос идёт по эфиру, и прийти он должен ДО
+// того, как узел нас забудет.
+#define KEEP_ALIVE_EARLY_PCT 75
+
+void sessionStart(const uint8_t* pub, uint16_t keepAliveSecs);
+bool sessionHas(const uint8_t* pub, size_t n);
+void sessionStop(const uint8_t* pub, size_t n);
+void sessionsTick();
+
+// Чего мы ждём в ответ на запросы к ретранслятору. Вход и состояние оригинал сопоставляет
+// по началу ключа узла, телеметрию и произвольный запрос — по метке запроса; повторяем так
+// же, иначе ответы чужой прошивки не опознаются.
+void reqPendingClear();
+void reqPendingLogin(const uint8_t* pub32);
+void reqPendingStatus(const uint8_t* pub32);
+void reqPendingTelemetry(uint32_t tag);
+void reqPendingBinary(uint32_t tag);
 
 // ===== Ожидаемые подтверждения доставки =====
 // Отправив личное сообщение, помним хэш подтверждения, которое на него придёт. Таблица, а не

@@ -39,6 +39,21 @@ static void sendErr(uint8_t code) {
     sendFrameToApp(out, 2);
 }
 
+// ===== Запросы к ретранслятору =====
+// Ответ на команду запроса у оригинала один и тот же: «ушло», каким маршрутом, метка, по
+// которой придёт ответ, и оценка времени ожидания. Приложение по метке сопоставляет ответ,
+// а по оценке решает, сколько его ждать, прежде чем показать неудачу.
+static void sendReqSent(uint32_t tag, int frameLen) {
+    uint8_t buf[10];
+    buf[0] = RESP_CODE_SENT;
+    buf[1] = 1;                      // всегда флудом: направленных путей мы не держим
+    memcpy(&buf[2], &tag, 4);
+    const uint32_t est = SEND_TIMEOUT_BASE_MS +
+        (uint32_t)(FLOOD_SEND_TIMEOUT_FACTOR * (float)radioAirtimeMs(frameLen));
+    memcpy(&buf[6], &est, 4);
+    sendFrameToApp(buf, sizeof(buf));
+}
+
 // ===== Границы буферов =====
 // Две проверки, где длина приходит извне, а размер буфера — константа. Обе вынесены
 // отдельно от разбора кадров, потому что именно их стоит проверять на хосте: в одном
@@ -440,6 +455,152 @@ static void handleFrame(const uint8_t* f, size_t len) {
         sendFrameToApp(out, i);
         msgHead = (msgHead + 1) % MSG_QUEUE_MAX;
         msgCount--;
+        break;
+    }
+    case CMD_SEND_LOGIN: {
+        // [26][ключ 32][пароль]
+        if (len < 1 + 32) { sendErr(ERR_CODE_ILLEGAL_ARG); break; }
+        const int idx = contactFindPrefix(&f[1], 32);
+        if (idx < 0) { sendErr(ERR_CODE_NOT_FOUND); break; }
+        // Пароль идёт хвостом кадра и нулём не оканчивается: берём по длине кадра, иначе в
+        // пароль попадёт мусор, оставшийся в буфере от прошлой команды.
+        char pass[LOGIN_PASSWORD_MAX + 1];
+        size_t pl = (len > 1 + 32) ? len - (1 + 32) : 0;
+        if (pl > LOGIN_PASSWORD_MAX) pl = LOGIN_PASSWORD_MAX;
+        memcpy(pass, &f[1 + 32], pl);
+        pass[pl] = 0;
+        uint8_t frame[128];
+        uint32_t tag = 0;
+        const int fl = buildLoginFrame(contacts[idx].pub[0], contacts[idx].pub, pass,
+                                       &tag, frame, sizeof(frame));
+        if (fl <= 0) { sendErr(ERR_CODE_ILLEGAL_ARG); break; }
+        reqPendingClear();
+        reqPendingLogin(contacts[idx].pub);
+        floodSendQueued(-1, frame, fl);
+        Serial.printf("[REQ] вход на <%02X> %s\n", contacts[idx].pub[0], contacts[idx].name);
+        sendReqSent(tag, fl);
+        break;
+    }
+    case CMD_SEND_STATUS_REQ: {
+        // [27][ключ 32] — метрики ретранслятора
+        if (len < 1 + 32) { sendErr(ERR_CODE_ILLEGAL_ARG); break; }
+        const int idx = contactFindPrefix(&f[1], 32);
+        if (idx < 0) { sendErr(ERR_CODE_NOT_FOUND); break; }
+        uint8_t frame[96];
+        uint32_t tag = 0;
+        const int fl = buildSimpleReqFrame(contacts[idx].pub[0], contacts[idx].pub,
+                                           REQ_TYPE_GET_STATUS, &tag, frame, sizeof(frame));
+        if (fl <= 0) { sendErr(ERR_CODE_ILLEGAL_ARG); break; }
+        reqPendingClear();
+        reqPendingStatus(contacts[idx].pub);
+        floodSendQueued(-1, frame, fl);
+        sendReqSent(tag, fl);
+        break;
+    }
+    case CMD_SEND_TELEMETRY_REQ: {
+        // Два вида: [39][резерв 3][ключ 32] — чужая телеметрия, и кадр ровно из четырёх
+        // байт — своя. Своя отдаётся сразу пушем, без эфира.
+        if (len == 4) {
+            // Телеметрия своего узла. Раскладка — как у оригинала (SensorManager):
+            // [канал|тип 1][значение], где канал 0 означает «сам узел».
+            int i2 = 0;
+            out[i2++] = PUSH_CODE_TELEMETRY_RESPONSE;
+            out[i2++] = 0;
+            memcpy(&out[i2], bot_pub, 6); i2 += 6;
+            // Значение — старшим байтом вперёд и в сотых вольта, как велит CayenneLPP:
+            // приложение читает его именно так, а не как наши обычные little-endian поля.
+            const uint16_t v100 = (uint16_t)lround(batteryVoltage() * TELEM_VOLTAGE_MULT);
+            out[i2++] = TELEM_CHANNEL_SELF;
+            out[i2++] = TELEM_TYPE_VOLTAGE;
+            out[i2++] = (uint8_t)(v100 >> 8);
+            out[i2++] = (uint8_t)(v100 & 0xFF);
+            sendFrameToApp(out, i2);
+            break;
+        }
+        if (len < 4 + 32) { sendErr(ERR_CODE_ILLEGAL_ARG); break; }
+        const int idx = contactFindPrefix(&f[4], 32);
+        if (idx < 0) { sendErr(ERR_CODE_NOT_FOUND); break; }
+        uint8_t frame[96];
+        uint32_t tag = 0;
+        const int fl = buildSimpleReqFrame(contacts[idx].pub[0], contacts[idx].pub,
+                                           REQ_TYPE_GET_TELEMETRY_DATA, &tag,
+                                           frame, sizeof(frame));
+        if (fl <= 0) { sendErr(ERR_CODE_ILLEGAL_ARG); break; }
+        reqPendingClear();
+        reqPendingTelemetry(tag);
+        floodSendQueued(-1, frame, fl);
+        sendReqSent(tag, fl);
+        break;
+    }
+    case CMD_SEND_BINARY_REQ: {
+        // [50][ключ 32][тело запроса] — тело целиком задаёт приложение, мы его не толкуем.
+        if (len < 2 + 32) { sendErr(ERR_CODE_ILLEGAL_ARG); break; }
+        const int idx = contactFindPrefix(&f[1], 32);
+        if (idx < 0) { sendErr(ERR_CODE_NOT_FOUND); break; }
+        uint8_t frame[128];
+        uint32_t tag = 0;
+        const int fl = buildReqFrame(contacts[idx].pub[0], contacts[idx].pub,
+                                     &f[1 + 32], (int)(len - (1 + 32)), &tag,
+                                     frame, sizeof(frame));
+        if (fl <= 0) { sendErr(ERR_CODE_ILLEGAL_ARG); break; }
+        reqPendingClear();
+        reqPendingBinary(tag);
+        floodSendQueued(-1, frame, fl);
+        sendReqSent(tag, fl);
+        break;
+    }
+    case CMD_HAS_CONNECTION: {
+        if (len < 1 + 32) { sendErr(ERR_CODE_ILLEGAL_ARG); break; }
+        if (sessionHas(&f[1], 32)) sendRes(RESP_CODE_OK);
+        else sendErr(ERR_CODE_NOT_FOUND);
+        break;
+    }
+    case CMD_LOGOUT: {
+        if (len < 1 + 32) { sendErr(ERR_CODE_ILLEGAL_ARG); break; }
+        sessionStop(&f[1], 32);
+        sendRes(RESP_CODE_OK);
+        break;
+    }
+    case CMD_GET_STATS: {
+        // Метрики СВОЕГО узла: приложение показывает их на экране устройства. Раскладка —
+        // как в оригинале (CMD_GET_STATS), иначе числа встанут в чужие поля.
+        if (len < 2) { sendErr(ERR_CODE_ILLEGAL_ARG); break; }
+        const uint8_t kind = f[1];
+        out[i++] = RESP_CODE_STATS;
+        out[i++] = kind;
+        if (kind == STATS_TYPE_CORE) {
+            const uint16_t mv = (uint16_t)(batteryVoltage() * 1000.0f);
+            const uint32_t uptime = (uint32_t)(millis() / 1000);
+            const uint16_t errFlags = 0;          // отдельного слова ошибок у нас нет
+            memcpy(&out[i], &mv, 2); i += 2;
+            memcpy(&out[i], &uptime, 4); i += 4;
+            memcpy(&out[i], &errFlags, 2); i += 2;
+            out[i++] = (uint8_t)meshTxQueuedCount();
+        } else if (kind == STATS_TYPE_RADIO) {
+            // Уровня шума мы не измеряем — отдаём последний принятый RSSI, он же стоит в
+            // поле «последний RSSI». Эфир — в секундах, как у оригинала.
+            const int16_t noise = (int16_t)lastRSSI;
+            const uint32_t txs = txAirtimeMs / 1000, rxs = rxAirtimeMs / 1000;
+            memcpy(&out[i], &noise, 2); i += 2;
+            out[i++] = (uint8_t)(int8_t)lastRSSI;
+            out[i++] = (uint8_t)(int8_t)lround(lastSNR * 4.0f);
+            memcpy(&out[i], &txs, 4); i += 4;
+            memcpy(&out[i], &rxs, 4); i += 4;
+        } else if (kind == STATS_TYPE_PACKETS) {
+            const uint32_t recv = (uint32_t)packetCount, sent = framesSentCount;
+            const uint32_t sentFlood = framesSentCount, sentDirect = 0;
+            memcpy(&out[i], &recv, 4); i += 4;
+            memcpy(&out[i], &sent, 4); i += 4;
+            memcpy(&out[i], &sentFlood, 4); i += 4;      // направленных передач мы не делаем
+            memcpy(&out[i], &sentDirect, 4); i += 4;
+            memcpy(&out[i], &recvFloodCount, 4); i += 4;
+            memcpy(&out[i], &recvDirectCount, 4); i += 4;
+            memcpy(&out[i], &rxErrorCount, 4); i += 4;
+        } else {
+            sendErr(ERR_CODE_ILLEGAL_ARG);
+            break;
+        }
+        sendFrameToApp(out, i);
         break;
     }
     case CMD_SEND_SELF_ADVERT: {

@@ -196,6 +196,167 @@ void mcOnAckRecv(const uint8_t ack4[4]) {
     }
 }
 
+// ===== Вход на ретранслятор: сессии и ожидаемые ответы =====
+// Управление чужим ретранслятором из приложения устроено так: вход по паролю кадром
+// ANON_REQ, дальше команды командной строкой в личке (тип текста 1) и запросы состояния и
+// телеметрии кадром REQ. Ответ на всё это приходит кадром RESPONSE с меткой запроса в
+// первых четырёх байтах. Ядро такой кадр расшифровывает и отдаёт сюда хуком
+// mcOnResponseRecv — помнить, на что этот ответ, может только тот, кто запрос отправлял.
+
+static struct {
+    uint8_t pub[32];
+    uint16_t keepAliveSecs;      // 0 — продлевать не требуется
+    unsigned long lastMs;        // когда последний раз продлевали (или вошли)
+    bool used;
+} sessions[LOGIN_SESSION_MAX];
+
+void sessionStart(const uint8_t* pub, uint16_t keepAliveSecs) {
+    int slot = -1;
+    for (int i = 0; i < LOGIN_SESSION_MAX; i++) {
+        if (sessions[i].used && memcmp(sessions[i].pub, pub, 32) == 0) { slot = i; break; }
+        if (!sessions[i].used && slot < 0) slot = i;
+    }
+    if (slot < 0) slot = 0;                       // все заняты — вытесняем первую
+    memcpy(sessions[slot].pub, pub, 32);
+    sessions[slot].keepAliveSecs = keepAliveSecs;
+    sessions[slot].lastMs = millis();
+    sessions[slot].used = true;
+    Serial.printf("[REQ] вход на <%02X> удержан, продлевать каждые %u с\n",
+                  pub[0], (unsigned)keepAliveSecs);
+}
+
+bool sessionHas(const uint8_t* pub, size_t n) {
+    for (int i = 0; i < LOGIN_SESSION_MAX; i++)
+        if (sessions[i].used && memcmp(sessions[i].pub, pub, n) == 0) return true;
+    return false;
+}
+
+void sessionStop(const uint8_t* pub, size_t n) {
+    for (int i = 0; i < LOGIN_SESSION_MAX; i++)
+        if (sessions[i].used && memcmp(sessions[i].pub, pub, n) == 0) {
+            sessions[i].used = false;
+            Serial.printf("[REQ] выход с <%02X>\n", sessions[i].pub[0]);
+        }
+}
+
+// Продление сессий. Запрос уходит в очередь, как и всё остальное: выходить в эфир прямо
+// из такта значит остановить главный цикл на время кадра.
+void sessionsTick() {
+    for (int i = 0; i < LOGIN_SESSION_MAX; i++) {
+        if (!sessions[i].used || sessions[i].keepAliveSecs == 0) continue;
+        const unsigned long every =
+            (unsigned long)sessions[i].keepAliveSecs * 1000UL * KEEP_ALIVE_EARLY_PCT / 100UL;
+        if ((unsigned long)(millis() - sessions[i].lastMs) < every) continue;
+        sessions[i].lastMs = millis();
+        uint8_t frame[96];
+        uint32_t tag = 0;
+        const int fl = buildSimpleReqFrame(sessions[i].pub[0], sessions[i].pub,
+                                           REQ_TYPE_KEEP_ALIVE, &tag, frame, sizeof(frame));
+        if (fl > 0) {
+            floodSendQueued(-1, frame, fl);
+            Serial.printf("[REQ] продлили вход на <%02X>\n", sessions[i].pub[0]);
+        }
+    }
+}
+
+// Чего мы ждём. Оригинал держит по одному ожиданию каждого вида и сбрасывает все при новом
+// запросе (clearPendingReqs): ответы приходят секундами позже, и путать их между собой
+// опаснее, чем потерять ответ на отменённый запрос.
+static uint8_t pendingLoginPub[4], pendingStatusPub[4];
+static bool pendingLoginUsed = false, pendingStatusUsed = false;
+static uint32_t pendingTelemetryTag = 0, pendingBinaryTag = 0;
+
+void reqPendingClear() {
+    pendingLoginUsed = pendingStatusUsed = false;
+    pendingTelemetryTag = pendingBinaryTag = 0;
+}
+void reqPendingLogin(const uint8_t* pub32) {
+    memcpy(pendingLoginPub, pub32, 4); pendingLoginUsed = true;
+}
+void reqPendingStatus(const uint8_t* pub32) {
+    memcpy(pendingStatusPub, pub32, 4); pendingStatusUsed = true;
+}
+void reqPendingTelemetry(uint32_t tag) { pendingTelemetryTag = tag; }
+void reqPendingBinary(uint32_t tag)    { pendingBinaryTag = tag; }
+
+// Переопределение хука ядра: пришёл ответ ретранслятора. Раскладка кадров для приложения —
+// из оригинала (MyMesh::onContactResponse), байт в байт: приложение читает их по
+// смещениям.
+void mcOnResponseRecv(uint8_t srcHash, const uint8_t* srcPub, const uint8_t* data, int len) {
+    (void)srcHash;
+    if (len < 4 || srcPub == NULL) return;
+    uint32_t tag = 0;
+    memcpy(&tag, data, 4);
+    const uint8_t* body = &data[4];
+    const int blen = len - 4;
+    uint8_t buf[64];
+    int i = 0;
+
+    if (pendingLoginUsed && memcmp(pendingLoginPub, srcPub, 4) == 0) {
+        pendingLoginUsed = false;
+        // Два вида ответа на вход. Старые ретрансляторы отвечают текстом «OK», новые —
+        // кодом с правами и интервалом продления. Оригинал понимает оба, и мы тоже:
+        // в сети стоят узлы обеих прошивок.
+        if (blen >= 2 && memcmp(body, "OK", 2) == 0) {
+            buf[i++] = PUSH_CODE_LOGIN_SUCCESS;
+            buf[i++] = 0;                         // старый ответ прав не несёт
+            memcpy(&buf[i], srcPub, 6); i += 6;
+            Serial.printf("[REQ] вход на <%02X> разрешён (старый ответ)\n", srcPub[0]);
+        } else if (blen >= 9 && body[0] == RESP_SERVER_LOGIN_OK) {
+            const uint16_t keepAlive = (uint16_t)body[1] * 16;
+            if (keepAlive > 0) sessionStart(srcPub, keepAlive);
+            else sessionStart(srcPub, 0);
+            buf[i++] = PUSH_CODE_LOGIN_SUCCESS;
+            buf[i++] = body[2];                   // права: старший ли это клиент
+            memcpy(&buf[i], srcPub, 6); i += 6;
+            memcpy(&buf[i], &tag, 4); i += 4;     // часы ретранслятора
+            buf[i++] = body[3];                   // права доступа
+            buf[i++] = body[8];                   // уровень прошивки ретранслятора
+            Serial.printf("[REQ] вход на <%02X> разрешён, права %02X\n", srcPub[0], body[2]);
+        } else {
+            buf[i++] = PUSH_CODE_LOGIN_FAIL;
+            buf[i++] = 0;
+            memcpy(&buf[i], srcPub, 6); i += 6;
+            Serial.printf("[REQ] вход на <%02X> отклонён\n", srcPub[0]);
+        }
+        sendFrameToApp(buf, i);
+        return;
+    }
+    if (blen > 0 && pendingStatusUsed && memcmp(pendingStatusPub, srcPub, 4) == 0) {
+        pendingStatusUsed = false;
+        buf[i++] = PUSH_CODE_STATUS_RESPONSE;
+        buf[i++] = 0;                             // зарезервировано
+        memcpy(&buf[i], srcPub, 6); i += 6;
+        const int n = blen > (int)sizeof(buf) - i ? (int)sizeof(buf) - i : blen;
+        memcpy(&buf[i], body, n); i += n;
+        Serial.printf("[REQ] метрики <%02X>: %d Б\n", srcPub[0], n);
+        sendFrameToApp(buf, i);
+        return;
+    }
+    if (blen > 0 && tag != 0 && tag == pendingTelemetryTag) {
+        pendingTelemetryTag = 0;
+        buf[i++] = PUSH_CODE_TELEMETRY_RESPONSE;
+        buf[i++] = 0;
+        memcpy(&buf[i], srcPub, 6); i += 6;
+        const int n = blen > (int)sizeof(buf) - i ? (int)sizeof(buf) - i : blen;
+        memcpy(&buf[i], body, n); i += n;
+        sendFrameToApp(buf, i);
+        return;
+    }
+    if (blen > 0 && tag != 0 && tag == pendingBinaryTag) {
+        pendingBinaryTag = 0;
+        buf[i++] = PUSH_CODE_BINARY_RESPONSE;
+        buf[i++] = 0;
+        memcpy(&buf[i], &tag, 4); i += 4;         // приложение сверяет метку с ответом на запрос
+        const int n = blen > (int)sizeof(buf) - i ? (int)sizeof(buf) - i : blen;
+        memcpy(&buf[i], body, n); i += n;
+        sendFrameToApp(buf, i);
+        return;
+    }
+    Serial.printf("[REQ] ответ от <%02X> с меткой %08lX никто не ждал\n",
+                  srcPub[0], (unsigned long)tag);
+}
+
 // Узел прислал дорогу до себя. Кладём её контакту в outPath: приложение читает маршрут
 // именно оттуда (кадр контакта), и до сих пор там всегда стояло 0xFF — «пути не знаем».
 // Отсюда и «обратный маршрут посмотреть нельзя»: показывать было нечего, потому что узнать
