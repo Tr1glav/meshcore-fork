@@ -34,7 +34,10 @@ uint32_t inDropped = 0;
 
 void sendFrameToApp(const uint8_t* data, size_t len) {
     if (!bleConnected || txChar == nullptr || len == 0) return;
-    Serial.printf("[BLE] -> код %u, %u байт\n", data[0], (unsigned)len);
+    // Сырой журнал приёма уходит на КАЖДЫЙ принятый кадр, и строка в UART на каждый из них
+    // стоит миллисекунды главного цикла — а сам кадр и так уже напечатан строкой [RX].
+    if (data[0] != PUSH_CODE_LOG_RX_DATA)
+        Serial.printf("[BLE] -> код %u, %u байт\n", data[0], (unsigned)len);
     txChar->setValue((uint8_t*)data, len);
     txChar->notify();
 }
