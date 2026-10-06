@@ -180,6 +180,42 @@ void mcOnAckRecv(const uint8_t ack4[4]) {
     }
 }
 
+// Узел прислал дорогу до себя. Кладём её контакту в outPath: приложение читает маршрут
+// именно оттуда (кадр контакта), и до сих пор там всегда стояло 0xFF — «пути не знаем».
+// Отсюда и «обратный маршрут посмотреть нельзя»: показывать было нечего, потому что узнать
+// путь было неоткуда — возврат маршрута мы не разбирали.
+void mcOnPathRecv(uint8_t srcHash, uint8_t pathLen, const uint8_t* path,
+                  uint8_t extraType, const uint8_t* extra, int extraLen) {
+    (void)extraType; (void)extra; (void)extraLen;   // довесок разбирает ядро
+    uint8_t* pub = findPeerPub(srcHash);
+    if (pub == NULL) return;              // чей это маршрут — неизвестно, записать некуда
+    const int idx = contactFind(pub);
+    if (idx < 0) return;
+    Contact& c = contacts[idx];
+
+    const uint8_t hops = pathLen & 0x3F;
+    const int bytes = (int)hops * (((pathLen >> 6) & 3) + 1);
+    if (bytes > (int)sizeof(c.outPath)) {
+        Serial.printf("[PATH] маршрут до %s длиннее, чем влезает (%d Б) — не сохраняю\n",
+                      c.name, bytes);
+        return;
+    }
+    const bool changed = (c.outPathLen != pathLen) || memcmp(c.outPath, path, bytes) != 0;
+    c.outPathLen = pathLen;
+    memcpy(c.outPath, path, bytes);
+    contactTouch();
+    Serial.printf("[PATH] маршрут до %s: %u хопов%s\n", c.name, hops,
+                  changed ? "" : " (прежний)");
+
+    // Пуш только на изменение: маршрут приходит с каждым подтверждением, и сообщать
+    // приложению одно и то же незачем — оно на каждый пуш перезапрашивает контакт.
+    if (!blePaired || !changed) return;
+    uint8_t buf[1 + 32];
+    buf[0] = PUSH_CODE_PATH_UPDATED;
+    memcpy(&buf[1], c.pub, 32);
+    sendFrameToApp(buf, 1 + 32);
+}
+
 int contactFrame(uint8_t code, const Contact& c, uint8_t* buf) {
     int i = 0;
     buf[i++] = code;
@@ -394,6 +430,8 @@ void companionOnChannelText(int channelIdx, const String& text, float snr, uint8
         msgCount--;
     }
     QueuedMsg& m = msgQueue[(msgHead + msgCount) % MSG_QUEUE_MAX];
+    memset(&m, 0, sizeof(m));
+    m.kind = MSG_KIND_CHANNEL;
     m.channelIdx = (uint8_t)channelIdx;
     m.pathLen = pathLen;
     long s4 = lround(snr * 4.0f);
@@ -410,6 +448,55 @@ void companionOnChannelText(int channelIdx, const String& text, float snr, uint8
     if (!notify) return;
     uint8_t push = PUSH_CODE_MSG_WAITING;
     sendFrameToApp(&push, 1);   // приложение заберёт сообщение командой 10
+}
+
+// Личное сообщение. В очередь кладётся тем же путём, что и групповое, но с другим видом:
+// приложение ждёт для него кадр с началом ключа собеседника, а не с номером канала. Пока
+// личка приезжала каналом, она показывалась в общей переписке, без отправителя, и
+// «маршрут сообщения» приложению показать было не из чего.
+void companionOnDirectText(const uint8_t* srcPub, const String& text, float snr,
+                           uint8_t pathLen, uint32_t senderTs, uint8_t txtType) {
+    if (msgCount >= MSG_QUEUE_MAX) {   // очередь полна — вытесняем самое старое
+        msgHead = (msgHead + 1) % MSG_QUEUE_MAX;
+        msgCount--;
+    }
+    QueuedMsg& m = msgQueue[(msgHead + msgCount) % MSG_QUEUE_MAX];
+    memset(&m, 0, sizeof(m));
+    m.kind = MSG_KIND_CONTACT;
+    memcpy(m.pub6, srcPub, sizeof(m.pub6));
+    m.txtType = txtType;
+    m.pathLen = pathLen;
+    long s4 = lround(snr * 4.0f);
+    m.snr4 = (int8_t)(s4 < -128 ? -128 : (s4 > 127 ? 127 : s4));
+    // Время — по часам ОТПРАВИТЕЛЯ, как в оригинале: приложение по нему расставляет
+    // сообщения в переписке и отличает повтор от нового.
+    m.ts = senderTs;
+    strlcpy(m.text, text.c_str(), sizeof(m.text));
+    msgCount++;
+    // Контакт слышали — обновляем отметку, чтобы ротация не вытеснила живого собеседника.
+    int idx = contactFindPrefix(srcPub, 6);
+    if (idx >= 0) {
+        contacts[idx].lastmod = (uint32_t)time(NULL);
+        contactTouch();
+    }
+    uint8_t push = PUSH_CODE_MSG_WAITING;
+    sendFrameToApp(&push, 1);   // приложение заберёт сообщение командой 10
+}
+
+// Сырой принятый кадр — приложению. Оригинал (Dispatcher::checkRecv -> logRxRaw) отдаёт
+// ВСЁ, что услышало радио, до дедупа и разбора: по этому потоку приложение видит, что его
+// собственный пакет переиздал ретранслятор, и показывает это в переписке. Длинные кадры
+// оригинал молча пропускает — кадр приложения короче эфирного.
+void mcOnRawRx(const uint8_t* raw, int len, float snr, float rssi) {
+    if (!bleConnected || len <= 0 || len + 3 > MAX_FRAME_SIZE) return;
+    uint8_t buf[MAX_FRAME_SIZE];
+    long s4 = lround(snr * 4.0f);
+    buf[0] = PUSH_CODE_LOG_RX_DATA;
+    buf[1] = (uint8_t)(int8_t)(s4 < -128 ? -128 : (s4 > 127 ? 127 : s4));
+    long r = lround(rssi);
+    buf[2] = (uint8_t)(int8_t)(r < -128 ? -128 : (r > 127 ? 127 : r));
+    memcpy(&buf[3], raw, len);
+    sendFrameToApp(buf, len + 3);
 }
 
 // По одному контакту за проход главного цикла: пачка кадров подряд переполняет
@@ -461,9 +548,38 @@ void companionOnAdvert(const uint8_t* pub, const uint8_t* app, int applen,
     bool isNew = (idx < 0);
     if (isNew) {
         if (contactCount >= COMPANION_MAX_CONTACTS) {
-            idx = 0;                                      // вытесняем самого давнего
-            for (int k = 1; k < contactCount; k++)
-                if (contacts[k].lastmod < contacts[idx].lastmod) idx = k;
+            // РОТАЦИЯ. Память узла кончилась — освобождаем место под новый узел, вытесняя
+            // самый давно не слышанный контакт. Избранные (младший бит флагов, его ставит
+            // само приложение) не трогаем никогда: их владелец отметил руками, и потерять
+            // их из-за случайного адверта прохожего нельзя. Так же устроен оригинал
+            // (BaseChatMesh::allocateContactSlot).
+            idx = -1;
+            uint32_t oldest = 0xFFFFFFFF;
+            for (int k = 0; k < contactCount; k++) {
+                if (contacts[k].flags & 0x01) continue;   // избранный — не вытесняем
+                if (contacts[k].lastmod < oldest) { oldest = contacts[k].lastmod; idx = k; }
+            }
+            if (idx < 0) {
+                // Вытеснять нечего: все контакты избранные. Молчать об этом нельзя —
+                // приложение должно сказать владельцу, что новые узлы больше не
+                // запоминаются, иначе узел просто «перестаёт видеть сеть».
+                Serial.println("[ADV] память контактов полна, все избранные — новый не добавлен");
+                if (blePaired) {
+                    uint8_t full = PUSH_CODE_CONTACTS_FULL;
+                    sendFrameToApp(&full, 1);
+                }
+                return;
+            }
+            Serial.printf("[ADV] вытеснен контакт <%02X> %s (не слышали дольше всех)\n",
+                          contacts[idx].pub[0], contacts[idx].name);
+            if (blePaired) {
+                // Приложение держит свою копию списка: без этого кадра оно продолжало бы
+                // показывать контакт, которого на узле уже нет, и слать ему сообщения.
+                uint8_t del[1 + 32];
+                del[0] = PUSH_CODE_CONTACT_DELETED;
+                memcpy(&del[1], contacts[idx].pub, 32);
+                sendFrameToApp(del, sizeof(del));
+            }
         } else {
             idx = contactCount++;
         }

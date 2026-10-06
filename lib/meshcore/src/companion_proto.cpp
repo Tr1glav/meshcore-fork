@@ -391,17 +391,22 @@ static void handleFrame(const uint8_t* f, size_t len) {
             break;
         }
         QueuedMsg& m = msgQueue[msgHead];
+        const bool dm = (m.kind == MSG_KIND_CONTACT);
         // До версии 3 приложение не понимает полей качества связи — шлём короткий кадр
         if (appVer >= 3) {
-            out[i++] = RESP_CODE_CHANNEL_MSG_RECV_V3;
+            out[i++] = dm ? RESP_CODE_CONTACT_MSG_RECV_V3 : RESP_CODE_CHANNEL_MSG_RECV_V3;
             out[i++] = (uint8_t)m.snr4;
             out[i++] = 0; out[i++] = 0;      // зарезервировано
         } else {
-            out[i++] = RESP_CODE_CHANNEL_MSG_RECV;
+            out[i++] = dm ? RESP_CODE_CONTACT_MSG_RECV : RESP_CODE_CHANNEL_MSG_RECV;
         }
-        out[i++] = m.channelIdx;
+        // Личку приложение раскладывает по переписке с конкретным узлом, и узнаёт его по
+        // началу ключа — шести байтам. Групповое отличается от неё только этим полем:
+        // вместо ключа номер канала.
+        if (dm) { memcpy(&out[i], m.pub6, 6); i += 6; }
+        else    { out[i++] = m.channelIdx; }
         out[i++] = m.pathLen;
-        out[i++] = 0;                        // тип текста: обычный
+        out[i++] = m.txtType;
         memcpy(&out[i], &m.ts, 4); i += 4;
         // Текст занимает хвост кадра целиком, поэтому копируется с пределом: putTextBounded
         // не даёт длинному сообщению дописать себя поверх следующего кадра. Предел здесь

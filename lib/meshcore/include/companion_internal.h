@@ -44,7 +44,9 @@
 #define RESP_CODE_NO_MORE_MESSAGES 10
 #define RESP_CODE_BATT_AND_STORAGE 12
 #define RESP_CODE_DEVICE_INFO      13
+#define RESP_CODE_CONTACT_MSG_RECV 7    // личка, формат для приложений до версии 3
 #define RESP_CODE_CHANNEL_MSG_RECV 8    // формат для приложений до версии 3
+#define RESP_CODE_CONTACT_MSG_RECV_V3 16
 #define RESP_CODE_CHANNEL_MSG_RECV_V3 17
 #define RESP_CODE_CHANNEL_INFO     18
 #define RESP_CODE_ADVERT_PATH      22
@@ -53,7 +55,10 @@
 #define PUSH_CODE_PATH_UPDATED   0x81    // маршрут к контакту изменился — перезапросить командой 42
 #define PUSH_CODE_SEND_CONFIRMED 0x82    // наше сообщение доставлено: [хэш 4][время в пути 4]
 #define PUSH_CODE_MSG_WAITING    0x83
+#define PUSH_CODE_LOG_RX_DATA    0x88    // сырой принятый кадр: [SNR*4][RSSI][кадр]
 #define PUSH_CODE_NEW_ADVERT     0x8A    // узел услышан впервые, кадр целиком
+#define PUSH_CODE_CONTACT_DELETED 0x8F   // контакт вытеснен из памяти узла: [ключ 32]
+#define PUSH_CODE_CONTACTS_FULL  0x90    // места нет и вытеснять нечего (все избранные)
 
 // Кадр ошибки в оригинале — два байта: RESP_CODE_ERR и причина
 #define ERR_CODE_UNSUPPORTED_CMD    1
@@ -81,14 +86,22 @@
 #define NUS_RX      "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"   // приложение -> прошивка
 #define NUS_TX      "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"   // прошивка -> приложение
 
+// Вид сообщения в очереди: приложение забирает их одной командой, но кадры у них разные.
+// Личка несёт начало ключа собеседника, групповое — номер канала.
+enum : uint8_t { MSG_KIND_CHANNEL = 0, MSG_KIND_CONTACT = 1 };
+
 struct QueuedMsg {
-    uint8_t channelIdx;
+    uint8_t kind;               // MSG_KIND_*
+    uint8_t channelIdx;         // для MSG_KIND_CHANNEL
+    uint8_t pub6[6];            // для MSG_KIND_CONTACT: первые шесть байт ключа отправителя
+    uint8_t txtType;            // 0 — обычный текст, 1 — ответ командной строки
     uint8_t pathLen;
     int8_t snr4;          // SNR, умноженный на 4 — так требует протокол
     uint32_t ts;
-    // Столько текста несёт кадр сообщения: MAX_FRAME_SIZE минус 11 байт заголовка.
-    // При 100 байтах длинные сообщения канала обрезались, хотя место в кадре было.
-    char text[MAX_FRAME_SIZE - 11 + 1];
+    // Столько текста несёт кадр сообщения: MAX_FRAME_SIZE минус 16 байт самого длинного
+    // заголовка (кадр лички версии 3). При 100 байтах длинные сообщения канала обрезались,
+    // хотя место в кадре было.
+    char text[MAX_FRAME_SIZE - 16 + 1];
 };
 
 // Запись в NVS откладываем: адверты приходят пачками, а каждая запись во флеш —
