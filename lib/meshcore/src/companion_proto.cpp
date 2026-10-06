@@ -384,6 +384,11 @@ static void handleFrame(const uint8_t* f, size_t len) {
             break;
         }
         uint8_t ch = f[2];
+        // Метка времени приложения из команды. Её же приложение ищет в сыром журнале 0x88,
+        // чтобы показать маршрут собственного сообщения, поэтому в кадр обязана лечь
+        // именно она, а не часы узла (оригинал: MyMesh -> sendGroupMessage(msg_timestamp)).
+        uint32_t chMsgTs = 0;
+        memcpy(&chMsgTs, &f[3], 4);
         // Кадр не оканчивается нулём, поэтому длину текста берём из длины кадра:
         // иначе в сообщение попадал бы мусор, оставшийся в буфере от прошлой команды.
         String text;
@@ -391,7 +396,7 @@ static void handleFrame(const uint8_t* f, size_t len) {
         bool sent = false;
         if (ch < numChannels && text.length() > 0) {
             uint8_t frame[256];
-            int fl = buildGroupFrameFlood(ch, text, frame, sizeof(frame));
+            int fl = buildGroupFrameFlood(ch, text, frame, sizeof(frame), NULL, chMsgTs);
             // См. CMD_SEND_TXT_MSG: ответ приложению не должен ждать эфира.
             if (fl > 0) { floodSendQueued(ch, frame, fl); sent = true; }
         }
