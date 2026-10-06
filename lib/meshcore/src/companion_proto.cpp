@@ -450,26 +450,54 @@ static void handleFrame(const uint8_t* f, size_t len) {
 }
 
 void companionTick() {
-    if (contactIterIdx >= 0 && blePaired) contactsIterStep();
+    // Частая реклама держится ограниченное время: подключения уже не ждут, а объявляться
+    // каждые 30 мс сутками незачем.
+    if (bleAdvFastUntil != 0 && !bleConnected
+        && (long)(millis() - bleAdvFastUntil) >= 0) {
+        bleAdvFast(false);
+    }
+
     if (contactsDirty && millis() - contactsDirtyMs > CONTACTS_SAVE_DELAY_MS) contactsSave();
 
+    // ЗА ОДИН ПРОХОД ОБРАБАТЫВАЕТСЯ НЕСКОЛЬКО КОМАНД, а не ровно одна. Проход главного цикла
+    // занимает до двух секунд (передача ждёт тишины в канале и держит кадр в эфире), а
+    // приложение после подключения шлёт команды десятками: список контактов, каналы,
+    // сообщения. Одна команда за проход превращала синхронизацию в минуты — снаружи это и
+    // есть «компаньон не быстрый».
+    //
+    // Предел по ВРЕМЕНИ, а не по числу команд: команды разной цены, и отдать радио мы обязаны
+    // не позже чем через COMPANION_TICK_BUDGET_MS, иначе отзывчивость приложения куплена
+    // задержкой эфира.
+    const unsigned long started = millis();
     static uint8_t frame[MAX_FRAME_SIZE];
-    uint8_t n = 0;
-    portENTER_CRITICAL(&inMux);
-    if (inCount > 0) {
-        n = inQueueLen[inHead];
-        memcpy(frame, inQueue[inHead], n);
-        inHead = (inHead + 1) % IN_QUEUE_MAX;
-        inCount--;
-    }
-    uint32_t dropped = inDropped;
-    inDropped = 0;
-    portEXIT_CRITICAL(&inMux);
+    for (;;) {
+        uint8_t n = 0;
+        portENTER_CRITICAL(&inMux);
+        if (inCount > 0) {
+            n = inQueueLen[inHead];
+            memcpy(frame, inQueue[inHead], n);
+            inHead = (inHead + 1) % IN_QUEUE_MAX;
+            inCount--;
+        }
+        uint32_t dropped = inDropped;
+        inDropped = 0;
+        portEXIT_CRITICAL(&inMux);
 
-    if (dropped) Serial.printf("[BLE] очередь команд переполнена, потеряно кадров: %u\n", dropped);
-    if (n == 0) return;
-    Serial.printf("[BLE] <- команда %u, %u байт\n", frame[0], (unsigned)n);
-    handleFrame(frame, n);
+        if (dropped) {
+            Serial.printf("[BLE] очередь команд переполнена, потеряно кадров: %u\n", dropped);
+        }
+        if (n == 0) break;
+        Serial.printf("[BLE] <- команда %u, %u байт\n", frame[0], (unsigned)n);
+        handleFrame(frame, n);
+        if ((long)(millis() - started) >= COMPANION_TICK_BUDGET_MS) break;
+    }
+
+    // Список контактов тоже отдаётся порциями, а не по одной записи за проход: у узла в живой
+    // сети их под сотню, и по одной за проход список уезжал к приложению секундами.
+    while (contactIterIdx >= 0 && blePaired
+           && (long)(millis() - started) < COMPANION_TICK_BUDGET_MS) {
+        contactsIterStep();
+    }
 }
 
 #endif // FEATURE_COMPANION

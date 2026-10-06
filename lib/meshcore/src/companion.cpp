@@ -17,7 +17,7 @@
 
 static BLEServer* bleServer = nullptr;
 static BLECharacteristic* txChar = nullptr;
-static volatile bool bleConnected = false;
+volatile bool bleConnected = false;
 static uint32_t blePin = 0;
 // Экран с кодом убираем не по факту соединения, а только когда сопряжение состоялось:
 // код нужен телефону именно в промежутке между подключением и вводом кода.
@@ -237,8 +237,45 @@ class SecCallbacks : public BLESecurityCallbacks {
     }
 };
 
+unsigned long bleAdvFastUntil = 0;
+
+// Переключение режима рекламы. Единицы — по 0.625 мс, поэтому числа выглядят странно:
+// 48 = 30 мс, 96 = 60 мс, 1280 = 800 мс, 1920 = 1200 мс.
+void bleAdvFast(bool fast) {
+    BLEAdvertising* adv = BLEDevice::getAdvertising();
+    if (adv == NULL) return;
+    adv->setMinInterval(fast ? BLE_ADV_FAST_MIN : BLE_ADV_SLOW_MIN);
+    adv->setMaxInterval(fast ? BLE_ADV_FAST_MAX : BLE_ADV_SLOW_MAX);
+    bleAdvFastUntil = fast ? (millis() + BLE_ADV_FAST_MS) : 0;
+    Serial.printf("[BLE] реклама %s\n", fast ? "частая (подключения ждём)" : "редкая");
+}
+
 class SrvCallbacks : public BLEServerCallbacks {
-    void onConnect(BLEServer*) override { bleConnected = true; Serial.println("[BLE] приложение подключилось"); }
+    void onConnect(BLEServer* s, esp_ble_gatts_cb_param_t* p) override {
+        bleConnected = true;
+        bleAdvFastUntil = 0;              // подключились — частить объявлениями незачем
+        Serial.println("[BLE] приложение подключилось");
+        // Просим короткий интервал соединения. Телефон вправе отказать, но без просьбы он
+        // обычно выбирает щадящий для себя: каждый обмен с приложением ждёт следующего
+        // окна связи, и на десятках команд это складывается в заметную вялость.
+        // Единицы — по 1.25 мс: 12 = 15 мс, 24 = 30 мс. Задержка (latency) нулевая: узел
+        // отвечает на каждое окно, иначе экономия телефона превращается в наше ожидание.
+        if (s && p) {
+            s->updateConnParams(p->connect.remote_bda, BLE_CONN_MIN, BLE_CONN_MAX, 0,
+                                BLE_CONN_TIMEOUT);
+        }
+    }
+    // Размер ATT-пакета договаривается телефоном, и от него напрямую зависит, уедет кадр
+    // одним уведомлением или будет нарезан стеком на куски по 20 байт. Своего влияния у нас
+    // тут нет, но знать это надо: «медленно» с кадром в 176 байт и MTU 23 — это девять
+    // пакетов вместо одного, и выяснять такое по догадкам дорого.
+    void onMtuChanged(BLEServer*, esp_ble_gatts_cb_param_t* p) override {
+        if (p == NULL) return;
+        const unsigned mtu = p->mtu.mtu;
+        Serial.printf("[BLE] MTU %u: кадр %u Б уедет %s\n", mtu, (unsigned)MAX_FRAME_SIZE,
+                      (mtu >= MAX_FRAME_SIZE + 3) ? "одним уведомлением"
+                                                  : "кусками — приложение будет ждать");
+    }
     void onDisconnect(BLEServer* s) override {
         bleConnected = false;
         blePaired = false;
@@ -246,6 +283,8 @@ class SrvCallbacks : public BLEServerCallbacks {
         // без начального кадра, и приложение примет обрывок за весь список.
         contactIterIdx = -1;
         Serial.println("[BLE] приложение отключилось");
+        // Отключились — значит подключатся снова, и ждать этого надо быстро.
+        bleAdvFast(true);
         s->startAdvertising();
     }
 };
@@ -329,11 +368,17 @@ void companionBegin() {
     BLEAdvertising* adv = BLEDevice::getAdvertising();
     adv->addServiceUUID(NUS_SERVICE);
     adv->setScanResponse(true);
-    // Интервал рекламы в единицах по 0.625 мс: 800–1200 мс вместо частого объявления.
-    // Телефон всё равно находит устройство за пару секунд, а радио большую часть
-    // времени молчит — на аккумуляторе это несколько миллиампер разницы.
-    adv->setMinInterval(1280);
-    adv->setMaxInterval(1920);
+    // Реклама объявляется ЧАСТО, пока подключения ждут, и редко — потом. Раньше здесь стоял
+    // один редкий интервал (800–1200 мс) с рассуждением «телефон всё равно найдёт за пару
+    // секунд, зато радио молчит». Пара секунд и оказалась тем, что видно глазами: телефон
+    // ловит объявление не сразу, его окно сканирования короче интервала, и ожидание выходит
+    // кратным этому интервалу.
+    //
+    // Поэтому два режима. Сразу после запуска и после каждого отключения — быстрый, на
+    // BLE_ADV_FAST_MS; дальше, если никто не подключился, переходим на редкий. Экономия
+    // сохраняется там, где она и была нужна (узел работает сутками без телефона), а
+    // подключение перестаёт ждать.
+    bleAdvFast(true);
     BLEDevice::startAdvertising();
     Serial.printf("[BLE] компаньон «%s» ждёт подключения, код сопряжения %u\n",
                   name.c_str(), blePin);
