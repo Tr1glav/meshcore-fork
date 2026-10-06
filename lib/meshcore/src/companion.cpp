@@ -446,7 +446,7 @@ uint32_t companionBlePin() { return blePin; }
 bool companionBleLinked() { return blePaired; }
 
 void companionOnChannelText(int channelIdx, const String& text, float snr, uint8_t pathLen,
-                            bool notify) {
+                            uint32_t senderTs, bool notify) {
     if (msgCount >= MSG_QUEUE_MAX) {   // очередь полна — вытесняем самое старое
         msgHead = (msgHead + 1) % MSG_QUEUE_MAX;
         msgCount--;
@@ -458,7 +458,11 @@ void companionOnChannelText(int channelIdx, const String& text, float snr, uint8
     m.pathLen = pathLen;
     long s4 = lround(snr * 4.0f);
     m.snr4 = (int8_t)(s4 < -128 ? -128 : (s4 > 127 ? 127 : s4));
-    m.ts = (uint32_t)time(NULL);
+    // Время — по часам ОТПРАВИТЕЛЯ из открытого текста кадра, как в оригинале: приложение
+    // сопоставляет сообщение с сырым журналом 0x88 именно по этой метке (там оно
+    // расшифровывает кадр САМО). Время приёма для отправителя с другими часами не
+    // совпадёт, и «маршрут сообщения» приложению показать будет не по чему.
+    m.ts = senderTs;
     if (text.length() >= sizeof(m.text))
         Serial.printf("[BLE] сообщение обрезано: %u -> %u байт\n",
                       text.length(), (unsigned)sizeof(m.text) - 1);
