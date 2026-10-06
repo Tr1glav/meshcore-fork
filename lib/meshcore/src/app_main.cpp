@@ -58,9 +58,11 @@ void appSetup() {
     // ===== ПИТАНИЕ ПЕРИФЕРИИ (VEXT) =====
     // Включается на любой плате, где задан PIN_VEXT_EN — даже без дисплея: на части
     // плат этот же пин питает и LoRa-модуль.
+    // Через vextApply, а не напрямую: у плат, где этот пин питает ВСЮ плату (T-Deck,
+    // GPIO10 BOARD_POWERON), настройка vext=0 погасила бы узел целиком — защита живёт
+    // внутри, одна на старт и на команду «cfg vext».
+    vextApply(cfg.vextOn);
     #if defined(VEXT_PIN)
-    pinMode(VEXT_PIN, OUTPUT);
-    digitalWrite(VEXT_PIN, cfg.vextOn ? HIGH : LOW);
     delay(300);
     #endif
     
