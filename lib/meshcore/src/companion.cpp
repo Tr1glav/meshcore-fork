@@ -445,6 +445,21 @@ void companionBegin() {
 uint32_t companionBlePin() { return blePin; }
 bool companionBleLinked() { return blePaired; }
 
+// Метка времени сообщения, как её увидит приложение. Печатается при постановке в очередь:
+// приложение показывает ИМЕННО эту метку (она же — ключ поиска кадра в сыром журнале
+// 0x88, по которому рисуется маршрут), и когда в переписке стоит не то время, по строке
+// видно сразу, чьи часы врут — отправителя или наши.
+static void logMsgTs(const char* what, uint32_t ts) {
+    time_t local = (time_t)ts + (time_t)cfg.tzOffset * 3600;
+    struct tm tm_now;
+    gmtime_r(&local, &tm_now);
+    char buf[24];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_now);
+    const uint32_t now = (uint32_t)time(NULL);
+    const long diff = (long)ts - (long)now;
+    Serial.printf("[BLE] %s: метка %s (наши часы расходятся на %ld с)\n", what, buf, diff);
+}
+
 void companionOnChannelText(int channelIdx, const String& text, float snr, uint8_t pathLen,
                             uint32_t senderTs, bool notify) {
     if (msgCount >= MSG_QUEUE_MAX) {   // очередь полна — вытесняем самое старое
@@ -468,6 +483,7 @@ void companionOnChannelText(int channelIdx, const String& text, float snr, uint8
                       text.length(), (unsigned)sizeof(m.text) - 1);
     strlcpy(m.text, text.c_str(), sizeof(m.text));
     msgCount++;
+    logMsgTs("канал", m.ts);
     // Сигнал «есть новое» рождает в телефоне уведомление. Для того, что устройство
     // отправило само, это уведомление о собственном действии — кладём в очередь молча,
     // и приложение покажет сообщение при ближайшей синхронизации.
@@ -499,6 +515,7 @@ void companionOnDirectText(const uint8_t* srcPub, const String& text, float snr,
     m.ts = senderTs;
     strlcpy(m.text, text.c_str(), sizeof(m.text));
     msgCount++;
+    logMsgTs("личка", m.ts);
     // Контакт слышали — обновляем отметку, чтобы ротация не вытеснила живого собеседника.
     int idx = contactFindPrefix(srcPub, 6);
     if (idx >= 0) {
