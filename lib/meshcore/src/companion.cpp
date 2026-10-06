@@ -289,7 +289,11 @@ void mcOnResponseRecv(uint8_t srcHash, const uint8_t* srcPub, const uint8_t* dat
     memcpy(&tag, data, 4);
     const uint8_t* body = &data[4];
     const int blen = len - 4;
-    uint8_t buf[64];
+    // Кадр приложения по размеру самого большого ответа, а не «с запасом на статистику»:
+    // метрики ретранслятора занимают 56 байт и ровно упираются в 64, а телеметрия узла с
+    // датчиками длиннее — она растёт с каждым показанием. Лишнее всё равно обрезается
+    // ниже, но обрезать телеметрию из-за своего же тесного буфера незачем.
+    uint8_t buf[MAX_FRAME_SIZE];
     int i = 0;
 
     if (pendingLoginUsed && memcmp(pendingLoginPub, srcPub, 4) == 0) {
