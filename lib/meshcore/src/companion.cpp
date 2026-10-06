@@ -533,17 +533,27 @@ void companionOnDirectText(const uint8_t* srcPub, const String& text, float snr,
 void mcOnRawRx(const uint8_t* raw, int len, float snr, float rssi) {
     diagLogRxRecv++;
     // Эхо собственного пакета. У лички (TXT_MSG) и возврата маршрута (PATH) в конверте
-    // после заголовка, пути и адресата стоит короткий хэш ИСТОЧНИКА на байте 3. Когда
-    // такой кадр ловится снова, его переиздал ретранслятор — это и есть событие, по
+    // после заголовка, байта разметки и САМОГО ПУТИ идут адресат и короткий хэш ИСТОЧНИКА.
+    // Когда такой кадр ловится снова, его переиздал ретранслятор — это и есть событие, по
     // которому приложение ставит отметку. У канального кадра хэша источника нет вовсе:
     // своё сообщение в канал этим признаком не увидеть.
+    //
+    // Смещение считается по байту разметки, а не берётся постоянным. Жёсткий байт 3 верен
+    // только для кадра с ПУСТЫМ путём, то есть для нашей собственной передачи, которой мы
+    // не слышим (на передаче приёмник глух). У переизданного кадра ретранслятор дописал в
+    // путь свой хэш, адресат с источником уехали вправо — и детектор не срабатывал ровно
+    // на том единственном случае, ради которого написан.
     if (len >= 4) {
         const uint8_t ptype = (raw[0] >> 2) & 0x0F;
+        const uint8_t pl = raw[1];
+        const uint8_t hops = pl & 0x3F;
+        const uint8_t hsize = ((pl >> 6) & 3) + 1;
+        const int off = 2 + (int)hops * hsize;        // [заголовок][разметка][путь] -> адресат
         if ((ptype == PAYLOAD_TYPE_TXT_MSG || ptype == PAYLOAD_TYPE_PATH)
-            && raw[3] == ownShortHash) {
+            && len >= off + 2 && raw[off + 1] == ownShortHash) {
             diagEchoOwn++;
-            Serial.printf("[DIAG] эхо СВОЕГО кадра (тип %u, src %02X), всего %lu\n",
-                          (unsigned)ptype, raw[3], (unsigned long)diagEchoOwn);
+            Serial.printf("[DIAG] эхо СВОЕГО кадра (тип %u, хопов %u), всего %lu\n",
+                          (unsigned)ptype, (unsigned)hops, (unsigned long)diagEchoOwn);
         }
     }
     if (!bleConnected || len <= 0 || len + 3 > MAX_FRAME_SIZE) {
