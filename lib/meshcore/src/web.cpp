@@ -1,5 +1,6 @@
 #include "config.h"
 #include "globals.h"
+#include "strbuf.h"   // strAppend: позиция, которая не уезжает за буфер
 #include "crypto.h"
 #include "radio.h"
 #include "mesh.h"
@@ -203,23 +204,29 @@ void otaHandleInfo() {
     fmtFix(batteryVoltage(), 2, volt, sizeof(volt));
     // Прошивальщики, которые объявились: их может быть несколько, и страница показывает
     // каждого — по адресу видно, куда смотреть за ходом отданной ему сессии.
+    //
+    // Собираем через strAppend, и это не вкусовщина. Было «at += snprintf(...)», а возврат
+    // snprintf — это сколько БЫ он записал: одна запись тут до полутора сотен байт, проверка
+    // пускала в цикл при at < 240, и при обрезке at уезжал за 320. Дальше `sizeof(sups) - at`
+    // считался в size_t — число под четыре миллиарда, — и закрывающая скобка с нулём
+    // уходили ЗА пределы буфера на стеке. Имена и версии сюда приходят по сети от чужих
+    // узлов, то есть длину подбирает не наш код.
     char sups[320] = "";
     {
-        int at = 0;
-        at += snprintf(sups + at, sizeof(sups) - at, "[");
+        size_t at = strAppend(sups, sizeof(sups), 0, "[");
         bool first = true;
-        for (int i = 0; i < supportCount && at < (int)sizeof(sups) - 80; i++) {
+        for (int i = 0; i < supportCount && at < sizeof(sups) - 80; i++) {
             if (!supportLive(i)) continue;
             char nm[48], sv[24], se[40];
             jsonEscape(supports[i].name.c_str(), nm, sizeof(nm));
             jsonEscape(supports[i].ver.c_str(), sv, sizeof(sv));
             jsonEscape(supports[i].env.c_str(), se, sizeof(se));
-            at += snprintf(sups + at, sizeof(sups) - at,
+            at = strAppend(sups, sizeof(sups), at,
                            "%s{\"n\":\"%s\",\"ip\":\"%s\",\"v\":\"%s\",\"e\":\"%s\"}",
                            first ? "" : ",", nm, supports[i].ip.c_str(), sv, se);
             first = false;
         }
-        snprintf(sups + at, sizeof(sups) - at, "]");
+        strAppend(sups, sizeof(sups), at, "]");
     }
     // Счётчики потерь: в ответ идут только те, что в ЭТОЙ сборке могут стать ненулевыми.
     // Решение принимает ядро (MESH_HAS_* в globals.h), страница его лишь спрашивает — здесь
@@ -227,13 +234,13 @@ void otaHandleInfo() {
     // дойти до статического app.js. Отсутствующее поле скрипт не покажет: он фильтрует по
     // самому значению, а undefined в фильтр не проходит.
     char loss[160];
-    int la = snprintf(loss, sizeof(loss), "\"cadg\":%lu", (unsigned long)cadGiveUps);
+    size_t la = strAppend(loss, sizeof(loss), 0, "\"cadg\":%lu", (unsigned long)cadGiveUps);
 #if MESH_HAS_RELAY_QUEUE
-    la += snprintf(loss + la, sizeof(loss) - la, ",\"rlq\":%lu",
+    la = strAppend(loss, sizeof(loss), la, ",\"rlq\":%lu",
                    (unsigned long)relayQueueDrops);
 #endif
 #if MESH_HAS_REPLY_QUEUE
-    la += snprintf(loss + la, sizeof(loss) - la, ",\"rdr\":%lu,\"rdf\":%lu,\"dmn\":%lu",
+    la = strAppend(loss, sizeof(loss), la, ",\"rdr\":%lu,\"rdf\":%lu,\"dmn\":%lu",
                    (unsigned long)replyDropped, (unsigned long)replyDeferred,
                    (unsigned long)dmNoPubkey);
 #endif
