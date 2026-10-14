@@ -228,7 +228,7 @@ def clear_modem_lines(ser):
     try:
         ser.dtr = False
         ser.rts = False
-    except (OSError, IOError):
+    except OSError:
         pass
 
 
@@ -238,7 +238,7 @@ def reset_board(ser):
         ser.rts = True
         time.sleep(0.1)
         ser.rts = False
-    except (OSError, IOError):
+    except OSError:
         return
     time.sleep(0.2)
     ser.reset_input_buffer()

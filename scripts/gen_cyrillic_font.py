@@ -10,7 +10,7 @@ Usage: python3 scripts/gen_cyrillic_font.py
 """
 
 import os
-import struct
+
 from PIL import Image, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

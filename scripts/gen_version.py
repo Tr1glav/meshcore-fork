@@ -21,12 +21,10 @@ HEADER = os.path.join(PROJECT_DIR, "lib", "meshcore", "include", "build_info.h")
 # под тем же именем, а автообновление и mesh OTA считают узлы актуальными — прошивка другая,
 # версия прежняя. Путь можно задать переменной MESHCORE_CORE, по умолчанию — соседний
 # каталог, тот же, что в lib_deps.
-CORE_DIR = os.path.abspath(os.environ.get("MESHCORE_CORE")
-                           or os.path.join(PROJECT_DIR, os.pardir, "mesh-network-core"))
+CORE_DIR = os.path.abspath(os.environ.get("MESHCORE_CORE") or os.path.join(PROJECT_DIR, os.pardir, "mesh-network-core"))
 if not os.path.isdir(os.path.join(CORE_DIR, "src")):
     # Молча взять хэш без ядра нельзя: получилась бы прошивка с чужим номером версии.
-    sys.exit("[gen_version] ядро протокола не найдено: %s (путь задаётся MESHCORE_CORE)"
-             % CORE_DIR)
+    sys.exit("[gen_version] ядро протокола не найдено: %s (путь задаётся MESHCORE_CORE)" % CORE_DIR)
 
 SOURCE_PATHS = [
     (PROJECT_DIR, "src"),
@@ -112,6 +110,7 @@ if not NO_BUMP_TARGETS & set(COMMAND_LINE_TARGETS):
         build_time = int(time.time())
     write_if_changed(VERSION_FILE, f"{major}.{minor}.{build}\n{current_hash}\n{build_time}\n")
 
+
 def core_ref():
     """Какое ядро попало в сборку: пин из core.ref и то, на чём стоит соседний репозиторий.
 
@@ -127,14 +126,14 @@ def core_ref():
         return ""
     actual = ""
     try:
-        r = subprocess.run(["git", "describe", "--tags", "--always", "--dirty"],
-                           cwd=CORE_DIR, capture_output=True, text=True)
+        r = subprocess.run(
+            ["git", "describe", "--tags", "--always", "--dirty"], cwd=CORE_DIR, capture_output=True, text=True
+        )
         actual = r.stdout.strip()
     except OSError:
         pass
     if actual and actual != pinned:
-        print("[gen_version] ВНИМАНИЕ: ядро в сборке %s, а core.ref пинует %s"
-              % (actual, pinned))
+        print("[gen_version] ВНИМАНИЕ: ядро в сборке %s, а core.ref пинует %s" % (actual, pinned))
     return actual or pinned
 
 
@@ -144,8 +143,9 @@ def current_branch():
     if name:
         return name
     try:
-        r = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                           cwd=PROJECT_DIR, capture_output=True, text=True)
+        r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=PROJECT_DIR, capture_output=True, text=True
+        )
         return r.stdout.strip()
     except OSError:
         return ""
@@ -164,9 +164,11 @@ is_release = os.environ.get("RELEASE") == "1" or current_branch().startswith("re
 if not is_release:
     version += "dev"
 
-write_if_changed(HEADER,
-                 "// Сгенерировано scripts/gen_version.py перед сборкой — не править\n"
-                 "#pragma once\n"
-                 f"#define FW_VERSION \"{version}\"\n"
-                 f"#define BUILD_UNIX_TIME {build_time}UL\n")
+write_if_changed(
+    HEADER,
+    "// Сгенерировано scripts/gen_version.py перед сборкой — не править\n"
+    "#pragma once\n"
+    f'#define FW_VERSION "{version}"\n'
+    f"#define BUILD_UNIX_TIME {build_time}UL\n",
+)
 print(f"[gen_version] FW_VERSION = {version} (src {current_hash}, ядро {core_ref() or '?'})")

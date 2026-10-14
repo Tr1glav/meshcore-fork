@@ -73,6 +73,23 @@ jobs:
       - name: Установка PlatformIO
         run: pip install --upgrade platformio
 
+      # Линтинг до сборки: форматирование C++/Python и синтаксис Python.
+      # clang-tidy нужен compile_commands.json — он появляется после pio run, поэтому ниже.
+      - name: Установка линтеров
+        run: |
+          pip install ruff
+          apt-get update && apt-get install -y clang-format-18
+      - name: C++ format check
+        run: |
+          for f in mesh-network-core/src/*.cpp mesh-network-core/include/*.h \
+                   meshcore-fork/lib/meshcore/src/*.cpp meshcore-fork/lib/meshcore/include/*.h; do
+            clang-format-18 --dry-run --Werror "$f" || { echo "FAIL: $f"; exit 1; }
+          done
+      - name: Python format check
+        run: ruff format --check mesh-network-tools/
+      - name: Python lint
+        run: ruff check mesh-network-tools/
+
       # Проверки на хосте: границы буферов с санитайзерами, формат .otaz, сканер маркера
       # платы, синтаксис страницы. Им нужны g++ и node — на ubuntu-latest они есть.
       - name: Проверки на ПК
@@ -91,6 +108,20 @@ jobs:
         env:
           NOGIT: '1'
         run: pio run
+
+      # clang-tidy после сборки: нужен compile_commands.json, который появляется после pio run.
+      - name: Установка clang-tidy
+        run: apt-get install -y clang-tidy
+      - name: Lint C++ (clang-tidy)
+        run: |
+          if [ -f meshcore-fork/.pio/build/tdeck/compile_commands.json ]; then
+            for f in mesh-network-core/src/*.cpp mesh-network-core/include/*.h \
+                     meshcore-fork/lib/meshcore/src/*.cpp meshcore-fork/lib/meshcore/include/*.h; do
+              clang-tidy -p meshcore-fork/.pio/build/tdeck "$f" 2>&1 || { echo "FAIL: $f"; exit 1; }
+            done
+          else
+            echo "clang-tidy: compile_commands.json not found"
+          fi
 
       - name: Версия из version.txt
         id: ver

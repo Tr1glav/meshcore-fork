@@ -1,9 +1,9 @@
-Import("env")
 import os
 import re
 import shutil
 import struct
 import zlib
+Import("env")
 
 # Сколько последних версий хранить для каждой платы
 KEEP = 3
@@ -80,7 +80,8 @@ def copy_firmware(source, target, env):
     # в Actions, создаётся только при RELEASE=1 — то есть по прямой просьбе пользователя.
     # Что уедет в коммит, ограничено списками FORBIDDEN и ALLOW_NEW в scripts/release.py.
     if os.environ.get("NOGIT") != "1" and os.environ.get("GIT") != "0":
-        import subprocess, sys
+        import subprocess
+        import sys
         script = os.path.join(env.subst("$PROJECT_DIR"), "scripts", "release.py")
         cmd = [sys.executable, script]
         if os.environ.get("RELEASE") == "1":
