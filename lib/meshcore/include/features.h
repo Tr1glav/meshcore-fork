@@ -36,43 +36,43 @@
 // «вторые уши» — существовало ровно там, где собран MQTT. Окружения задают его сами
 // (см. группы [net] и [support] в platformio.ini).
 #ifndef FEATURE_WIFI
-  #define FEATURE_WIFI 0
+#define FEATURE_WIFI 0
 #endif
 
-#ifndef FEATURE_MQTT          // публикация в MQTT и автообнаружение в Home Assistant
-  #define FEATURE_MQTT FEATURE_WIFI
+#ifndef FEATURE_MQTT // публикация в MQTT и автообнаружение в Home Assistant
+#define FEATURE_MQTT FEATURE_WIFI
 #endif
 
-#ifndef FEATURE_WEB           // страница OTA на порту 3232
-  #define FEATURE_WEB FEATURE_WIFI
+#ifndef FEATURE_WEB // страница OTA на порту 3232
+#define FEATURE_WEB FEATURE_WIFI
 #endif
 
-#ifndef FEATURE_AUTOUPDATE    // проверка релизов GitHub и раздача прошивок узлам
-  #define FEATURE_AUTOUPDATE FEATURE_WIFI
+#ifndef FEATURE_AUTOUPDATE // проверка релизов GitHub и раздача прошивок узлам
+#define FEATURE_AUTOUPDATE FEATURE_WIFI
 #endif
 
 // Обновить СЕБЯ из релиза — не то же самое, что раздавать прошивки узлам. Узел-прошивальщик
 // раздаёт по радио, а себя качает по сети: у него есть WiFi, и занимать эфир на сорок
 // секунд ради собственного образа незачем. Поэтому признак отдельный.
 #ifndef FEATURE_SELFUPDATE
-  #define FEATURE_SELFUPDATE FEATURE_AUTOUPDATE
+#define FEATURE_SELFUPDATE FEATURE_AUTOUPDATE
 #endif
 
-#ifndef FEATURE_NTP           // синхронизация часов и рассылка времени узлам
-  #define FEATURE_NTP FEATURE_WIFI
+#ifndef FEATURE_NTP // синхронизация часов и рассылка времени узлам
+#define FEATURE_NTP FEATURE_WIFI
 #endif
 
 // --- прошивка по радио ---
-#ifndef FEATURE_MESH_OTA_SENDER    // сторона, раздающая образ (координатор)
-  #define FEATURE_MESH_OTA_SENDER FEATURE_WIFI
+#ifndef FEATURE_MESH_OTA_SENDER // сторона, раздающая образ (координатор)
+#define FEATURE_MESH_OTA_SENDER FEATURE_WIFI
 #endif
 
-#ifndef FEATURE_MESH_OTA_RECEIVER  // сторона, принимающая образ (узел)
-  #ifdef SENSOR_NODE
-    #define FEATURE_MESH_OTA_RECEIVER 1
-  #else
-    #define FEATURE_MESH_OTA_RECEIVER 0
-  #endif
+#ifndef FEATURE_MESH_OTA_RECEIVER // сторона, принимающая образ (узел)
+#ifdef SENSOR_NODE
+#define FEATURE_MESH_OTA_RECEIVER 1
+#else
+#define FEATURE_MESH_OTA_RECEIVER 0
+#endif
 #endif
 
 // Узел-прошивальщик: берёт на себя сессии OTA вместо координатора. Он стоит там, где
@@ -81,28 +81,28 @@
 // координатора по сети, поэтому ему нужны WiFi и своя страница, но не нужны ни MQTT, ни
 // проверка релизов: решает по-прежнему координатор.
 #ifndef FEATURE_SUPPORT
-  #ifdef SUPPORT_NODE
-    #define FEATURE_SUPPORT 1
-  #else
-    #define FEATURE_SUPPORT 0
-  #endif
+#ifdef SUPPORT_NODE
+#define FEATURE_SUPPORT 1
+#else
+#define FEATURE_SUPPORT 0
+#endif
 #endif
 
 // --- поведение узла ---
-#ifndef FEATURE_SENSOR        // heartbeat, кнопка, проверка связи, настройка по радио
-  #ifdef SENSOR_NODE
-    #define FEATURE_SENSOR 1
-  #else
-    #define FEATURE_SENSOR 0
-  #endif
+#ifndef FEATURE_SENSOR // heartbeat, кнопка, проверка связи, настройка по радио
+#ifdef SENSOR_NODE
+#define FEATURE_SENSOR 1
+#else
+#define FEATURE_SENSOR 0
+#endif
 #endif
 
-#ifndef FEATURE_COMPANION     // BLE и протокол телефонного приложения
-  #ifdef COMPANION_NODE
-    #define FEATURE_COMPANION 1
-  #else
-    #define FEATURE_COMPANION 0
-  #endif
+#ifndef FEATURE_COMPANION // BLE и протокол телефонного приложения
+#ifdef COMPANION_NODE
+#define FEATURE_COMPANION 1
+#else
+#define FEATURE_COMPANION 0
+#endif
 #endif
 
 // --- железо ---
@@ -110,11 +110,11 @@
 // иначе buttonTick каждый проход цикла опрашивал бы пин -1 (digitalRead отдаёт на нём LOW,
 // то есть «кнопка нажата навсегда»).
 #ifndef FEATURE_BUTTON
-  #if BUTTON_PIN >= 0
-    #define FEATURE_BUTTON FEATURE_SENSOR
-  #else
-    #define FEATURE_BUTTON 0
-  #endif
+#if BUTTON_PIN >= 0
+#define FEATURE_BUTTON FEATURE_SENSOR
+#else
+#define FEATURE_BUTTON 0
+#endif
 #endif
 
 // Проверки сочетаний: молча собрать бессмысленную прошивку хуже, чем не собрать вовсе.
@@ -123,42 +123,42 @@
 // по одному на признак: список сетевых признаков разошёлся бы с этим местом при первом же
 // добавлении (автообновление, NTP, self-update), и проверка молча перестала бы что-то ловить.
 #if FEATURE_COMPANION && !FEATURE_SENSOR
-  #error "Компаньон собирается поверх сенсорного узла: нужен FEATURE_SENSOR"
+#error "Компаньон собирается поверх сенсорного узла: нужен FEATURE_SENSOR"
 #endif
 // Код признаков узла лежит под старыми ролевыми флагами (кнопка трогает otaActive и
 // sensorSendMsg, экран — screenTick, компаньон — весь companion.cpp). Без этих проверок
 // признак без своего ролевого флага давал невнятную ошибку линковки вместо внятной здесь.
 #if FEATURE_SENSOR && !defined(SENSOR_NODE)
-  #error "FEATURE_SENSOR требует SENSOR_NODE (задаётся в platformio.ini)"
+#error "FEATURE_SENSOR требует SENSOR_NODE (задаётся в platformio.ini)"
 #endif
 #if FEATURE_BUTTON && !FEATURE_SENSOR
-  #error "FEATURE_BUTTON требует FEATURE_SENSOR: кнопка шлёт сообщения узла"
+#error "FEATURE_BUTTON требует FEATURE_SENSOR: кнопка шлёт сообщения узла"
 #endif
 #if FEATURE_MESH_OTA_RECEIVER && !defined(SENSOR_NODE)
-  #error "FEATURE_MESH_OTA_RECEIVER требует SENSOR_NODE"
+#error "FEATURE_MESH_OTA_RECEIVER требует SENSOR_NODE"
 #endif
 #if FEATURE_SUPPORT && !FEATURE_MESH_OTA_SENDER
-  #error "FEATURE_SUPPORT требует FEATURE_MESH_OTA_SENDER: прошивальщик тем и занят"
+#error "FEATURE_SUPPORT требует FEATURE_MESH_OTA_SENDER: прошивальщик тем и занят"
 #endif
 #if FEATURE_SUPPORT && !FEATURE_WEB
-  #error "FEATURE_SUPPORT требует FEATURE_WEB: образ приходит к нему по сети"
+#error "FEATURE_SUPPORT требует FEATURE_WEB: образ приходит к нему по сети"
 #endif
 #if FEATURE_SUPPORT && !FEATURE_SENSOR
-  #error "FEATURE_SUPPORT требует FEATURE_SENSOR: он отвечает на hello как обычный узел"
+#error "FEATURE_SUPPORT требует FEATURE_SENSOR: он отвечает на hello как обычный узел"
 #endif
 #if FEATURE_COMPANION && !defined(COMPANION_NODE)
-  #error "FEATURE_COMPANION требует COMPANION_NODE"
+#error "FEATURE_COMPANION требует COMPANION_NODE"
 #endif
 #if FEATURE_BUTTON && BUTTON_PIN < 0
-  #error "FEATURE_BUTTON требует -DPIN_USER_BTN: на этой плате кнопки нет"
+#error "FEATURE_BUTTON требует -DPIN_USER_BTN: на этой плате кнопки нет"
 #endif
 // Проверки на несобираемые сочетания: признак включён, а того, на чём он держится, нет.
 #if FEATURE_MQTT && !FEATURE_WIFI
-  #error "FEATURE_MQTT требует FEATURE_WIFI: брокер живёт по сети"
+#error "FEATURE_MQTT требует FEATURE_WIFI: брокер живёт по сети"
 #endif
 #if FEATURE_WEB && !FEATURE_WIFI
-  #error "FEATURE_WEB требует FEATURE_WIFI: страницу отдавать некуда"
+#error "FEATURE_WEB требует FEATURE_WIFI: страницу отдавать некуда"
 #endif
 #if (FEATURE_AUTOUPDATE || FEATURE_SELFUPDATE || FEATURE_NTP) && !FEATURE_WIFI
-  #error "автообновление и NTP требуют FEATURE_WIFI: они ходят в интернет"
+#error "автообновление и NTP требуют FEATURE_WIFI: они ходят в интернет"
 #endif

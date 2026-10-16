@@ -34,8 +34,8 @@ void coordinatorTasksTick() {
             if (sensorOnlineNow[i] && millis() - sensorLastActive[i] > SENSOR_OFFLINE_MS) {
                 sensorOnlineNow[i] = false;
                 publishSensorAvailability(i);
-                Serial.printf("[SNS] %s OFFLINE (no data for %lus)\n",
-                              sensorDeviceDisc[i].c_str(), (unsigned long)(SENSOR_OFFLINE_MS / 1000));
+                Serial.printf("[SNS] %s OFFLINE (no data for %lus)\n", sensorDeviceDisc[i].c_str(),
+                              (unsigned long)(SENSOR_OFFLINE_MS / 1000));
             }
         }
     }
@@ -49,8 +49,7 @@ void coordinatorTasksTick() {
     // ===== Первая успешная синхронизация SNTP: лог + сразу рассылка времени сенсорам =====
     // Отслеживаем статус lwIP SNTP (SNTP_SYNC_STATUS_COMPLETED), а не сдвиг часов:
     // при свежем билде реальное время может лишь на минуты отличаться от build-time.
-    if (ntpStarted && !ntpSyncedLogged &&
-        sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
+    if (ntpStarted && !ntpSyncedLogged && sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
         ntpSyncedLogged = true;
         time_t local = time(NULL) + (time_t)cfg.tzOffset * 3600;
         struct tm tm_now;
@@ -72,24 +71,24 @@ void coordinatorTasksTick() {
         lastSensorTimeSyncMs = millis();
         sendSensorTimeSync();
     }
-#endif // FEATURE_NTP
-    fwUpdateTick();   // новые версии из релизов GitHub
-    // Служебного обмена с прошивальщиком здесь нет вовсе: он отмечается у координатора сам,
-    // по сети (POST /support, supportPingTick в support.cpp). Раньше в этом месте стояло
-    // объявление "coord:<ip>" в сенсорный канал каждые 45 секунд — служебный адрес занимал
-    // эфир в тринадцать раз чаще, чем heartbeat самих узлов.
-    #if FEATURE_WEB
-    webTick();        // очередь настроек узла: по одному сообщению раз в CFG_MSG_GAP_MS
-    #endif
+#endif              // FEATURE_NTP
+    fwUpdateTick(); // новые версии из релизов GitHub
+// Служебного обмена с прошивальщиком здесь нет вовсе: он отмечается у координатора сам,
+// по сети (POST /support, supportPingTick в support.cpp). Раньше в этом месте стояло
+// объявление "coord:<ip>" в сенсорный канал каждые 45 секунд — служебный адрес занимал
+// эфир в тринадцать раз чаще, чем heartbeat самих узлов.
+#if FEATURE_WEB
+    webTick(); // очередь настроек узла: по одному сообщению раз в CFG_MSG_GAP_MS
+#endif
 
-    // Оба сброса — про топики Home Assistant, поэтому под признаком брокера: у кого его нет,
-    // тому и обнулять нечего.
-    #if FEATURE_MQTT
+// Оба сброса — про топики Home Assistant, поэтому под признаком брокера: у кого его нет,
+// тому и обнулять нечего.
+#if FEATURE_MQTT
     // ===== Сброс lastmsg после паузы (чтобы повторный одинаковый текст триггерил HA) =====
     clearLastMsg();
     // ===== Сброс text-топика после триггера "button" (повторное нажатие = новый state_changed) =====
     clearSensorBtnText();
-    #endif
+#endif
 }
 
 #endif

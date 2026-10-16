@@ -24,7 +24,7 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 #include "net.h"
-#include "mqtt.h"     // wifiConnected: сеть нужна и для передачи образа
+#include "mqtt.h" // wifiConnected: сеть нужна и для передачи образа
 
 extern "C" {
 #include "esp32s3/rom/miniz.h"
@@ -60,7 +60,8 @@ extern volatile uint32_t supJobTotal;
 // Есть ли в сети хоть один живой прошивальщик.
 bool supportPresent() {
     for (int i = 0; i < supportCount; i++)
-        if (supportLive(i)) return true;
+        if (supportLive(i))
+            return true;
     return false;
 }
 
@@ -69,15 +70,18 @@ bool supportPresent() {
 // во время неё прошивальщик намеренно не трогает сеть и отметок не шлёт, а сессия идёт
 // дольше, чем срок годности записи. Координатор решал, что ведущий пропал, ровно пока тот
 // спокойно шил узел.
-static void supportSeenByIp(const String& ip) {
+static void supportSeenByIp(const String &ip) {
     for (int i = 0; i < supportCount; i++)
-        if (supports[i].ip == ip) { supports[i].seenMs = millis(); return; }
+        if (supports[i].ip == ip) {
+            supports[i].seenMs = millis();
+            return;
+        }
 }
 
 // Адрес по имени: ведущего сессии страница знает по имени (otaDelegate), а стучаться надо
 // по адресу. Срок годности записи здесь не спрашиваем намеренно: пока сессия передана, нам
 // важно дозвониться до ведущего, а «жив ли он» ответит сам запрос — и ответит точнее.
-static String supportIpOf(const String& name) {
+static String supportIpOf(const String &name) {
     const int i = supportFind(name);
     return (i >= 0) ? supports[i].ip : String("");
 }
@@ -98,23 +102,29 @@ static String apiHdr() {
     return cfg.apiKey.length() ? String("X-API-Key: ") + cfg.apiKey + "\r\n" : String("");
 }
 
-static bool supReadResponse(WiFiClient& c, uint32_t waitMs, String* body, size_t bodyMax,
-                            bool* answered = nullptr) {
+static bool supReadResponse(WiFiClient &c, uint32_t waitMs, String *body, size_t bodyMax, bool *answered = nullptr) {
     const unsigned long deadline = millis() + waitMs;
-    while (!c.available() && (long)(millis() - deadline) < 0) delay(10);
+    while (!c.available() && (long)(millis() - deadline) < 0)
+        delay(10);
     String status = c.readStringUntil('\n');
-    if (answered) *answered = status.length() > 0;
+    if (answered)
+        *answered = status.length() > 0;
     // Заголовки пропускаем: нас интересует только код ответа и тело
     while ((c.connected() || c.available()) && (long)(millis() - deadline) < 0) {
         String line = c.readStringUntil('\n');
-        if (line.length() <= 1) break;          // пустая строка — конец заголовков
+        if (line.length() <= 1)
+            break; // пустая строка — конец заголовков
     }
     if (body) {
         body->reserve(256);
-        while ((c.connected() || c.available()) && body->length() < bodyMax &&
-               (long)(millis() - deadline) < 0) {
+        while ((c.connected() || c.available()) && body->length() < bodyMax && (long)(millis() - deadline) < 0) {
             int ch = c.read();
-            if (ch < 0) { if (!c.connected()) break; delay(1); continue; }
+            if (ch < 0) {
+                if (!c.connected())
+                    break;
+                delay(1);
+                continue;
+            }
             *body += (char)ch;
         }
     }
@@ -123,15 +133,14 @@ static bool supReadResponse(WiFiClient& c, uint32_t waitMs, String* body, size_t
 
 // Один запрос и ответ строкой. Тело ответа нужно целиком только для /sensors — он
 // короткий (имена узлов), поэтому ограничиваем и его, и время ожидания.
-static bool supportRequest(const String& ip, const String& req, String* body,
-                           size_t bodyMax = 2048,
-                           uint32_t waitMs = SUPPORT_HTTP_TIMEOUT_MS,
-                           uint32_t connectMs = SUPPORT_CONNECT_MS) {
+static bool supportRequest(const String &ip, const String &req, String *body, size_t bodyMax = 2048,
+                           uint32_t waitMs = SUPPORT_HTTP_TIMEOUT_MS, uint32_t connectMs = SUPPORT_CONNECT_MS) {
     // О недоступности — один раз, а не на каждую попытку: отметка уходит раз в десять секунд,
     // и при выключенном соседе журнал состоял бы из одной этой строки.
     static bool wasDown = false;
     WiFiClient c;
-    if (ip.length() < 7) return false;
+    if (ip.length() < 7)
+        return false;
     if (!c.connect(ip.c_str(), SUPPORT_PORT, connectMs)) {
         if (!wasDown) {
             wasDown = true;
@@ -147,7 +156,8 @@ static bool supportRequest(const String& ip, const String& req, String* body,
     c.print(req);
     bool ok = supReadResponse(c, waitMs, body, bodyMax);
     c.stop();
-    if (ok) supportSeenByIp(ip);
+    if (ok)
+        supportSeenByIp(ip);
     return ok;
 }
 
@@ -157,20 +167,25 @@ static bool supportRequest(const String& ip, const String& req, String* body,
 //
 // Разбор подстрокой, а не разбором JSON: ответ свой, формат известен, а тащить парсер
 // ради двух полей незачем — так же разобраны и остальные ответы в этом проекте.
-static int supportHopsTo(int idx, const String& target) {
-    if (!supportLive(idx)) return -1;
+static int supportHopsTo(int idx, const String &target) {
+    if (!supportLive(idx))
+        return -1;
     String body;
-    String req = String("GET /sensors HTTP/1.1\r\nHost: ") + supports[idx].ip +
-                 "\r\n" + apiHdr() + "Connection: close\r\n\r\n";
-    if (!supportRequest(supports[idx].ip, req, &body, 4096, SUPPORT_SHORT_MS)) return -1;
+    String req =
+        String("GET /sensors HTTP/1.1\r\nHost: ") + supports[idx].ip + "\r\n" + apiHdr() + "Connection: close\r\n\r\n";
+    if (!supportRequest(supports[idx].ip, req, &body, 4096, SUPPORT_SHORT_MS))
+        return -1;
 
     String key = String("\"name\":\"") + target + "\"";
     int at = body.indexOf(key);
-    if (at < 0) return -1;                      // прошивальщик такого узла не знает
+    if (at < 0)
+        return -1; // прошивальщик такого узла не знает
     int end = body.indexOf('}', at);
-    if (end < 0) end = body.length();
+    if (end < 0)
+        end = body.length();
     int hopsAt = body.indexOf("\"hops\":", at);
-    if (hopsAt < 0 || hopsAt > end) return -1;
+    if (hopsAt < 0 || hopsAt > end)
+        return -1;
     return body.substring(hopsAt + 7, end).toInt();
 }
 
@@ -181,22 +196,27 @@ static int supportHopsTo(int idx, const String& target) {
 // Предпочитаем того, кто цель слышит: спросить дёшево (один короткий запрос), а вести сессию
 // лучше тому, до кого ближе. Никто не слышит — берём первого живого: доставку всё равно
 // обеспечивают ретрансляторы, а смысл передачи в том, чтобы координатор остался свободен.
-int supportIndexForAny(const String& target) {
+int supportIndexForAny(const String &target) {
     int any = -1;
     for (int i = 0; i < supportCount; i++) {
-        if (!supportLive(i)) continue;
-        if (supports[i].name == target) continue;   // себя он не прошьёт
-        if (any < 0) any = i;
+        if (!supportLive(i))
+            continue;
+        if (supports[i].name == target)
+            continue; // себя он не прошьёт
+        if (any < 0)
+            any = i;
         const int hops = supportHopsTo(i, target);
         if (hops >= 0) {
-            slog("[SUP] медленную сессию к '%s' поведёт %s (%d хоп(ов))\n",
-                 target.c_str(), supports[i].name.c_str(), hops);
+            slog("[SUP] медленную сессию к '%s' поведёт %s (%d хоп(ов))\n", target.c_str(), supports[i].name.c_str(),
+                 hops);
             return i;
         }
     }
     if (any >= 0)
-        slog("[SUP] медленную сессию к '%s' поведёт %s (цель он не слышит — доставят "
-             "ретрансляторы)\n", target.c_str(), supports[any].name.c_str());
+        slog(
+            "[SUP] медленную сессию к '%s' поведёт %s (цель он не слышит — доставят "
+            "ретрансляторы)\n",
+            target.c_str(), supports[any].name.c_str());
     return any;
 }
 
@@ -206,19 +226,25 @@ int supportIndexForAny(const String& target) {
 //
 // Порог общий с ядром (otaHopsReachable): дальше него сессия обречена, и такого ведущего
 // мы не берём. Цена выбора — по одному короткому запросу на живого прошивальщика.
-int supportIndexFor(const String& target) {
+int supportIndexFor(const String &target) {
     int best = -1, bestHops = 0;
     for (int i = 0; i < supportCount; i++) {
-        if (!supportLive(i)) continue;
-        if (supports[i].name == target) continue;   // себя он не прошьёт
+        if (!supportLive(i))
+            continue;
+        if (supports[i].name == target)
+            continue; // себя он не прошьёт
         const int hops = supportHopsTo(i, target);
-        if (hops < 0 || !otaHopsReachable((uint8_t)hops)) continue;
-        if (best < 0 || hops < bestHops) { best = i; bestHops = hops; }
-        if (bestHops == 0) break;                   // ближе прямой слышимости не бывает
+        if (hops < 0 || !otaHopsReachable((uint8_t)hops))
+            continue;
+        if (best < 0 || hops < bestHops) {
+            best = i;
+            bestHops = hops;
+        }
+        if (bestHops == 0)
+            break; // ближе прямой слышимости не бывает
     }
     if (best >= 0)
-        slog("[SUP] сессию к '%s' поведёт %s (%d хоп(ов))\n",
-             target.c_str(), supports[best].name.c_str(), bestHops);
+        slog("[SUP] сессию к '%s' поведёт %s (%d хоп(ов))\n", target.c_str(), supports[best].name.c_str(), bestHops);
     return best;
 }
 
@@ -233,11 +259,15 @@ int supportIndexFor(const String& target) {
 // Длина тела известна заранее — распакованный размер записан в заголовке .otaz, — поэтому
 // Content-Length считается без обмана.
 bool supportFlashSelf(int idx) {
-    if (!supportLive(idx)) return false;
+    if (!supportLive(idx))
+        return false;
     const String ip = supports[idx].ip;
 
     File f = LittleFS.open("/ota.bin", "r");
-    if (!f) { slog("[SUP] /ota.bin не открылся\n"); return false; }
+    if (!f) {
+        slog("[SUP] /ota.bin не открылся\n");
+        return false;
+    }
     uint8_t hdr[OTA_Z_HDR];
     uint32_t imgSize = 0;
     if ((uint32_t)f.size() <= OTA_Z_HDR || f.read(hdr, OTA_Z_HDR) != (size_t)OTA_Z_HDR ||
@@ -247,19 +277,25 @@ bool supportFlashSelf(int idx) {
         return false;
     }
     memcpy(&imgSize, hdr + 4, 4);
-    if (imgSize == 0) { f.close(); return false; }
+    if (imgSize == 0) {
+        f.close();
+        return false;
+    }
     supJobTotal = imgSize;
     supJobSent = 0;
 
-    tinfl_decompressor* inf = (tinfl_decompressor*)malloc(sizeof(tinfl_decompressor));
-    uint8_t* dict = (uint8_t*)malloc(TINFL_LZ_DICT_SIZE);
-    uint8_t* chunk = (uint8_t*)malloc(1024);
+    tinfl_decompressor *inf = (tinfl_decompressor *)malloc(sizeof(tinfl_decompressor));
+    uint8_t *dict = (uint8_t *)malloc(TINFL_LZ_DICT_SIZE);
+    uint8_t *chunk = (uint8_t *)malloc(1024);
     bool ok = false;
     uint32_t sent = 0;
     size_t dictOfs = 0;
     WiFiClient c;
 
-    if (!inf || !dict || !chunk) { slog("[SUP] не хватило памяти на распаковку\n"); goto done; }
+    if (!inf || !dict || !chunk) {
+        slog("[SUP] не хватило памяти на распаковку\n");
+        goto done;
+    }
     tinfl_init(inf);
 
     if (!c.connect(ip.c_str(), SUPPORT_PORT, SUPPORT_CONNECT_MS)) {
@@ -268,49 +304,61 @@ bool supportFlashSelf(int idx) {
     }
     c.setTimeout(SUPPORT_HTTP_TIMEOUT_MS / 1000);
     {
-        const char* BND = "----meshcoreself";
-        String head = String("--") + BND + "\r\n"
+        const char *BND = "----meshcoreself";
+        String head = String("--") + BND +
+                      "\r\n"
                       "Content-Disposition: form-data; name=\"fw\"; filename=\"fw.bin\"\r\n"
                       "Content-Type: application/octet-stream\r\n\r\n";
         String tail = String("\r\n--") + BND + "--\r\n";
-        c.print(String("POST /update HTTP/1.1\r\nHost: ") + ip +
-                "\r\n" + apiHdr() +
-                "Content-Type: multipart/form-data; boundary=" + BND +
-                "\r\nContent-Length: " + String(head.length() + imgSize + tail.length()) +
-                "\r\nConnection: close\r\n\r\n");
+        c.print(String("POST /update HTTP/1.1\r\nHost: ") + ip + "\r\n" + apiHdr() +
+                "Content-Type: multipart/form-data; boundary=" + BND + "\r\nContent-Length: " +
+                String(head.length() + imgSize + tail.length()) + "\r\nConnection: close\r\n\r\n");
         c.print(head);
 
         bool last = false;
         while (!last && sent < imgSize) {
             int got = f.read(chunk, 1024);
-            if (got <= 0) break;
+            if (got <= 0)
+                break;
             last = (f.position() >= f.size());
-            const uint8_t* p = chunk;
+            const uint8_t *p = chunk;
             size_t avail = (size_t)got;
             for (;;) {
                 size_t inBytes = avail;
                 size_t outBytes = TINFL_LZ_DICT_SIZE - dictOfs;
-                tinfl_status st = tinfl_decompress(inf, p, &inBytes, dict, dict + dictOfs,
-                                                   &outBytes,
-                                                   TINFL_FLAG_PARSE_ZLIB_HEADER |
-                                                   (last ? 0 : TINFL_FLAG_HAS_MORE_INPUT));
+                tinfl_status st =
+                    tinfl_decompress(inf, p, &inBytes, dict, dict + dictOfs, &outBytes,
+                                     TINFL_FLAG_PARSE_ZLIB_HEADER | (last ? 0 : TINFL_FLAG_HAS_MORE_INPUT));
                 p += inBytes;
                 avail -= inBytes;
                 if (outBytes) {
                     // Распаковщик может выдать больше объявленного: последний блок он
                     // дополняет. Лишнее в тело не пишем, иначе разъедется Content-Length.
                     size_t take = outBytes;
-                    if (sent + take > imgSize) take = imgSize - sent;
-                    if (take && c.write(dict + dictOfs, take) != take) { sent = 0; break; }
+                    if (sent + take > imgSize)
+                        take = imgSize - sent;
+                    if (take && c.write(dict + dictOfs, take) != take) {
+                        sent = 0;
+                        break;
+                    }
                     sent += take;
                     supJobSent = sent;
                     dictOfs = (dictOfs + outBytes) & (TINFL_LZ_DICT_SIZE - 1);
                 }
-                if (st < 0) { slog("[SUP] образ не распаковался (%d)\n", (int)st); sent = 0; break; }
-                if (st == TINFL_STATUS_DONE) { last = true; break; }
-                if (avail == 0 && st != TINFL_STATUS_HAS_MORE_OUTPUT) break;
+                if (st < 0) {
+                    slog("[SUP] образ не распаковался (%d)\n", (int)st);
+                    sent = 0;
+                    break;
+                }
+                if (st == TINFL_STATUS_DONE) {
+                    last = true;
+                    break;
+                }
+                if (avail == 0 && st != TINFL_STATUS_HAS_MORE_OUTPUT)
+                    break;
             }
-            if (sent == 0) break;
+            if (sent == 0)
+                break;
         }
         c.print(tail);
 
@@ -330,7 +378,8 @@ bool supportFlashSelf(int idx) {
                 ok = true;
             } else {
                 ok = got200 && body.indexOf("FAIL") < 0;
-                if (!ok) slog("[SUP] прошивальщик отказал: %s\n", body.c_str());
+                if (!ok)
+                    slog("[SUP] прошивальщик отказал: %s\n", body.c_str());
             }
         }
     }
@@ -338,10 +387,13 @@ bool supportFlashSelf(int idx) {
 
 done:
     f.close();
-    free(inf); free(dict); free(chunk);
-    if (ok) slog("[SUP] %s прошит по сети (%u байт)\n", supports[idx].name.c_str(), (unsigned)sent);
-    else if (sent != imgSize) slog("[SUP] передано %u из %u байт\n",
-                                   (unsigned)sent, (unsigned)imgSize);
+    free(inf);
+    free(dict);
+    free(chunk);
+    if (ok)
+        slog("[SUP] %s прошит по сети (%u байт)\n", supports[idx].name.c_str(), (unsigned)sent);
+    else if (sent != imgSize)
+        slog("[SUP] передано %u из %u байт\n", (unsigned)sent, (unsigned)imgSize);
     return ok;
 }
 
@@ -358,7 +410,7 @@ done:
 // Теперь ответ забирается раз в секунду из главного цикла и кладётся в кэш, а обработчик
 // только читает кэш. И промах больше не означает «ведущий пропал»: он занят сессией, чанки
 // уходят каждые сорок миллисекунд, и не ответить один раз для него нормально.
-#define SUPPORT_STATUS_POLL_MS  1000
+#define SUPPORT_STATUS_POLL_MS 1000
 #define SUPPORT_STATUS_FAILS_MAX 5
 
 static String supStatusJson;
@@ -372,7 +424,8 @@ void supportStatusTick() {
         supStatusMs = 0;
         return;
     }
-    if (supStatusMs != 0 && millis() - supStatusMs < SUPPORT_STATUS_POLL_MS) return;
+    if (supStatusMs != 0 && millis() - supStatusMs < SUPPORT_STATUS_POLL_MS)
+        return;
     supStatusMs = millis();
     String out;
     if (supportStatus(out)) {
@@ -381,14 +434,16 @@ void supportStatusTick() {
     } else if (supStatusFails < 0xFF) {
         supStatusFails++;
         if (supStatusFails == SUPPORT_STATUS_FAILS_MAX)
-            slog("[SUP] %s не отвечает %d раз подряд — сессию больше не показываем\n",
-                 otaDelegate.c_str(), (int)SUPPORT_STATUS_FAILS_MAX);
+            slog("[SUP] %s не отвечает %d раз подряд — сессию больше не показываем\n", otaDelegate.c_str(),
+                 (int)SUPPORT_STATUS_FAILS_MAX);
     }
 }
 
-int supportStatusCached(String& out) {
-    if (supStatusFails >= SUPPORT_STATUS_FAILS_MAX) return -1;   // молчит слишком долго
-    if (supStatusJson.length() == 0) return 0;                   // ещё не спрашивали
+int supportStatusCached(String &out) {
+    if (supStatusFails >= SUPPORT_STATUS_FAILS_MAX)
+        return -1; // молчит слишком долго
+    if (supStatusJson.length() == 0)
+        return 0; // ещё не спрашивали
     out = supStatusJson;
     return 1;
 }
@@ -397,18 +452,20 @@ int supportStatusCached(String& out) {
 // останавливать прошивку и тогда, когда ведёт не он.
 bool supportAbortDelegated() {
     const String ip = supportIpOf(otaDelegate);
-    if (ip.length() == 0) return false;
+    if (ip.length() == 0)
+        return false;
     String req = String("POST /ota/abort HTTP/1.1\r\nHost: ") + ip + "\r\n" + apiHdr() +
                  "Content-Length: 0\r\nConnection: close\r\n\r\n";
     return supportRequest(ip, req, nullptr, 0, SUPPORT_SHORT_MS);
 }
 
 // Ход сессии спрашиваем у ТОГО, кто её ведёт: otaDelegate держит его имя.
-bool supportStatus(String& out) {
+bool supportStatus(String &out) {
     const String ip = supportIpOf(otaDelegate);
-    if (ip.length() == 0) return false;
-    String req = String("GET /ota/status HTTP/1.1\r\nHost: ") + ip + "\r\n" + apiHdr() +
-                 "\r\nConnection: close\r\n\r\n";
+    if (ip.length() == 0)
+        return false;
+    String req =
+        String("GET /ota/status HTTP/1.1\r\nHost: ") + ip + "\r\n" + apiHdr() + "\r\nConnection: close\r\n\r\n";
     out = "";
     return supportRequest(ip, req, &out, 512, SUPPORT_SHORT_MS) && out.indexOf('{') >= 0;
 }
@@ -416,18 +473,23 @@ bool supportStatus(String& out) {
 // Отдать образ и команду. Образ уходит multipart-ом — ровно тем, что ждёт /savefw:
 // приём файла на той стороне сделан обработчиком загрузки, он разбирает конверт сам и
 // пишет файл потоком, не держа его в памяти.
-bool supportHandOff(int idx, const String& target, bool slow) {
-    if (!supportLive(idx)) return false;
+bool supportHandOff(int idx, const String &target, bool slow) {
+    if (!supportLive(idx))
+        return false;
     const String ip = supports[idx].ip;
 
     File f = LittleFS.open("/ota.bin", "r");
-    if (!f) { slog("[SUP] /ota.bin не открылся\n"); return false; }
+    if (!f) {
+        slog("[SUP] /ota.bin не открылся\n");
+        return false;
+    }
     const size_t fsize = f.size();
     supJobTotal = fsize;
     supJobSent = 0;
 
-    const char* BND = "----meshcoreota";
-    String head = String("--") + BND + "\r\n"
+    const char *BND = "----meshcoreota";
+    String head = String("--") + BND +
+                  "\r\n"
                   "Content-Disposition: form-data; name=\"fw\"; filename=\"ota.otaz\"\r\n"
                   "Content-Type: application/octet-stream\r\n\r\n";
     String tail = String("\r\n--") + BND + "--\r\n";
@@ -439,11 +501,9 @@ bool supportHandOff(int idx, const String& target, bool slow) {
         return false;
     }
     c.setTimeout(SUPPORT_HTTP_TIMEOUT_MS / 1000);
-    c.print(String("POST /savefw HTTP/1.1\r\nHost: ") + ip +
-            "\r\n" + apiHdr() +
+    c.print(String("POST /savefw HTTP/1.1\r\nHost: ") + ip + "\r\n" + apiHdr() +
             "Content-Type: multipart/form-data; boundary=" + BND +
-            "\r\nContent-Length: " + String(head.length() + fsize + tail.length()) +
-            "\r\nConnection: close\r\n\r\n");
+            "\r\nContent-Length: " + String(head.length() + fsize + tail.length()) + "\r\nConnection: close\r\n\r\n");
     c.print(head);
 
     // Потоком по килобайту: образ в памяти не держим, его там просто нет столько
@@ -451,8 +511,12 @@ bool supportHandOff(int idx, const String& target, bool slow) {
     size_t sent = 0;
     while (sent < fsize) {
         int n = f.read(buf, sizeof(buf));
-        if (n <= 0) break;
-        if (c.write(buf, n) != (size_t)n) { sent = 0; break; }
+        if (n <= 0)
+            break;
+        if (c.write(buf, n) != (size_t)n) {
+            sent = 0;
+            break;
+        }
         sent += n;
         supJobSent = sent;
     }
@@ -465,14 +529,13 @@ bool supportHandOff(int idx, const String& target, bool slow) {
         slog("[SUP] образ не передан (%u из %u байт)\n", (unsigned)sent, (unsigned)fsize);
         return false;
     }
-    supportSeenByIp(ip);   // образ он принял — значит жив, и отметки для этого не нужно
+    supportSeenByIp(ip); // образ он принял — значит жив, и отметки для этого не нужно
     slog("[SUP] образ передан на %s (%u байт)\n", ip.c_str(), (unsigned)fsize);
 
     // slow=1 — команда начать медленную сессию. Образ ушёл тем же путём, отличается только
     // способ раздачи, поэтому и точка входа та же.
-    String req = String("POST /ota/start?target=") + target + (slow ? "&slow=1" : "") +
-                 " HTTP/1.1\r\nHost: " + ip + "\r\n" + apiHdr() +
-                 "Content-Length: 0\r\nConnection: close\r\n\r\n";
+    String req = String("POST /ota/start?target=") + target + (slow ? "&slow=1" : "") + " HTTP/1.1\r\nHost: " + ip +
+                 "\r\n" + apiHdr() + "Content-Length: 0\r\nConnection: close\r\n\r\n";
     // Команда повторяется, и это не перестраховка. Оба узла зовут друг друга синхронно из
     // главного цикла, а HTTP-сервер у каждого однопоточный и обслуживается там же: пока
     // прошивальщик стоит в своём исходящем POST /ears, он не отвечает на наш /ota/start.
@@ -482,26 +545,27 @@ bool supportHandOff(int idx, const String& target, bool slow) {
     for (int attempt = 1; attempt <= SUPPORT_START_TRIES && !started; attempt++) {
         started = supportRequest(ip, req, nullptr);
         if (!started) {
-            slog("[SUP] %s не принял команду (попытка %d из %d)\n",
-                 supports[idx].name.c_str(), attempt, SUPPORT_START_TRIES);
-            if (attempt < SUPPORT_START_TRIES) delay(SUPPORT_START_RETRY_MS);
+            slog("[SUP] %s не принял команду (попытка %d из %d)\n", supports[idx].name.c_str(), attempt,
+                 SUPPORT_START_TRIES);
+            if (attempt < SUPPORT_START_TRIES)
+                delay(SUPPORT_START_RETRY_MS);
         }
     }
     if (!started) {
         slog("[SUP] %s образ принял, но сессию не начал\n", supports[idx].name.c_str());
         return false;
     }
-    slog("[SUP] %sсессию к '%s' ведёт %s\n", slow ? "медленную " : "",
-         target.c_str(), supports[idx].name.c_str());
+    slog("[SUP] %sсессию к '%s' ведёт %s\n", slow ? "медленную " : "", target.c_str(), supports[idx].name.c_str());
     return true;
 }
 
 // Строковое поле из JSON-ответа: "<key>":"<значение>". Разбор подстрокой, как и везде
 // здесь — ответ свой, формат известен.
-static String jsonField(const String& body, const char* key) {
+static String jsonField(const String &body, const char *key) {
     const String pat = String("\"") + key + "\":\"";
     const int at = body.indexOf(pat);
-    if (at < 0) return "";
+    if (at < 0)
+        return "";
     const int from = at + pat.length();
     const int end = body.indexOf('"', from);
     return end < 0 ? String("") : body.substring(from, end);
@@ -516,13 +580,16 @@ static String jsonField(const String& body, const char* key) {
 //
 // Ответ отдаём как есть: у прошивальщика те же обработчики /config, что у координатора, и
 // страница разбирает их теми же полями.
-bool supportConfigRequest(int idx, bool post, const String& query, String& answer) {
-    if (!supportLive(idx)) return false;
+bool supportConfigRequest(int idx, bool post, const String &query, String &answer) {
+    if (!supportLive(idx))
+        return false;
     const String ip = supports[idx].ip;
     String req = String(post ? "POST" : "GET") + " /config";
-    if (post && query.length()) req += "?" + query;
+    if (post && query.length())
+        req += "?" + query;
     req += " HTTP/1.1\r\nHost: " + ip + "\r\n" + apiHdr();
-    if (post) req += "Content-Length: 0\r\n";
+    if (post)
+        req += "Content-Length: 0\r\n";
     req += "Connection: close\r\n\r\n";
     answer = "";
     return supportRequest(ip, req, &answer, 2048, SUPPORT_HTTP_TIMEOUT_MS);
@@ -549,24 +616,32 @@ static unsigned long supPingNextMs = 0;
 static uint8_t supPingFails = 0;
 
 void supportPingTick() {
-    if (!mcWifiConnected()) return;
+    if (!mcWifiConnected())
+        return;
     // Во время сессии прошивки сеть не трогаем вовсе. Чанки уходят каждые сорок миллисекунд,
     // а блокирующий POST останавливает главный цикл на сотни: отметка подождёт, сессия — нет.
     // Она же не даст нам ответить на входящий запрос, если координатор захочет что-то
     // спросить в этот момент.
-    if (otaAnySessionActive()) return;   // любая сессия, в любой роли
-    if (cfg.coordHost.length() < 7) return;      // адрес координатора не настроен
-    if (cfg.apiKey.length() == 0) return;        // без ключа координатор отметку не примет
-    if (supPingNextMs != 0 && (long)(millis() - supPingNextMs) < 0) return;
+    if (otaAnySessionActive())
+        return; // любая сессия, в любой роли
+    if (cfg.coordHost.length() < 7)
+        return; // адрес координатора не настроен
+    if (cfg.apiKey.length() == 0)
+        return; // без ключа координатор отметку не примет
+    if (supPingNextMs != 0 && (long)(millis() - supPingNextMs) < 0)
+        return;
 
     String body = String("ver=") + FW_VERSION + "&env=" + FW_ENV;
-    String req = String("POST /support HTTP/1.1\r\nHost: ") + cfg.coordHost + "\r\n" +
-                 apiHdr() + "X-Support: " + cfg.name + "\r\n"
+    String req = String("POST /support HTTP/1.1\r\nHost: ") + cfg.coordHost + "\r\n" + apiHdr() +
+                 "X-Support: " + cfg.name +
+                 "\r\n"
                  "Content-Type: application/x-www-form-urlencoded\r\n"
-                 "Content-Length: " + String((unsigned)body.length()) + "\r\n"
-                 "Connection: close\r\n\r\n" + body;
-    if (supportRequest(cfg.coordHost, req, nullptr, 0, SUPPORT_SHORT_MS,
-                       SUPPORT_PING_CONNECT_MS)) {
+                 "Content-Length: " +
+                 String((unsigned)body.length()) +
+                 "\r\n"
+                 "Connection: close\r\n\r\n" +
+                 body;
+    if (supportRequest(cfg.coordHost, req, nullptr, 0, SUPPORT_SHORT_MS, SUPPORT_PING_CONNECT_MS)) {
         // Отметка дошла — значит координатор на этом адресе есть и слушает. Это же и адрес
         // для «вторых ушей»: кадры уходят туда же, откуда пришло подтверждение.
         if (coordIp != cfg.coordHost) {
@@ -577,12 +652,15 @@ void supportPingTick() {
         supPingFails = 0;
         supPingNextMs = millis() + SUPPORT_PING_MS;
     } else {
-        if (supPingFails < 8) supPingFails++;
+        if (supPingFails < 8)
+            supPingFails++;
         unsigned long wait = SUPPORT_PING_MS << (supPingFails - 1);
-        if (wait > SUPPORT_PING_RETRY_MAX_MS) wait = SUPPORT_PING_RETRY_MAX_MS;
+        if (wait > SUPPORT_PING_RETRY_MAX_MS)
+            wait = SUPPORT_PING_RETRY_MAX_MS;
         supPingNextMs = millis() + wait;
     }
-    if (supPingNextMs == 0) supPingNextMs = 1;
+    if (supPingNextMs == 0)
+        supPingNextMs = 1;
 }
 #endif // FEATURE_SUPPORT
 
@@ -621,13 +699,12 @@ static String supJobWho;
 volatile uint32_t supJobSent = 0;
 volatile uint32_t supJobTotal = 0;
 
-static void supJobTask(void* arg) {
+static void supJobTask(void *arg) {
     const uint32_t gen = (uint32_t)(uintptr_t)arg;
-    bool ok = (supJobKind == SUP_JOB_SELF)
-                  ? supportFlashSelf(supJobIdx)
-                  : supportHandOff(supJobIdx, supJobTarget, supJobKind == SUP_JOB_SLOW);
+    bool ok = (supJobKind == SUP_JOB_SELF) ? supportFlashSelf(supJobIdx)
+                                           : supportHandOff(supJobIdx, supJobTarget, supJobKind == SUP_JOB_SLOW);
     slog("[SUP] запас стека задачи: %u Б\n", (unsigned)uxTaskGetStackHighWaterMark(NULL));
-    if (gen == supJobGen) {          // нас не успели бросить по сроку
+    if (gen == supJobGen) { // нас не успели бросить по сроку
         supJobOk = ok;
         supJobDone = true;
     }
@@ -639,14 +716,22 @@ bool supportBusy() {
     return supJobKind != SUP_JOB_NONE;
 }
 
-uint8_t supportJobKind() { return supJobKind; }
-uint32_t supportJobSent() { return supJobSent; }
-uint32_t supportJobTotal() { return supJobTotal; }
+uint8_t supportJobKind() {
+    return supJobKind;
+}
+uint32_t supportJobSent() {
+    return supJobSent;
+}
+uint32_t supportJobTotal() {
+    return supJobTotal;
+}
 
-bool supportJobStart(uint8_t kind, int supIdx, const String& target) {
-    if (supJobKind != SUP_JOB_NONE) return false;
-    if (!supportLive(supIdx)) return false;
-    if (supJobAlive) {               // брошенная задача ещё не вышла — второй такой не надо
+bool supportJobStart(uint8_t kind, int supIdx, const String &target) {
+    if (supJobKind != SUP_JOB_NONE)
+        return false;
+    if (!supportLive(supIdx))
+        return false;
+    if (supJobAlive) { // брошенная задача ещё не вышла — второй такой не надо
         slog("[SUP] прошлая передача ещё не завершилась\n");
         return false;
     }
@@ -663,7 +748,7 @@ bool supportJobStart(uint8_t kind, int supIdx, const String& target) {
     // 8 КБ хватает: шифрования здесь нет (свой узел в локальной сети, обычный HTTP), а
     // словарь распаковки и буфер чтения берутся из кучи. Запас печатается на выходе из
     // задачи — по нему видно, не подошли ли мы к краю.
-    if (xTaskCreate(supJobTask, "supjob", 8192, (void*)(uintptr_t)supJobGen, 1, nullptr) == pdPASS)
+    if (xTaskCreate(supJobTask, "supjob", 8192, (void *)(uintptr_t)supJobGen, 1, nullptr) == pdPASS)
         return true;
     supJobKind = SUP_JOB_NONE;
     supJobAlive = false;
@@ -671,12 +756,14 @@ bool supportJobStart(uint8_t kind, int supIdx, const String& target) {
     return false;
 }
 
-bool supportJobFinished(uint8_t& kind, bool& ok, String& target, String& who) {
-    if (supJobKind == SUP_JOB_NONE) return false;
+bool supportJobFinished(uint8_t &kind, bool &ok, String &target, String &who) {
+    if (supJobKind == SUP_JOB_NONE)
+        return false;
     if (!supJobDone) {
-        if (millis() - supJobStartMs < SUPPORT_JOB_MAX_MS) return false;
+        if (millis() - supJobStartMs < SUPPORT_JOB_MAX_MS)
+            return false;
         slog("[SUP] передача не завершилась за %lu с — бросаем\n", SUPPORT_JOB_MAX_MS / 1000);
-        supJobGen++;                 // результат брошенной задачи больше не принимаем
+        supJobGen++; // результат брошенной задачи больше не принимаем
         supJobOk = false;
     }
     kind = supJobKind;

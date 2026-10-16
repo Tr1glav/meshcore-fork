@@ -21,10 +21,9 @@ bool companionBleLinked();
 // ОТПРАВИТЕЛЯ из открытого текста кадра, по ней приложение сопоставляет сообщение с сырым
 // журналом (0x88) и показывает маршрут. Объявление (с дефолтом)
 // приходит из mesh-network-core/include/mc_platform.h.
-void companionOnChannelText(int channelIdx, const String& text, float snr, uint8_t pathLen,
-                            uint32_t senderTs, bool notify);
+void companionOnChannelText(int channelIdx, const String &text, float snr, uint8_t pathLen, uint32_t senderTs,
+                            bool notify);
 // Услышан адверт: обновляем список контактов и сообщаем об этом приложению.
 // app — содержимое поля приложения адверта: [флаги|тип][имя], applen — его длина.
-void companionOnAdvert(const uint8_t* pub, const uint8_t* app, int applen,
-                       uint8_t pathLen, const uint8_t* path);
+void companionOnAdvert(const uint8_t *pub, const uint8_t *app, int applen, uint8_t pathLen, const uint8_t *path);
 #endif

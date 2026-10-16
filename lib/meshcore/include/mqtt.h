@@ -13,10 +13,10 @@
 #include <PubSubClient.h>
 
 extern PubSubClient mqtt;
-extern char mqttPrefix[64];         // префикс топиков: meshcore/bot/<имя узла>/
+extern char mqttPrefix[64]; // префикс топиков: meshcore/bot/<имя узла>/
 extern bool mqttConnected;
 extern unsigned long lastStatusPublishMs;
-extern bool discoveryPublished;     // discovery бота публикуется один раз на подключение
+extern bool discoveryPublished; // discovery бота публикуется один раз на подключение
 // Обнуление lastmsg после публикации: повторный одинаковый текст должен снова стать
 // триггером в Home Assistant.
 extern unsigned long lastmsgClearAt;
@@ -27,7 +27,7 @@ extern unsigned long snsBtnClearAt;
 extern bool snsBtnPendingClear;
 extern char snsBtnSlug[48];
 extern unsigned long lastSensorAvailCheckMs;
-extern unsigned long lastSensorTimeSyncMs;   // рассылка времени узлам
+extern unsigned long lastSensorTimeSyncMs; // рассылка времени узлам
 
 // Шаг подключения к брокеру. Зовётся из netTick, когда сеть уже поднята: без сети брокеру
 // делать нечего, и порядок этих двух шагов не должен зависеть от того, кто их вызывает.
@@ -36,14 +36,14 @@ void mqttConnectTick();
 
 
 #if FEATURE_MQTT
-void mqttCallback(char* topic, byte* payload, unsigned int length);
+void mqttCallback(char *topic, byte *payload, unsigned int length);
 void publishDiscovery();
 void publishMessage();
 void clearLastMsg();
 void clearSensorBtnText();
-void mqttSlug(const char* name, char* out, int maxLen);
+void mqttSlug(const char *name, char *out, int maxLen);
 // env — имя окружения сборки узла: по нему карточка в HA получает роль в названии
-void publishSensorDisc(const String& sender, const char* slug, const String& env);
+void publishSensorDisc(const String &sender, const char *slug, const String &env);
 void publishSensorAvailability(int idx);
 bool publishSensorMessage();
 void publishStatus();

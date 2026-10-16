@@ -18,14 +18,14 @@ bool supportPresent();
 
 // Кто из прошивальщиков дотягивается до цели лучше всех: индекс в supports[] или -1.
 // Спрашиваем у каждого — его /sensors отдаёт хопы, а порог один на всех (otaHopsReachable).
-int supportIndexFor(const String& target);
+int supportIndexFor(const String &target);
 
 // Ход переданной сессии: опрос раз в секунду из главного цикла, обработчик страницы читает
 // готовое. 1 — ответ есть, 0 — ещё не спрашивали, -1 — ведущий молчит слишком долго.
 // Отменить сессию у ведущего: кнопка «Прервать» должна работать и при передаче.
 bool supportAbortDelegated();
 void supportStatusTick();
-int supportStatusCached(String& out);
+int supportStatusCached(String &out);
 
 // Прошивальщик отмечается у координатора по сети (POST /support на адрес из настроек):
 // называет себя, свою версию и окружение. Зовётся из главного цикла.
@@ -33,7 +33,7 @@ void supportPingTick();
 
 // Настройки прошивальщика по сети: post=false — забрать список полей (GET /config),
 // post=true — применить query (POST /config?<поля>[&reboot=1]). Ответ отдаётся как есть.
-bool supportConfigRequest(int idx, bool post, const String& query, String& answer);
+bool supportConfigRequest(int idx, bool post, const String &query, String &answer);
 
 // Прошить сам прошивальщик: образ уходит к нему по сети (HTTP OTA), а не по радио —
 // у него есть WiFi. Сохранённый .otaz распаковывается на лету: /update ждёт сырой образ.
@@ -41,13 +41,13 @@ bool supportFlashSelf();
 
 // Ход сессии, которую ведёт прошивальщик: его же /ota/status, слово в слово.
 // false — не ответил; тогда координатор показывает своё состояние.
-bool supportStatus(String& out);
+bool supportStatus(String &out);
 
 // Отдать сессию: образ уходит к нему по сети, следом команда начать.
 // slow — командовать начать медленную сессию вместо быстрой.
-bool supportHandOff(int idx, const String& target, bool slow);
+bool supportHandOff(int idx, const String &target, bool slow);
 // Кто может вести медленную сессию к этой цели (хопы не обязательны): индекс или -1.
-int supportIndexForAny(const String& target);
+int supportIndexForAny(const String &target);
 
 // Обе передачи идут фоновой задачей: в них мегабайт по сети, а обработчик страницы
 // на это время заблокировал бы веб-сервер целиком. enum SUP_JOB_* приходит из
@@ -58,7 +58,7 @@ int supportIndexForAny(const String& target);
 bool supportBusy();
 
 // Завести передачу. false — задача не создалась.
-bool supportJobStart(uint8_t kind, int supIdx, const String& target);
+bool supportJobStart(uint8_t kind, int supIdx, const String &target);
 
 // Что именно передаётся и сколько уже ушло — для полосы на странице.
 uint8_t supportJobKind();
@@ -67,6 +67,6 @@ uint32_t supportJobTotal();
 
 // Забрать итог завершённой передачи (и освободить место под следующую). Зовётся из
 // главного цикла: результат ложится в поля, которые читает страница.
-bool supportJobFinished(uint8_t& kind, bool& ok, String& target, String& who);
+bool supportJobFinished(uint8_t &kind, bool &ok, String &target, String &who);
 
 #endif // FEATURE_MESH_OTA_SENDER

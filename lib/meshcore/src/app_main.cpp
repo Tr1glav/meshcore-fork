@@ -15,8 +15,8 @@
 #include "ota.h"
 #include "mqtt.h"
 #include "fwupdate.h"
-#include "net.h"       // netTick: машина состояния сети
-#include "support.h"   // supportPingTick: отметка прошивальщика у координатора
+#include "net.h"     // netTick: машина состояния сети
+#include "support.h" // supportPingTick: отметка прошивальщика у координатора
 #include "companion.h"
 #include "app_main.h"
 #include <WiFi.h>
@@ -52,9 +52,9 @@ void appSetup() {
         Serial.println("\n[CFG] устройство не настроено — наберите help в этой консоли");
     }
     cfgPrint(false);
-    
+
     initSystemClock();
-    
+
     // ===== ПИТАНИЕ ПЕРИФЕРИИ (VEXT) =====
     // Включается на любой плате, где задан PIN_VEXT_EN — даже без дисплея: на части
     // плат этот же пин питает и LoRa-модуль.
@@ -62,12 +62,12 @@ void appSetup() {
     // GPIO10 BOARD_POWERON), настройка vext=0 погасила бы узел целиком — защита живёт
     // внутри, одна на старт и на команду «cfg vext».
     vextApply(cfg.vextOn);
-    #if defined(VEXT_PIN)
+#if defined(VEXT_PIN)
     delay(300);
-    #endif
-    
-    // ===== FEM (усилитель KCT8103L на V4) =====
-    #if HAS_FEM
+#endif
+
+// ===== FEM (усилитель KCT8103L на V4) =====
+#if HAS_FEM
     Serial.println("Init FEM...");
     pinMode(FEM_VCC_PIN, OUTPUT);
     pinMode(FEM_EN_PIN, OUTPUT);
@@ -76,36 +76,36 @@ void appSetup() {
     delay(10);
     digitalWrite(FEM_EN_PIN, HIGH);
     delay(10);
-    digitalWrite(FEM_TX_PIN, LOW);  // RX
+    digitalWrite(FEM_TX_PIN, LOW); // RX
     delay(10);
     Serial.println("FEM OK");
-    #endif
-    
-    #if FEATURE_BUTTON
-    buttonBegin();   // пин и прерывание: фронты защёлкиваются, а не опрашиваются
-    #elif BUTTON_PIN >= 0
+#endif
+
+#if FEATURE_BUTTON
+    buttonBegin(); // пин и прерывание: фронты защёлкиваются, а не опрашиваются
+#elif BUTTON_PIN >= 0
     pinMode(BUTTON_PIN, INPUT_PULLUP);
-    #endif
-    
+#endif
+
     // ===== SPI =====
     // Идёт ДО инициализации дисплея: на платах, где панель сидит на той же шине, она
     // должна увидеть уже настроенный бус.
     SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
-    
-    // ===== OLED =====
-    #if HAS_OLED
+
+// ===== OLED =====
+#if HAS_OLED
     pinMode(OLED_RESET, OUTPUT);
     digitalWrite(OLED_RESET, LOW);
     delay(10);
     digitalWrite(OLED_RESET, HIGH);
     delay(200);
 
-    #if defined(SDA_PIN) && defined(SCL_PIN)
+#if defined(SDA_PIN) && defined(SCL_PIN)
     Wire.begin(SDA_PIN, SCL_PIN);
-    #else
+#else
     Wire.begin();
-    #endif
-    Wire.setClock(100000);   // 400k часть OLED-панелей V4 "мусорит" — снижаем
+#endif
+    Wire.setClock(100000); // 400k часть OLED-панелей V4 "мусорит" — снижаем
 
     // Сканер I2C: некоторые экземпляры Heltec V4 живут на 0x3D, а не 0x3C.
     // Полоски/мусор на экране часто = неверный адрес или ранний инит.
@@ -132,7 +132,8 @@ void appSetup() {
         uint8_t alt = (oledAddr == 0x3C) ? 0x3D : 0x3C;
         if (!display.begin(SSD1306_SWITCHCAPVCC, alt)) {
             Serial.println("Display FAILED!");
-            while (1) delay(1000);
+            while (1)
+                delay(1000);
         } else {
             Serial.printf("OLED ok at 0x%02X (alt)\n", alt);
         }
@@ -148,36 +149,36 @@ void appSetup() {
     delay(50);
     display.clearDisplay();
     display.display();
-    
+
     display.clearDisplay();
     display.setTextSize(1);
     display.setCursor(0, 0);
     display.println("MeshCore");
     display.println("V4.3 init...");
     display.display();
-    #endif   // HAS_OLED
-    
+#endif // HAS_OLED
+
     // ===== RESET =====
     pinMode(LORA_RST, OUTPUT);
     digitalWrite(LORA_RST, LOW);
     delay(20);
     digitalWrite(LORA_RST, HIGH);
     delay(100);
-    
+
     // ===== LORA =====
     if (!initLoRa()) {
-        #if HAS_OLED
+#if HAS_OLED
         display.clearDisplay();
         display.setCursor(0, 0);
         display.println("LoRa ERROR!");
         display.display();
-        #endif
+#endif
         while (1) {
             delay(1000);
             Serial.println("LoRa init FAILED");
         }
     }
-    
+
     deriveChannels();
     initAdvertIdentity();
 
@@ -188,22 +189,21 @@ void appSetup() {
     // Сеть НЕ блокируем: WiFi поднимается фоном в loop (netTick).
     // Радио начинает слушать сразу, без задержки на TCP/а-коннект.
     WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false);   // без modem-sleep: меньше задержка отвёта
+    WiFi.setSleep(false); // без modem-sleep: меньше задержка отвёта
 #endif
 #if FEATURE_MESH_OTA_SENDER
     // Дамп РЕАЛЬНОЙ таблицы разделов с устройства — для отладки LittleFS.
     // Если spiffs нет/другой офсет — mesh OTA работать не будет.
     {
         slog("[PART] flash chip size: %u KB\n", ESP.getFlashChipSize() / 1024);
-        esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY,
-                                                         ESP_PARTITION_SUBTYPE_ANY, NULL);
+        esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
         for (; it != NULL; it = esp_partition_next(it)) {
-            const esp_partition_t* p = esp_partition_get(it);
-            slog("[PART] %-10s type=%d sub=%d off=0x%06X size=%uK\n",
-                 p->label, (int)p->type, (int)p->subtype,
+            const esp_partition_t *p = esp_partition_get(it);
+            slog("[PART] %-10s type=%d sub=%d off=0x%06X size=%uK\n", p->label, (int)p->type, (int)p->subtype,
                  (unsigned)p->address, p->size / 1024);
         }
-        if (it) esp_partition_iterator_release(it);
+        if (it)
+            esp_partition_iterator_release(it);
     }
     // хранилище /ota.bin для mesh OTA сенсоров (partition "spiffs", 1.5 MB)
     if (LittleFS.begin(true)) {
@@ -215,31 +215,31 @@ void appSetup() {
     }
     if (LittleFS.exists("/ota.bin")) {
         otaInspectStoredFw();
-        slog("[OTA] /ota.bin: %u байт (mesh OTA ready=%d)\n",
-             (unsigned)otaFwSize, (int)otaFwReady);
+        slog("[OTA] /ota.bin: %u байт (mesh OTA ready=%d)\n", (unsigned)otaFwSize, (int)otaFwReady);
     }
 #endif // FEATURE_MESH_OTA_SENDER
 #if FEATURE_MQTT
-    setupMQTT();            // только конфиг (префиксы/сервер/коллбэк)
+    setupMQTT(); // только конфиг (префиксы/сервер/коллбэк)
 #endif
 #if FEATURE_WEB
-    setupOtaServer();       // HTTP OTA на :3232 (обновление прошивки по WiFi)
+    setupOtaServer(); // HTTP OTA на :3232 (обновление прошивки по WiFi)
 #endif
 
     radio.startReceive();
     isListening = true;
     lastDirectAdvertMs = lastFloodAdvertMs = millis();
 
-    #ifdef COMPANION_NODE
-    // Список контактов лежит файлом, поэтому файловую систему монтируем до BLE.
-    // У координатора она уже смонтирована выше — там в ней живёт образ для mesh OTA.
-    #if !FEATURE_MESH_OTA_SENDER
-    if (!LittleFS.begin(true)) Serial.println("[FS] не смонтировалась — контакты не сохранятся");
-    #endif
-    companionBegin();   // BLE поднимаем после радио: приложение может подключиться сразу
-    #endif
+#ifdef COMPANION_NODE
+// Список контактов лежит файлом, поэтому файловую систему монтируем до BLE.
+// У координатора она уже смонтирована выше — там в ней живёт образ для mesh OTA.
+#if !FEATURE_MESH_OTA_SENDER
+    if (!LittleFS.begin(true))
+        Serial.println("[FS] не смонтировалась — контакты не сохранятся");
+#endif
+    companionBegin(); // BLE поднимаем после радио: приложение может подключиться сразу
+#endif
 
-    #ifdef SENSOR_NODE
+#ifdef SENSOR_NODE
     // Узлы работают от аккумулятора: 80 МГц вместо 240 экономят 20–30 мА, а BLE и LoRa
     // на этой частоте штатны. На время прошивки по воздуху частота поднимается обратно.
     // Пересчитывать скорость порта не нужно: на этих платах консоль идёт по нативному
@@ -247,62 +247,62 @@ void appSetup() {
     // частоты.
     setCpuFrequencyMhz(CPU_MHZ_IDLE);
     Serial.printf("[PWR] частота процессора %d МГц\n", CPU_MHZ_IDLE);
-    #endif
-    
-    #if HAS_OLED
+#endif
+
+#if HAS_OLED
     display.clearDisplay();
     // Стартовая заставка: только имя устройства по центру экрана.
-    display.setTextSize(2);                     // 12x16 симв.
-    const char* splash = "MeshCore";
-    display.setCursor((SCREEN_WIDTH - (int)strlen(splash) * 12) / 2,
-                      (SCREEN_HEIGHT - 16) / 2);
+    display.setTextSize(2); // 12x16 симв.
+    const char *splash = "MeshCore";
+    display.setCursor((SCREEN_WIDTH - (int)strlen(splash) * 12) / 2, (SCREEN_HEIGHT - 16) / 2);
     display.print(splash);
     display.setTextSize(1);
     display.display();
-    #endif
-    
-    // Яркость применяем в самом конце инициализации, а не сразу после display.begin():
-    // ранняя запись в регистры панель гасила. Проверено: контраст выше штатного 0xCF
-    // прибавки не даёт, поэтому настройка полезна в основном для затемнения.
-    #if HAS_OLED
+#endif
+
+// Яркость применяем в самом конце инициализации, а не сразу после display.begin():
+// ранняя запись в регистры панель гасила. Проверено: контраст выше штатного 0xCF
+// прибавки не даёт, поэтому настройка полезна в основном для затемнения.
+#if HAS_OLED
     display.setBrightness((uint8_t)cfg.dispBri);
-    #endif
+#endif
 
     Serial.printf("Listening on %s...\n", channelListStr().c_str());
 }
 
 void appLoop() {
-    // Признаки, а не MQTT_ENABLED: страница жила под тем же условием, что брокер, и сборка с
-    // FEATURE_WEB=1 без MQTT_ENABLED поднимала сервер, которому никто не давал принимать
-    // соединения. Сам MQTT_ENABLED пока остаётся зонтиком над сетевым слоем: tickRetryConnections
-    // лежит в mqtt.cpp под ним же, и вынести подключение WiFi оттуда — отдельная работа.
-    #if FEATURE_WEB
-    otaServer.handleClient();   // HTTP OTA: принимаем реквесты не блокируя радио
-    #endif
-    #if FEATURE_MESH_OTA_SENDER
-    otaSlowTick();              // медленный режим: чанки обычными сообщениями канала
-    otaBotTick();               // mesh OTA: таймауты повтора чанков
-    otaSupportTick();           // итог передачи образа прошивальщику (идёт фоновой задачей)
-    supportStatusTick();        // ход переданной сессии: опрос отсюда, а не из обработчика
-    #endif
-    // Сеть и брокер — разные признаки: netTick поднимает WiFi и сам отдаёт ход брокеру,
-    // mqtt.loop крутит клиента. У прошивальщика первое есть, второго нет.
-    #if FEATURE_WIFI
+// Признаки, а не MQTT_ENABLED: страница жила под тем же условием, что брокер, и сборка с
+// FEATURE_WEB=1 без MQTT_ENABLED поднимала сервер, которому никто не давал принимать
+// соединения. Сам MQTT_ENABLED пока остаётся зонтиком над сетевым слоем: tickRetryConnections
+// лежит в mqtt.cpp под ним же, и вынести подключение WiFi оттуда — отдельная работа.
+#if FEATURE_WEB
+    otaServer.handleClient(); // HTTP OTA: принимаем реквесты не блокируя радио
+#endif
+#if FEATURE_MESH_OTA_SENDER
+    otaSlowTick();       // медленный режим: чанки обычными сообщениями канала
+    otaBotTick();        // mesh OTA: таймауты повтора чанков
+    otaSupportTick();    // итог передачи образа прошивальщику (идёт фоновой задачей)
+    supportStatusTick(); // ход переданной сессии: опрос отсюда, а не из обработчика
+#endif
+// Сеть и брокер — разные признаки: netTick поднимает WiFi и сам отдаёт ход брокеру,
+// mqtt.loop крутит клиента. У прошивальщика первое есть, второго нет.
+#if FEATURE_WIFI
     if (millis() - lastNetRetryMs > NET_RETRY_INTERVAL_MS) {
         lastNetRetryMs = millis();
         netTick();
     }
-    #endif
-    #if FEATURE_MQTT
-    if (mqttConnected) mqtt.loop();
-    #endif
+#endif
+#if FEATURE_MQTT
+    if (mqttConnected)
+        mqtt.loop();
+#endif
 
-    cfgConsoleTick();   // настройка через USB-консоль, не блокирует радио
+    cfgConsoleTick(); // настройка через USB-консоль, не блокирует радио
 
     // ===== ADVERT (периодический) =====
     // без настроек в эфир не выходим: имя узла пустое, каналов нет
     if (isListening && !otaFastMode && cfgReady()) {
-        if (!advertBootSent && millis() > 6000) {   // стартовый beacon
+        if (!advertBootSent && millis() > 6000) { // стартовый beacon
             advertBootSent = true;
             sendAdvert(ADV_ROUTE_DIRECT);
         }
@@ -316,11 +316,11 @@ void appLoop() {
         }
     }
 
-    radioRxTick();   // приём из эфира: опрос радио, разбор кадров, поддержание приёмника
+    radioRxTick(); // приём из эфира: опрос радио, разбор кадров, поддержание приёмника
 
-    #ifndef SENSOR_NODE
-    meshReplyTick();   // ответ на пинг/личку, отложенный на случайную паузу
-    #endif
+#ifndef SENSOR_NODE
+    meshReplyTick(); // ответ на пинг/личку, отложенный на случайную паузу
+#endif
 
     // Переиздание чужих флуд-кадров. По умолчанию это пустышка: FEATURE_RELAY = 0, потому что
     // ретранслятором не должен быть никто (см. config.h ядра). Вызов оставлен без #if, чтобы
@@ -332,32 +332,32 @@ void appLoop() {
     // потеря в эфире.
     meshTxTick();
 
-    statusScreenTick();   // статус на экране раз в полсекунды
+    statusScreenTick(); // статус на экране раз в полсекунды
 
-    // Условие то же, что у самой функции (coordinator_tasks.h): у узла-прошивальщика
-    // сеть есть, а этих задач нет — ни брокера, ни NTP, ни проверки релизов.
-    #if FEATURE_MQTT || FEATURE_AUTOUPDATE || FEATURE_SELFUPDATE || FEATURE_NTP
-    coordinatorTasksTick();   // MQTT, время, доступность узлов, проверка обновлений
-    #endif
+// Условие то же, что у самой функции (coordinator_tasks.h): у узла-прошивальщика
+// сеть есть, а этих задач нет — ни брокера, ни NTP, ни проверки релизов.
+#if FEATURE_MQTT || FEATURE_AUTOUPDATE || FEATURE_SELFUPDATE || FEATURE_NTP
+    coordinatorTasksTick(); // MQTT, время, доступность узлов, проверка обновлений
+#endif
 
-    // Sensor node: button = trigger ("button"), hello = heartbeat раз в N минут
-    #if FEATURE_SENSOR
-    sensorTasksTick();   // задачи узла: heartbeat, кнопка, экран, частота, BLE
-    #endif
+// Sensor node: button = trigger ("button"), hello = heartbeat раз в N минут
+#if FEATURE_SENSOR
+    sensorTasksTick(); // задачи узла: heartbeat, кнопка, экран, частота, BLE
+#endif
 
 
-    // «Вторые уши»: прошивальщик передаёт координатору услышанное по радио (POST /ears).
-    // Отдельная задача из главного цикла, не из sensorTasks — сенсорные пакеты колбасит
-    // heartbeat, а очередь кадров живёт своей жизнью.
-    #if FEATURE_SUPPORT
+// «Вторые уши»: прошивальщик передаёт координатору услышанное по радио (POST /ears).
+// Отдельная задача из главного цикла, не из sensorTasks — сенсорные пакеты колбасит
+// heartbeat, а очередь кадров живёт своей жизнью.
+#if FEATURE_SUPPORT
     earsTick();
-    #endif
+#endif
 
-    // Обратная сторона: прошивальщик отмечается у координатора по сети — называет себя,
-    // версию и окружение. В эфир об этом не уходит ничего.
-    #if FEATURE_SUPPORT
+// Обратная сторона: прошивальщик отмечается у координатора по сети — называет себя,
+// версию и окружение. В эфир об этом не уходит ничего.
+#if FEATURE_SUPPORT
     supportPingTick();
-    #endif
+#endif
 
     // во время mesh OTA кадры пачки идут каждые ~40 мс — опрашиваем радио чаще
     delay(otaFastMode ? 1 : 10);

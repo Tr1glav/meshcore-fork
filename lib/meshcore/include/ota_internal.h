@@ -19,12 +19,12 @@ extern unsigned long otaSessionMs; // старт сессии — для ско�
 extern unsigned long otaDoneMs;    // когда узел подтвердил прошивку
 // otaImgSize переехал в ota.h ядра: он нужен и самому ядру (ota_slow.cpp объявляет его
 // узлу в старте медленной сессии), а не только странице.
-extern char otaLastErr[48];       // причина последнего abort — показывается на странице
-extern String otaFwName;          // имя последнего загруженного файла — для страницы
-extern uint16_t otaPolls;         // сколько раз пришлось переспрашивать маску за сессию
+extern char otaLastErr[48]; // причина последнего abort — показывается на странице
+extern String otaFwName;    // имя последнего загруженного файла — для страницы
+extern uint16_t otaPolls;   // сколько раз пришлось переспрашивать маску за сессию
 extern uint32_t otaUsBuild;
 extern uint32_t otaUsTx;
 extern uint32_t otaChunksSent;
-extern uint16_t otaRetrTotal;     // сколько всего было повторов за сессию
+extern uint16_t otaRetrTotal; // сколько всего было повторов за сессию
 extern uint32_t logTotal;
 #endif

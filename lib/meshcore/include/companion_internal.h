@@ -11,112 +11,112 @@
 #if FEATURE_COMPANION
 
 // --- протокол: коды из docs/companion_protocol.md оригинального MeshCore ---
-#define CMD_APP_START              1
-#define CMD_SEND_TXT_MSG           2
-#define CMD_SEND_CHANNEL_TXT_MSG   3
-#define CMD_GET_CONTACTS           4
-#define CMD_GET_DEVICE_TIME        5
-#define CMD_SET_DEVICE_TIME        6
-#define CMD_SEND_SELF_ADVERT       7
-#define CMD_SET_ADVERT_NAME        8
-#define CMD_SYNC_NEXT_MESSAGE     10
-#define CMD_SET_RADIO_PARAMS      11
-#define CMD_GET_BATT_AND_STORAGE  20
-#define CMD_DEVICE_QUERY          22
-#define CMD_GET_CHANNEL           31
-#define CMD_SET_CHANNEL           32
-#define CMD_ADD_UPDATE_CONTACT     9
-#define CMD_RESET_PATH            13
-#define CMD_REMOVE_CONTACT        15
-#define CMD_GET_CONTACT_BY_KEY    30
-#define CMD_GET_ADVERT_PATH       42
-#define CMD_SET_FLOOD_SCOPE_KEY   54
+#define CMD_APP_START 1
+#define CMD_SEND_TXT_MSG 2
+#define CMD_SEND_CHANNEL_TXT_MSG 3
+#define CMD_GET_CONTACTS 4
+#define CMD_GET_DEVICE_TIME 5
+#define CMD_SET_DEVICE_TIME 6
+#define CMD_SEND_SELF_ADVERT 7
+#define CMD_SET_ADVERT_NAME 8
+#define CMD_SYNC_NEXT_MESSAGE 10
+#define CMD_SET_RADIO_PARAMS 11
+#define CMD_GET_BATT_AND_STORAGE 20
+#define CMD_DEVICE_QUERY 22
+#define CMD_GET_CHANNEL 31
+#define CMD_SET_CHANNEL 32
+#define CMD_ADD_UPDATE_CONTACT 9
+#define CMD_RESET_PATH 13
+#define CMD_REMOVE_CONTACT 15
+#define CMD_GET_CONTACT_BY_KEY 30
+#define CMD_GET_ADVERT_PATH 42
+#define CMD_SET_FLOOD_SCOPE_KEY 54
 #define CMD_GET_DEFAULT_FLOOD_SCOPE 64
 // ===== Управление ретранслятором и метрики =====
 // Вход на чужой ретранслятор, запросы к нему и метрики своего узла. Номера — из оригинала:
 // их шлёт то же самое приложение, и выбирать их нам нечем.
-#define CMD_SEND_LOGIN            26   // вход по паролю (кадр ANON_REQ)
-#define CMD_SEND_STATUS_REQ       27   // метрики ретранслятора
-#define CMD_HAS_CONNECTION        28   // держится ли сессия входа
-#define CMD_LOGOUT                29   // выйти
-#define CMD_SEND_TELEMETRY_REQ    39   // телеметрия: чужая (с ключом) или своя (кадр из 4 Б)
-#define CMD_SEND_BINARY_REQ       50   // произвольный запрос: тело задаёт приложение
-#define CMD_GET_STATS             56   // метрики СВОЕГО узла, второй байт — какие именно
+#define CMD_SEND_LOGIN 26         // вход по паролю (кадр ANON_REQ)
+#define CMD_SEND_STATUS_REQ 27    // метрики ретранслятора
+#define CMD_HAS_CONNECTION 28     // держится ли сессия входа
+#define CMD_LOGOUT 29             // выйти
+#define CMD_SEND_TELEMETRY_REQ 39 // телеметрия: чужая (с ключом) или своя (кадр из 4 Б)
+#define CMD_SEND_BINARY_REQ 50    // произвольный запрос: тело задаёт приложение
+#define CMD_GET_STATS 56          // метрики СВОЕГО узла, второй байт — какие именно
 
-#define RESP_CODE_OK                0
-#define RESP_CODE_ERR               1
-#define RESP_CODE_CONTACTS_START    2
-#define RESP_CODE_CONTACT           3
-#define RESP_CODE_END_OF_CONTACTS   4
-#define RESP_CODE_SELF_INFO         5
-#define RESP_CODE_SENT              6
-#define RESP_CODE_CURR_TIME         9
+#define RESP_CODE_OK 0
+#define RESP_CODE_ERR 1
+#define RESP_CODE_CONTACTS_START 2
+#define RESP_CODE_CONTACT 3
+#define RESP_CODE_END_OF_CONTACTS 4
+#define RESP_CODE_SELF_INFO 5
+#define RESP_CODE_SENT 6
+#define RESP_CODE_CURR_TIME 9
 #define RESP_CODE_NO_MORE_MESSAGES 10
 #define RESP_CODE_BATT_AND_STORAGE 12
-#define RESP_CODE_DEVICE_INFO      13
-#define RESP_CODE_CONTACT_MSG_RECV 7    // личка, формат для приложений до версии 3
-#define RESP_CODE_CHANNEL_MSG_RECV 8    // формат для приложений до версии 3
+#define RESP_CODE_DEVICE_INFO 13
+#define RESP_CODE_CONTACT_MSG_RECV 7 // личка, формат для приложений до версии 3
+#define RESP_CODE_CHANNEL_MSG_RECV 8 // формат для приложений до версии 3
 #define RESP_CODE_CONTACT_MSG_RECV_V3 16
 #define RESP_CODE_CHANNEL_MSG_RECV_V3 17
-#define RESP_CODE_CHANNEL_INFO     18
-#define RESP_CODE_ADVERT_PATH      22
-#define RESP_CODE_STATS            24   // метрики своего узла, второй байт — их вид
+#define RESP_CODE_CHANNEL_INFO 18
+#define RESP_CODE_ADVERT_PATH 22
+#define RESP_CODE_STATS 24 // метрики своего узла, второй байт — их вид
 // Виды метрик своего узла для CMD_GET_STATS/RESP_CODE_STATS.
-#define STATS_TYPE_CORE            0    // питание, время работы, очередь
-#define STATS_TYPE_RADIO           1    // качество связи и занятый эфир
-#define STATS_TYPE_PACKETS         2    // счётчики пакетов
+#define STATS_TYPE_CORE 0    // питание, время работы, очередь
+#define STATS_TYPE_RADIO 1   // качество связи и занятый эфир
+#define STATS_TYPE_PACKETS 2 // счётчики пакетов
 #define RESP_CODE_DEFAULT_FLOOD_SCOPE 28
-#define PUSH_CODE_ADVERT         0x80    // знакомый узел объявился снова
-#define PUSH_CODE_PATH_UPDATED   0x81    // маршрут к контакту изменился — перезапросить командой 42
-#define PUSH_CODE_SEND_CONFIRMED 0x82    // наше сообщение доставлено: [хэш 4][время в пути 4]
-#define PUSH_CODE_MSG_WAITING    0x83
-#define PUSH_CODE_LOGIN_SUCCESS  0x85    // вход на ретранслятор разрешён
-#define PUSH_CODE_LOGIN_FAIL     0x86    // пароль не подошёл
-#define PUSH_CODE_STATUS_RESPONSE 0x87   // метрики ретранслятора пришли
-#define PUSH_CODE_LOG_RX_DATA    0x88    // сырой принятый кадр: [SNR*4][RSSI][кадр]
+#define PUSH_CODE_ADVERT 0x80         // знакомый узел объявился снова
+#define PUSH_CODE_PATH_UPDATED 0x81   // маршрут к контакту изменился — перезапросить командой 42
+#define PUSH_CODE_SEND_CONFIRMED 0x82 // наше сообщение доставлено: [хэш 4][время в пути 4]
+#define PUSH_CODE_MSG_WAITING 0x83
+#define PUSH_CODE_LOGIN_SUCCESS 0x85   // вход на ретранслятор разрешён
+#define PUSH_CODE_LOGIN_FAIL 0x86      // пароль не подошёл
+#define PUSH_CODE_STATUS_RESPONSE 0x87 // метрики ретранслятора пришли
+#define PUSH_CODE_LOG_RX_DATA 0x88     // сырой принятый кадр: [SNR*4][RSSI][кадр]
 #define PUSH_CODE_TELEMETRY_RESPONSE 0x8B
 #define PUSH_CODE_BINARY_RESPONSE 0x8C
-#define PUSH_CODE_NEW_ADVERT     0x8A    // узел услышан впервые, кадр целиком
-#define PUSH_CODE_CONTACT_DELETED 0x8F   // контакт вытеснен из памяти узла: [ключ 32]
-#define PUSH_CODE_CONTACTS_FULL  0x90    // места нет и вытеснять нечего (все избранные)
+#define PUSH_CODE_NEW_ADVERT 0x8A      // узел услышан впервые, кадр целиком
+#define PUSH_CODE_CONTACT_DELETED 0x8F // контакт вытеснен из памяти узла: [ключ 32]
+#define PUSH_CODE_CONTACTS_FULL 0x90   // места нет и вытеснять нечего (все избранные)
 
 // Кадр ошибки в оригинале — два байта: RESP_CODE_ERR и причина
-#define ERR_CODE_UNSUPPORTED_CMD    1
-#define ERR_CODE_NOT_FOUND          2
-#define ERR_CODE_TABLE_FULL         3
-#define ERR_CODE_ILLEGAL_ARG        6
+#define ERR_CODE_UNSUPPORTED_CMD 1
+#define ERR_CODE_NOT_FOUND 2
+#define ERR_CODE_TABLE_FULL 3
+#define ERR_CODE_ILLEGAL_ARG 6
 
-#define ADV_TYPE_CHAT              1
+#define ADV_TYPE_CHAT 1
 // Признаки в первом байте поля адверта. Порядок полей за ним строгий и зависит от
 // признаков: координаты, два необязательных поля, и только потом имя.
-#define ADV_LATLON_MASK         0x10
-#define ADV_FEAT1_MASK          0x20
-#define ADV_FEAT2_MASK          0x40
-#define ADV_NAME_MASK           0x80
-#define COMPANION_VER_CODE        13      // версия протокола, которую мы заявляем
-#define COMPANION_FW_NAME         "meshcore-fork " FW_VERSION
-#define MAX_FRAME_SIZE           176
-#define MSG_QUEUE_MAX              8
+#define ADV_LATLON_MASK 0x10
+#define ADV_FEAT1_MASK 0x20
+#define ADV_FEAT2_MASK 0x40
+#define ADV_NAME_MASK 0x80
+#define COMPANION_VER_CODE 13 // версия протокола, которую мы заявляем
+#define COMPANION_FW_NAME "meshcore-fork " FW_VERSION
+#define MAX_FRAME_SIZE 176
+#define MSG_QUEUE_MAX 8
 // Кадры от приложения разбираются в главном цикле, а приходят пачкой из колбэка BLE:
 // без очереди вторая команда затирала первую, и она пропадала молча.
-#define IN_QUEUE_MAX               6
+#define IN_QUEUE_MAX 6
 
 // UUID сервиса Nordic UART — именно по ним приложение ищет устройство
 #define NUS_SERVICE "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
-#define NUS_RX      "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"   // приложение -> прошивка
-#define NUS_TX      "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"   // прошивка -> приложение
+#define NUS_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E" // приложение -> прошивка
+#define NUS_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E" // прошивка -> приложение
 
 // Вид сообщения в очереди: приложение забирает их одной командой, но кадры у них разные.
 // Личка несёт начало ключа собеседника, групповое — номер канала.
 enum : uint8_t { MSG_KIND_CHANNEL = 0, MSG_KIND_CONTACT = 1 };
 
 struct QueuedMsg {
-    uint8_t kind;               // MSG_KIND_*
-    uint8_t channelIdx;         // для MSG_KIND_CHANNEL
-    uint8_t pub6[6];            // для MSG_KIND_CONTACT: первые шесть байт ключа отправителя
-    uint8_t txtType;            // 0 — обычный текст, 1 — ответ командной строки
+    uint8_t kind;       // MSG_KIND_*
+    uint8_t channelIdx; // для MSG_KIND_CHANNEL
+    uint8_t pub6[6];    // для MSG_KIND_CONTACT: первые шесть байт ключа отправителя
+    uint8_t txtType;    // 0 — обычный текст, 1 — ответ командной строки
     uint8_t pathLen;
-    int8_t snr4;          // SNR, умноженный на 4 — так требует протокол
+    int8_t snr4; // SNR, умноженный на 4 — так требует протокол
     uint32_t ts;
     // Столько текста несёт кадр сообщения: MAX_FRAME_SIZE минус 16 байт самого длинного
     // заголовка (кадр лички версии 3). При 100 байтах длинные сообщения канала обрезались,
@@ -143,20 +143,20 @@ extern portMUX_TYPE inMux;
 extern uint32_t inDropped;
 
 struct Contact {
-    uint8_t  pub[32];
-    uint8_t  type;
-    uint8_t  flags;
-    uint8_t  outPathLen;        // 0xFF — путь неизвестен, отвечаем флудом
-    uint8_t  outPath[64];
-    char     name[32];
-    uint32_t lastAdvert;        // по часам самого узла
-    int32_t  lat, lon;
-    uint32_t lastmod;           // по нашим часам: по нему приложение до-синхронизируется
-    uint8_t  advPathLen;        // путь, которым пришёл последний адверт (байт длины как в эфире)
-    uint8_t  advPath[64];       // сами хэши ретрансляторов — их приложение и показывает
+    uint8_t pub[32];
+    uint8_t type;
+    uint8_t flags;
+    uint8_t outPathLen; // 0xFF — путь неизвестен, отвечаем флудом
+    uint8_t outPath[64];
+    char name[32];
+    uint32_t lastAdvert; // по часам самого узла
+    int32_t lat, lon;
+    uint32_t lastmod;    // по нашим часам: по нему приложение до-синхронизируется
+    uint8_t advPathLen;  // путь, которым пришёл последний адверт (байт длины как в эфире)
+    uint8_t advPath[64]; // сами хэши ретрансляторов — их приложение и показывает
 };
 extern Contact contacts[];
-int  contactFrame(uint8_t code, const Contact& c, uint8_t* buf);
+int contactFrame(uint8_t code, const Contact &c, uint8_t *buf);
 
 // ===== Сессии входа на ретранслятор =====
 // Войдя на ретранслятор, приложение держит сессию и шлёт команды командной строкой. Узел
@@ -174,17 +174,17 @@ int  contactFrame(uint8_t code, const Contact& c, uint8_t* buf);
 // того, как узел нас забудет.
 #define KEEP_ALIVE_EARLY_PCT 75
 
-void sessionStart(const uint8_t* pub, uint16_t keepAliveSecs);
-bool sessionHas(const uint8_t* pub, size_t n);
-void sessionStop(const uint8_t* pub, size_t n);
+void sessionStart(const uint8_t *pub, uint16_t keepAliveSecs);
+bool sessionHas(const uint8_t *pub, size_t n);
+void sessionStop(const uint8_t *pub, size_t n);
 void sessionsTick();
 
 // Чего мы ждём в ответ на запросы к ретранслятору. Вход и состояние оригинал сопоставляет
 // по началу ключа узла, телеметрию и произвольный запрос — по метке запроса; повторяем так
 // же, иначе ответы чужой прошивки не опознаются.
 void reqPendingClear();
-void reqPendingLogin(const uint8_t* pub32);
-void reqPendingStatus(const uint8_t* pub32);
+void reqPendingLogin(const uint8_t *pub32);
+void reqPendingStatus(const uint8_t *pub32);
 void reqPendingTelemetry(uint32_t tag);
 void reqPendingBinary(uint32_t tag);
 
@@ -199,13 +199,13 @@ void reqPendingBinary(uint32_t tag);
 // Единицы — по 0.625 мс (так их принимает BLEAdvertising). Частый режим держится, пока
 // подключения ждут: после запуска и после каждого отключения. Дальше узел переходит на
 // редкий — он может работать сутками без телефона, и там несколько миллиампер важнее.
-#define BLE_ADV_FAST_MIN 48      // 30 мс
-#define BLE_ADV_FAST_MAX 96      // 60 мс
-#define BLE_ADV_SLOW_MIN 1280    // 800 мс
-#define BLE_ADV_SLOW_MAX 1920    // 1200 мс
-#define BLE_ADV_FAST_MS  (60UL * 1000)   // сколько держать частый режим
+#define BLE_ADV_FAST_MIN 48           // 30 мс
+#define BLE_ADV_FAST_MAX 96           // 60 мс
+#define BLE_ADV_SLOW_MIN 1280         // 800 мс
+#define BLE_ADV_SLOW_MAX 1920         // 1200 мс
+#define BLE_ADV_FAST_MS (60UL * 1000) // сколько держать частый режим
 
-extern unsigned long bleAdvFastUntil;    // 0 — режим уже редкий
+extern unsigned long bleAdvFastUntil; // 0 — режим уже редкий
 void bleAdvFast(bool fast);
 
 // Сколько времени за один проход цикла отдаём обработке команд приложения. Раньше за проход
@@ -233,11 +233,11 @@ void ackExpect(const uint8_t ack4[4]);
 //
 // Шесть байтов — это 2^48 вариантов; столкновение двух ключей в одной сети не рассматриваем.
 #define CONTACT_KEY_PREFIX_MIN 6
-int  contactFindPrefix(const uint8_t* pub, size_t n);
+int contactFindPrefix(const uint8_t *pub, size_t n);
 
 // --- контакты и каналы: хранилище в companion.cpp, ими пользуется и разбор кадров ---
-void sendFrameToApp(const uint8_t* data, size_t len);
-int  contactFind(const uint8_t* pub);
+void sendFrameToApp(const uint8_t *data, size_t len);
+int contactFind(const uint8_t *pub);
 void contactTouch();
 void contactsIterStep();
 void contactsSave();

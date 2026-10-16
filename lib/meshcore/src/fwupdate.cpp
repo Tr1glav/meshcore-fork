@@ -2,9 +2,9 @@
 #include "globals.h"
 #include "fwupdate.h"
 #include "ota.h"
-#include "ota_internal.h"   // otaFwName: имя скачанного образа показывает страница
+#include "ota_internal.h" // otaFwName: имя скачанного образа показывает страница
 #include "mesh.h"
-#include "support.h"   // прошивальщик может дотянуться туда, куда мы нет
+#include "support.h" // прошивальщик может дотянуться туда, куда мы нет
 
 // Признак сети, а не брокера: образ качается по HTTPS, и брокер к этому не имеет
 // отношения. У прошивальщика FEATURE_MQTT=0, а обновляет себя он именно этим кодом.
@@ -15,21 +15,24 @@
 FwLatest fwLatest;
 
 // Прогресс скачивания образа для страницы (см. fwupdate.h)
-volatile uint8_t  fwDlPhase = 0;
+volatile uint8_t fwDlPhase = 0;
 volatile uint32_t fwDlGot = 0;
 volatile uint32_t fwDlTotal = 0;
-volatile uint8_t  fwDlAttempt = 0;
-volatile char     fwDlTarget[16] = "";
+volatile uint8_t fwDlAttempt = 0;
+volatile char fwDlTarget[16] = "";
 
-int fwVersionCmp(const String& a, const String& b) {
+int fwVersionCmp(const String &a, const String &b) {
     int ai = 0, bi = 0;
     for (int part = 0; part < 3; part++) {
         long av = strtol(a.c_str() + ai, NULL, 10);
         long bv = strtol(b.c_str() + bi, NULL, 10);
-        if (av != bv) return av > bv ? 1 : -1;
+        if (av != bv)
+            return av > bv ? 1 : -1;
         int an = a.indexOf('.', ai), bn = b.indexOf('.', bi);
-        if (an < 0 || bn < 0) break;
-        ai = an + 1; bi = bn + 1;
+        if (an < 0 || bn < 0)
+            break;
+        ai = an + 1;
+        bi = bn + 1;
     }
     return 0;
 }
@@ -56,7 +59,7 @@ int fwVersionCmp(const String& a, const String& b) {
 #define HAVE_CA_BUNDLE 0
 #endif
 
-static void fwSetupTls(WiFiClientSecure& cl) {
+static void fwSetupTls(WiFiClientSecure &cl) {
     static bool warned = false;
 #if HAVE_CA_BUNDLE
     if (cfg.tlsCheck) {
@@ -70,21 +73,23 @@ static void fwSetupTls(WiFiClientSecure& cl) {
 #else
     if (!warned) {
         warned = true;
-        slog("[FW] ВНИМАНИЕ: сертификат сервера не проверяется — в прошивке нет набора "
-             "корней. Создайте его: python3 scripts/gen_ca_bundle.py, затем пересоберите\n");
+        slog(
+            "[FW] ВНИМАНИЕ: сертификат сервера не проверяется — в прошивке нет набора "
+            "корней. Создайте его: python3 scripts/gen_ca_bundle.py, затем пересоберите\n");
     }
 #endif
     cl.setInsecure();
 }
 
-static bool httpGetString(const String& url, String& out, size_t limit) {
+static bool httpGetString(const String &url, String &out, size_t limit) {
     WiFiClientSecure cl;
     fwSetupTls(cl);
     HTTPClient http;
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setTimeout(15000);
-    if (!http.begin(cl, url)) return false;
-    http.addHeader("User-Agent", "meshcore-bot");   // без него GitHub отвечает отказом
+    if (!http.begin(cl, url))
+        return false;
+    http.addHeader("User-Agent", "meshcore-bot"); // без него GitHub отвечает отказом
     int code = http.GET();
     if (code != HTTP_CODE_OK) {
         slog("[FW] %s -> HTTP %d\n", url.c_str(), code);
@@ -93,29 +98,35 @@ static bool httpGetString(const String& url, String& out, size_t limit) {
     }
     out = http.getString();
     http.end();
-    if (out.length() > limit) out.remove(limit);
+    if (out.length() > limit)
+        out.remove(limit);
     return true;
 }
 
 // Простейший разбор: JSON-библиотеки ради трёх полей тянуть незачем
-static String jsonField(const String& src, const String& key, int from = 0) {
+static String jsonField(const String &src, const String &key, int from = 0) {
     int k = src.indexOf("\"" + key + "\":\"", from);
-    if (k < 0) return "";
+    if (k < 0)
+        return "";
     k += key.length() + 4;
     int e = src.indexOf('"', k);
     return (e < 0) ? "" : src.substring(k, e);
 }
 
 bool fwCheckLatest() {
-    if (!wifiConnected) return false;
+    if (!wifiConnected)
+        return false;
     String body;
     // Ответ с тремя ассетами вплотную подходит к прежнему пределу в 16 КБ, а при обрезке
     // теряется ссылка на собственный образ — самообновление молча перестаёт работать.
-    if (!httpGetString(FW_RELEASE_API, body, 32768)) return false;
+    if (!httpGetString(FW_RELEASE_API, body, 32768))
+        return false;
 
     String tag = jsonField(body, "tag_name");
-    if (tag.startsWith("v")) tag.remove(0, 1);
-    if (tag.length() == 0) return false;
+    if (tag.startsWith("v"))
+        tag.remove(0, 1);
+    if (tag.length() == 0)
+        return false;
 
     fwLatest.version = tag;
     fwLatest.binUrl = "";
@@ -124,15 +135,18 @@ bool fwCheckLatest() {
     int pos = 0;
     while (true) {
         int u = body.indexOf("\"browser_download_url\":\"", pos);
-        if (u < 0) break;
+        if (u < 0)
+            break;
         u += 24;
         int e = body.indexOf('"', u);
-        if (e < 0) break;
+        if (e < 0)
+            break;
         String url = body.substring(u, e);
         pos = e;
         int slash = url.lastIndexOf('/');
         String name = (slash < 0) ? url : url.substring(slash + 1);
-        if (name.startsWith(selfPrefix) && name.endsWith(".bin")) fwLatest.binUrl = url;
+        if (name.startsWith(selfPrefix) && name.endsWith(".bin"))
+            fwLatest.binUrl = url;
     }
     fwLatest.checkedMs = millis();
     fwLatest.valid = true;
@@ -148,7 +162,7 @@ bool fwCheckLatest() {
 // перенаправлением тянет новый адрес, не разрывая уже открытое TLS-соединение, и загрузка
 // рвётся: то HTTP -1, то файл приходит короче заявленного. Поэтому конечную ссылку
 // выясняем отдельным запросом, а качаем по ней уже чистым соединением.
-static String fwResolveUrl(const String& url) {
+static String fwResolveUrl(const String &url) {
     String cur = url;
     for (int hop = 0; hop < 4; hop++) {
         WiFiClientSecure cl;
@@ -156,20 +170,21 @@ static String fwResolveUrl(const String& url) {
         HTTPClient http;
         http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
         http.setTimeout(15000);
-        if (!http.begin(cl, cur)) return cur;
+        if (!http.begin(cl, cur))
+            return cur;
         http.addHeader("User-Agent", "meshcore-bot");
-        const char* want[] = { "Location" };
+        const char *want[] = {"Location"};
         http.collectHeaders(want, 1);
         // HEAD, а не GET: тела он не тянет, а перенаправление отдаёт так же. Прежде на
         // каждую попытку приходилось три запроса, из них один — полная загрузка, которую
         // тут же бросали. Лишнее рукопожатие TLS било и по куче, и по стеку задачи.
         int code = http.sendRequest("HEAD");
-        if (code == HTTP_CODE_MOVED_PERMANENTLY || code == HTTP_CODE_FOUND ||
-            code == HTTP_CODE_SEE_OTHER || code == HTTP_CODE_TEMPORARY_REDIRECT ||
-            code == HTTP_CODE_PERMANENT_REDIRECT) {
+        if (code == HTTP_CODE_MOVED_PERMANENTLY || code == HTTP_CODE_FOUND || code == HTTP_CODE_SEE_OTHER ||
+            code == HTTP_CODE_TEMPORARY_REDIRECT || code == HTTP_CODE_PERMANENT_REDIRECT) {
             String loc = http.header("Location");
             http.end();
-            if (loc.length() == 0) return cur;
+            if (loc.length() == 0)
+                return cur;
             slog("[FW] переход %d, шаг %d\n", code, hop + 1);
             cur = loc;
             continue;
@@ -183,15 +198,15 @@ static String fwResolveUrl(const String& url) {
 // Образ тянем только целиком. Докачка с середины запрещена: склейка кусков от разных
 // ответов сервера даёт не тот поток, и контрольная сумма образа перестаёт сходиться —
 // сорвавшаяся попытка начинается с чистого листа.
-template <typename Sink>
-static bool httpStream(const String& url, Sink sink, uint32_t* gotOut = nullptr) {
+template <typename Sink> static bool httpStream(const String &url, Sink sink, uint32_t *gotOut = nullptr) {
     String real = fwResolveUrl(url);
     WiFiClientSecure cl;
     fwSetupTls(cl);
     HTTPClient http;
     http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
     http.setTimeout(20000);
-    if (!http.begin(cl, real)) return false;
+    if (!http.begin(cl, real))
+        return false;
     http.addHeader("User-Agent", "meshcore-bot");
     int code = http.GET();
     if (code != HTTP_CODE_OK) {
@@ -207,8 +222,11 @@ static bool httpStream(const String& url, Sink sink, uint32_t* gotOut = nullptr)
         http.end();
         return false;
     }
-    if (gotOut) { fwDlTotal = (uint32_t)total; fwDlGot = 0; }   // для страницы
-    WiFiClient* st = http.getStreamPtr();
+    if (gotOut) {
+        fwDlTotal = (uint32_t)total;
+        fwDlGot = 0;
+    } // для страницы
+    WiFiClient *st = http.getStreamPtr();
     // Буфер статический, не на стеке: в сетевой задаче рядом живут клиент TLS и его
     // рукопожатие, и лишний килобайт там на вес золота. Загрузки не идут параллельно.
     static uint8_t buf[1024];
@@ -223,7 +241,8 @@ static bool httpStream(const String& url, Sink sink, uint32_t* gotOut = nullptr)
                 // Сколько успело прийти — по этому видно, оборвался поток или связь
                 // вообще не установилась.
                 slog("[FW] обрыв загрузки, принято %d из %d байт\n", got, total);
-                if (gotOut) *gotOut = (uint32_t)got;
+                if (gotOut)
+                    *gotOut = (uint32_t)got;
                 http.end();
                 return false;
             }
@@ -231,14 +250,20 @@ static bool httpStream(const String& url, Sink sink, uint32_t* gotOut = nullptr)
             continue;
         }
         int n = st->readBytes(buf, min(avail, (int)sizeof(buf)));
-        if (n <= 0) continue;
+        if (n <= 0)
+            continue;
         lastData = millis();
         got += n;
-        if (gotOut) fwDlGot = (uint32_t)got;   // живьём для полосы прогресса
-        if (!sink(buf, (size_t)n)) { http.end(); return false; }
+        if (gotOut)
+            fwDlGot = (uint32_t)got; // живьём для полосы прогресса
+        if (!sink(buf, (size_t)n)) {
+            http.end();
+            return false;
+        }
     }
     http.end();
-    if (gotOut) *gotOut = (uint32_t)got;
+    if (gotOut)
+        *gotOut = (uint32_t)got;
     slog("[FW] принято %d из %d байт\n", got, total);
     return got == total;
 }
@@ -248,13 +273,13 @@ static bool httpStream(const String& url, Sink sink, uint32_t* gotOut = nullptr)
 // проходит. Без него единичный срыв отменял всё обновление до следующей проверки.
 #define FW_DOWNLOAD_TRIES 3
 
-bool fwSelfUpdate(const String& url) {
+bool fwSelfUpdate(const String &url) {
     slog("[FW] самообновление: %s\n", url.c_str());
     radio.sleep();
     isListening = false;
-    #if HAS_FEM
+#if HAS_FEM
     digitalWrite(FEM_EN_PIN, LOW);
-    #endif
+#endif
     // Связь с хранилищем рвётся на установке соединения через раз (HTTP -1), а повтор
     // через паузу обычно проходит — как у загрузки образов узлов, делаем до трёх попыток.
     // Радио всё это время выключено, мешать эфиру нечему.
@@ -270,15 +295,16 @@ bool fwSelfUpdate(const String& url) {
         }
         FwScan scan;
         fwScanReset(&scan);
-        ok = httpStream(url, [&](const uint8_t* d, size_t n) {
+        ok = httpStream(url, [&](const uint8_t *d, size_t n) {
             fwScanFeed(&scan, d, n);
-            return Update.write((uint8_t*)d, n) == n;
+            return Update.write((uint8_t *)d, n) == n;
         });
         if (ok && fwScanVerdict(&scan) < 0) {
             slog("[FW] образ платы %s — не наш, отказ\n", scan.other);
             ok = false;
         }
-        if (!ok) Update.abort();   // иначе следующая попытка пишет поверх открытой OTA-сессии
+        if (!ok)
+            Update.abort(); // иначе следующая попытка пишет поверх открытой OTA-сессии
     }
     if (ok && Update.end(true)) {
         slog("[FW] прошито, перезагрузка\n");
@@ -286,11 +312,12 @@ bool fwSelfUpdate(const String& url) {
         ESP.restart();
         return true;
     }
-    if (ok) Update.abort();
+    if (ok)
+        Update.abort();
     slog("[FW] самообновление не удалось\n");
-    #if HAS_FEM
+#if HAS_FEM
     digitalWrite(FEM_EN_PIN, HIGH);
-    #endif
+#endif
     radio.startReceive();
     isListening = true;
     return false;
@@ -300,7 +327,7 @@ bool fwSelfUpdate(const String& url) {
 // то, что цикл может переписать при очередном hello.
 static String fwFetchUrl, fwFetchTarget;
 
-bool fwFetchNodeImage(const String& url) {
+bool fwFetchNodeImage(const String &url) {
     // Узел может быть и сенсором, и компаньоном — пишем, кому именно качаем:
     // подпись «образ сенсора» рядом со ссылкой на образ компаньона сбивает с толку.
     slog("[FW] образ для %s: %s\n", fwFetchTarget.c_str(), url.c_str());
@@ -309,8 +336,11 @@ bool fwFetchNodeImage(const String& url) {
     LittleFS.remove("/ota.bin.part");
     // Прогресс для полосы на странице
     size_t tn = 0;
-    while (tn < sizeof(fwDlTarget) - 1 && fwFetchTarget[tn]) { fwDlTarget[tn] = fwFetchTarget[tn]; tn++; }
-    fwDlTarget[tn] = 0;   // ноль сразу за именем, иначе в хвосте остаётся прежнее
+    while (tn < sizeof(fwDlTarget) - 1 && fwFetchTarget[tn]) {
+        fwDlTarget[tn] = fwFetchTarget[tn];
+        tn++;
+    }
+    fwDlTarget[tn] = 0; // ноль сразу за именем, иначе в хвосте остаётся прежнее
     fwDlPhase = 1;
     fwDlGot = 0;
     fwDlTotal = 0;
@@ -320,22 +350,36 @@ bool fwFetchNodeImage(const String& url) {
         File f;
         uint32_t got = 0;
         bool opened = false, openFail = false;
-        ok = httpStream(url, [&](const uint8_t* d, size_t n) {
-            if (!opened) {
-                f = LittleFS.open("/ota.bin.part", "w");   // только с нуля, докачек нет
-                opened = true;
-                if (!f) { openFail = true; return false; }
-            }
-            // Пишем кусок сети и сразу сбрасываем на флеш.  Без flush() LittleFS
-            // копит данные в 4-КБ кеше; финальный неполный блок не доходит до
-            // страницы при close(), и файл выходит на целое число блоков короче
-            // принятого потока.
-            if (f.write(d, n) != n) return false;
+        ok = httpStream(
+            url,
+            [&](const uint8_t *d, size_t n) {
+                if (!opened) {
+                    f = LittleFS.open("/ota.bin.part", "w"); // только с нуля, докачек нет
+                    opened = true;
+                    if (!f) {
+                        openFail = true;
+                        return false;
+                    }
+                }
+                // Пишем кусок сети и сразу сбрасываем на флеш.  Без flush() LittleFS
+                // копит данные в 4-КБ кеше; финальный неполный блок не доходит до
+                // страницы при close(), и файл выходит на целое число блоков короче
+                // принятого потока.
+                if (f.write(d, n) != n)
+                    return false;
+                f.flush();
+                return true;
+            },
+            &got);
+        if (openFail) {
+            fwDlPhase = 0;
+            slog("[FW] не открылся файл на боте\n");
+            return false;
+        }
+        if (f) {
             f.flush();
-            return true;
-        }, &got);
-        if (openFail) { fwDlPhase = 0; slog("[FW] не открылся файл на боте\n"); return false; }
-        if (f) { f.flush(); f.close(); }
+            f.close();
+        }
         if (ok) {
             // Верим файлу на флеше, а не счётчику принятого: короткий хвост мог уйти
             // в отчёт, но не доехать до страницы флеша. Догонять его нулями нельзя —
@@ -345,22 +389,26 @@ bool fwFetchNodeImage(const String& url) {
             uint32_t want = got;
             File chk2 = LittleFS.open("/ota.bin.part", "r");
             uint32_t sz = chk2 ? (uint32_t)chk2.size() : 0;
-            if (chk2) chk2.close();
+            if (chk2)
+                chk2.close();
             if (sz != want) {
-                slog("[FW] в файле %u из %u байт — хвост не дошёл, качаю заново\n",
-                     (unsigned)sz, (unsigned)want);
+                slog("[FW] в файле %u из %u байт — хвост не дошёл, качаю заново\n", (unsigned)sz, (unsigned)want);
                 ok = false;
             }
         }
         if (!ok) {
-            LittleFS.remove("/ota.bin.part");   // следующая попытка начинается с чистого листа
+            LittleFS.remove("/ota.bin.part"); // следующая попытка начинается с чистого листа
             if (attempt < FW_DOWNLOAD_TRIES) {
                 slog("[FW] попытка %d не удалась, качаю заново\n", attempt);
                 delay(2000);
             }
         }
     }
-    if (!ok) { LittleFS.remove("/ota.bin.part"); fwDlPhase = 0; return false; }
+    if (!ok) {
+        LittleFS.remove("/ota.bin.part");
+        fwDlPhase = 0;
+        return false;
+    }
     // Дальше — не здесь. Переименование, /ota.name, инспекция и старт сессии выполняются
     // в главном цикле (ветка FW_NET_FETCHED в fwUpdateTick): задача уже завершилась, и
     // никто не читает её результат, пока она сама не написала флаги. Оставляем файл как
@@ -390,13 +438,13 @@ enum FwNetStage : uint8_t { FW_NET_IDLE, FW_NET_BUSY, FW_NET_CHECKED, FW_NET_FET
 static volatile FwNetStage fwNetStage = FW_NET_IDLE;
 static volatile bool fwNetOk = false;
 
-static void fwCheckTask(void*) {
+static void fwCheckTask(void *) {
     fwNetOk = fwCheckLatest();
     fwNetStage = FW_NET_CHECKED;
     vTaskDelete(NULL);
 }
 
-static void fwFetchTask(void*) {
+static void fwFetchTask(void *) {
     fwNetOk = fwFetchNodeImage(fwFetchUrl);
     // Запас стека на выходе: здесь же живут рукопожатие TLS и буфер чтения, а
     // переполнение портит кучу — в ней лежат дескриптор и кэш файловой системы, и
@@ -406,12 +454,13 @@ static void fwFetchTask(void*) {
     vTaskDelete(NULL);
 }
 
-static bool fwStartNetTask(TaskFunction_t fn, const char* name) {
+static bool fwStartNetTask(TaskFunction_t fn, const char *name) {
     fwNetStage = FW_NET_BUSY;
     // 24 КБ стека: рукопожатию TLS обычного размера не хватает, а в задаче загрузки к
     // нему добавляются кадры разбора ссылки и потоковой записи. Запас печатается в
     // журнал на выходе из задачи — по нему видно, не подошли ли мы к краю.
-    if (xTaskCreate(fn, name, 24576, nullptr, 1, nullptr) == pdPASS) return true;
+    if (xTaskCreate(fn, name, 24576, nullptr, 1, nullptr) == pdPASS)
+        return true;
     fwNetStage = FW_NET_IDLE;
     slog("[FW] не удалось создать задачу %s\n", name);
     return false;
@@ -425,25 +474,32 @@ bool fwNetBusy() {
 // решить, что обновлять нечего. Выполняется в главном цикле — здесь читаются общие
 // данные об узлах.
 static void fwAfterCheck() {
-    if (!fwManual && !cfg.autoUpd) { slog("[FW] автообновление выключено\n"); return; }
+    if (!fwManual && !cfg.autoUpd) {
+        slog("[FW] автообновление выключено\n");
+        return;
+    }
 
     fwNextInterval = FW_CHECK_INTERVAL_MS;
     // Сначала узлы: обновление себя означает перезагрузку и потерю сессии. Берём ровно
     // один узел за проход — прошивка по радио занимает эфир целиком.
 #if FEATURE_AUTOUPDATE
     for (int i = 0; i < sensorDeviceDiscCount; i++) {
-        if (!sensorOnlineNow[i] || sensorFwVersion[i].length() == 0) continue;
-        if (fwVersionCmp(fwLatest.version, sensorFwVersion[i]) <= 0) continue;
+        if (!sensorOnlineNow[i] || sensorFwVersion[i].length() == 0)
+            continue;
+        if (fwVersionCmp(fwLatest.version, sensorFwVersion[i]) <= 0)
+            continue;
         // Прошивальщика по радио не обновляем: у него есть сеть, и он качает свой образ
         // из релиза сам. Сессия заняла бы эфир на сорок секунд ради того, что делается
         // по WiFi за несколько.
-        if (supportFind(sensorDeviceDisc[i]) >= 0) continue;
+        if (supportFind(sensorDeviceDisc[i]) >= 0)
+            continue;
         // Окружение берём из hello: по нему и подбирается файл релиза. Запасного пути
         // через код платы больше нет — он выбирал образ сенсора и для компаньона, потому
         // что плата у них одна. Узел, который окружения не прислал, пропускаем: молча
         // отправить ему чужой образ хуже, чем не обновить.
-        const String& envName = sensorEnv[i];
-        if (envName.length() == 0) continue;
+        const String &envName = sensorEnv[i];
+        if (envName.length() == 0)
+            continue;
         // Узел за ретранслятором координатор прошить не может (см. otaStartSession), и
         // проверяем это здесь же, до скачивания: иначе он качал бы мегабайтный образ
         // каждый цикл проверки и выбрасывал его на старте сессии.
@@ -452,22 +508,21 @@ static void fwAfterCheck() {
         // слышен. Спрашивать его про каждый узел на каждом цикле дорого (это HTTP-запрос),
         // поэтому здесь только не отсеиваем, а решает otaStartSession — он и спросит.
         if (!otaHopsReachable(sensorHopsFresh(i)) && !supportPresent()) {
-            slog("[FW] узел %s пропущен: %u хоп(ов), прошивальщика в сети нет\n",
-                 sensorDeviceDisc[i].c_str(), sensorHops[i]);
+            slog("[FW] узел %s пропущен: %u хоп(ов), прошивальщика в сети нет\n", sensorDeviceDisc[i].c_str(),
+                 sensorHops[i]);
             continue;
         }
         fwFetchTarget = sensorDeviceDisc[i];
-        fwFetchUrl = String(FW_RELEASE_DL) + "v" + fwLatest.version + "/"
-                   + envName + "_v" + fwLatest.version + ".otaz";
-        slog("[FW] узел %s: %s -> %s, качаю образ\n", fwFetchTarget.c_str(),
-             sensorFwVersion[i].c_str(), fwLatest.version.c_str());
+        fwFetchUrl = String(FW_RELEASE_DL) + "v" + fwLatest.version + "/" + envName + "_v" + fwLatest.version + ".otaz";
+        slog("[FW] узел %s: %s -> %s, качаю образ\n", fwFetchTarget.c_str(), sensorFwVersion[i].c_str(),
+             fwLatest.version.c_str());
         fwStartNetTask(fwFetchTask, "fwfetch");
         return;
     }
 #endif // FEATURE_AUTOUPDATE
     if (fwLatest.binUrl.length() > 0 && fwVersionCmp(fwLatest.version, FW_VERSION) > 0) {
         slog("[FW] своя прошивка устарела: %s -> %s\n", FW_VERSION, fwLatest.version.c_str());
-        fwSelfPending = true;   // прошьём себя следующим проходом
+        fwSelfPending = true; // прошьём себя следующим проходом
         return;
     }
     // Проверка идёт по расписанию, и почти всегда ответ один и тот же — сообщаем только
@@ -480,15 +535,20 @@ static void fwAfterCheck() {
 }
 
 void fwUpdateTick() {
-    if (!wifiConnected || !cfgReady()) return;
+    if (!wifiConnected || !cfgReady())
+        return;
 
     // Пока сетевая задача работает, в цикле делать нечего: он свободен и обслуживает
     // страницу и радио.
-    if (fwNetStage == FW_NET_BUSY) return;
+    if (fwNetStage == FW_NET_BUSY)
+        return;
 
     if (fwNetStage == FW_NET_CHECKED) {
         fwNetStage = FW_NET_IDLE;
-        if (!fwNetOk) { slog("[FW] не удалось получить сведения о релизе\n"); return; }
+        if (!fwNetOk) {
+            slog("[FW] не удалось получить сведения о релизе\n");
+            return;
+        }
         fwAfterCheck();
         return;
     }
@@ -498,7 +558,8 @@ void fwUpdateTick() {
         // .part никуда не денется, а fwNetBusy() всё это время держит закрытыми /savefw и
         // старт новой сессии. Сессия идёт часами, и это правильная цена: испорченная
         // прошивка дальнего узла дороже отложенного обновления.
-        if (otaAnySessionActive()) return;
+        if (otaAnySessionActive())
+            return;
         fwNetStage = FW_NET_IDLE;
         if (!fwNetOk) {
             slog("[FW] образ для %s взять не удалось\n", fwFetchTarget.c_str());
@@ -507,7 +568,10 @@ void fwUpdateTick() {
         }
         // Финализация в главном контексте: задача загрузки завершилась и не трогает
         // общие файлы и флаги. Закрываем возможный остаток сессии, затем переименовываем.
-        if (otaFile) { otaFile.close(); otaFile = File(); }
+        if (otaFile) {
+            otaFile.close();
+            otaFile = File();
+        }
         LittleFS.remove("/ota.bin");
         if (!LittleFS.rename("/ota.bin.part", "/ota.bin")) {
             slog("[FW] rename не удался\n");
@@ -517,7 +581,10 @@ void fwUpdateTick() {
         int slash = fwFetchUrl.lastIndexOf('/');
         otaFwName = (slash < 0) ? fwFetchUrl : fwFetchUrl.substring(slash + 1);
         File nm = LittleFS.open("/ota.name", "w");
-        if (nm) { nm.print(otaFwName); nm.close(); }
+        if (nm) {
+            nm.print(otaFwName);
+            nm.close();
+        }
         otaInspectStoredFw();
         fwDlPhase = 0;
         if (!otaFwReady) {
@@ -525,7 +592,7 @@ void fwUpdateTick() {
             return;
         }
         if (otaStartSession(fwFetchTarget)) {
-            fwNextInterval = FW_RECHECK_AFTER_MS;   // очередь разберём следующим проходом
+            fwNextInterval = FW_RECHECK_AFTER_MS; // очередь разберём следующим проходом
             slog("[FW] прошиваю %s до %s\n", fwFetchTarget.c_str(), fwLatest.version.c_str());
         }
         return;
@@ -533,10 +600,11 @@ void fwUpdateTick() {
 
     if (fwSelfPending && !otaAnySessionActive()) {
         fwSelfPending = false;
-        fwSelfUpdate(fwLatest.binUrl);   // отсюда возврата обычно нет: плата перезагружается
+        fwSelfUpdate(fwLatest.binUrl); // отсюда возврата обычно нет: плата перезагружается
         return;
     }
-    if (otaAnySessionActive()) return;
+    if (otaAnySessionActive())
+        return;
 
     if (fwCheckRequested) {
         fwCheckRequested = false;
@@ -546,11 +614,14 @@ void fwUpdateTick() {
     }
 
     static unsigned long lastCheck = 0;
-    if (lastCheck != 0 && millis() - lastCheck < fwNextInterval) return;
+    if (lastCheck != 0 && millis() - lastCheck < fwNextInterval)
+        return;
     lastCheck = millis();
     fwManual = false;
     fwStartNetTask(fwCheckTask, "fwcheck");
 }
 
-void fwRequestCheck() { fwCheckRequested = true; }
+void fwRequestCheck() {
+    fwCheckRequested = true;
+}
 #endif

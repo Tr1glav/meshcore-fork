@@ -13,8 +13,8 @@
 // файл по пути нельзя. Без набора корней проверка невозможна, и тогда прошивка честно
 // пишет об этом в журнал при каждой загрузке.
 struct FwLatest {
-    String version;    // "0.1.55" из тега релиза
-    String binUrl;     // прошивка для этой платы (по имени окружения сборки)
+    String version; // "0.1.55" из тега релиза
+    String binUrl;  // прошивка для этой платы (по имени окружения сборки)
     // Адреса образов узлов здесь не держим: он собирается из версии и имени окружения
     // нужного узла прямо перед загрузкой — в релизе их несколько, по одному на плату.
     unsigned long checkedMs;
@@ -24,12 +24,12 @@ extern FwLatest fwLatest;
 
 // >0 если a новее b, 0 если равны, <0 если старее. Сравнение почастям, не строкой:
 // "0.1.9" новее "0.1.10" только при строковом сравнении, что неверно.
-int fwVersionCmp(const String& a, const String& b);
+int fwVersionCmp(const String &a, const String &b);
 
-bool fwCheckLatest();                      // опросить GitHub, заполнить fwLatest
-bool fwSelfUpdate(const String& url);      // скачать и прошить себя
-bool fwFetchNodeImage(const String& url);  // скачать .otaz узла в /ota.bin.part
-void fwUpdateTick();                       // периодическая проверка и автообновление
+bool fwCheckLatest();                     // опросить GitHub, заполнить fwLatest
+bool fwSelfUpdate(const String &url);     // скачать и прошить себя
+bool fwFetchNodeImage(const String &url); // скачать .otaz узла в /ota.bin.part
+void fwUpdateTick();                      // периодическая проверка и автообновление
 // Идёт ли сетевая задача (проверка релиза, скачивание образа или финализация). Пока
 // занято, веб-страница не должна ни начинать сессию, ни писать /ota.bin: они делят одни
 // и те же файлы и флаги с сетевой задачей, и одновременная работа даёт кашу.
@@ -37,11 +37,11 @@ bool fwNetBusy();
 
 // Прогресс скачивания образа — читается страницей (/fw/status). Заполняется в сетевой
 // задаче скачивания, поэтому величины — volatile: их читает цикл из другого контекста.
-extern volatile uint8_t  fwDlPhase;    // 0 — загрузки нет, 1 — идёт
-extern volatile uint32_t fwDlGot;      // сколько байт дошло до флеша
-extern volatile uint32_t fwDlTotal;    // ожидаемый размер (0, если сервер его не отдал)
-extern volatile uint8_t  fwDlAttempt;  // номер попытки из общего числа
-extern volatile char     fwDlTarget[16];
+extern volatile uint8_t fwDlPhase;   // 0 — загрузки нет, 1 — идёт
+extern volatile uint32_t fwDlGot;    // сколько байт дошло до флеша
+extern volatile uint32_t fwDlTotal;  // ожидаемый размер (0, если сервер его не отдал)
+extern volatile uint8_t fwDlAttempt; // номер попытки из общего числа
+extern volatile char fwDlTarget[16];
 // Заявка на ручную проверку (кнопка на странице). Сама проверка идёт в главном цикле:
 // она ходит в сеть и качает образ, а это десятки секунд — выполнять такое внутри
 // обработчика запроса нельзя, иначе на это время страница перестаёт отвечать целиком.

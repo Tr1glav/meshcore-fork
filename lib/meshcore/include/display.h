@@ -1,6 +1,6 @@
 #pragma once
 #include "config.h"
-#include "oled.h"          // объект display и драйверы — только для прошивки
+#include "oled.h" // объект display и драйверы — только для прошивки
 void drawIdleStatus();
 // Перерисовка статуса по расписанию — зовётся из главного цикла
 void statusScreenTick();
@@ -11,6 +11,6 @@ void screenToggle();
 bool screenIsOn();
 void screenTick();
 #endif
-float batteryVoltage();   // вольты; 0 — платы без измерения батареи
-int batteryPercent();      // 0..100; -1 — измерения нет или аккумулятор не подключён
-bool batteryPresent();     // false — напряжение около нуля, батареи нет
+float batteryVoltage(); // вольты; 0 — платы без измерения батареи
+int batteryPercent();   // 0..100; -1 — измерения нет или аккумулятор не подключён
+bool batteryPresent();  // false — напряжение около нуля, батареи нет

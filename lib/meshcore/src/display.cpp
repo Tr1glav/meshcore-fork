@@ -4,8 +4,8 @@
 #include "globals.h"
 #include "crypto.h"
 #include "display.h"
-#include "ota.h"      // otaAnySessionActive(): идёт ЛИ БЫСТРАЯ сессия
-#include "companion.h"   // код сопряжения BLE на экране компаньона
+#include "ota.h"       // otaAnySessionActive(): идёт ЛИ БЫСТРАЯ сессия
+#include "companion.h" // код сопряжения BLE на экране компаньона
 #include "net.h"
 #include "mqtt.h"
 
@@ -15,8 +15,10 @@
 static String agoStr(unsigned long sinceMs) {
     unsigned long s = (millis() - sinceMs) / 1000;
     char buf[16];
-    if (s < 3600) snprintf(buf, sizeof(buf), "%lum%02lus", s / 60, s % 60);
-    else          snprintf(buf, sizeof(buf), "%luh%02lum", s / 3600, (s % 3600) / 60);
+    if (s < 3600)
+        snprintf(buf, sizeof(buf), "%lum%02lus", s / 60, s % 60);
+    else
+        snprintf(buf, sizeof(buf), "%luh%02lum", s / 3600, (s % 3600) / 60);
     return buf;
 }
 #endif
@@ -33,21 +35,23 @@ float batteryVoltage() {
     // нуля, условие volts > 0 не выполнялось никогда, и каждый вызов делал delay(10) плюс
     // восемь замеров ADC. А зовут эту функцию и с экрана (раз в полсекунды, по три-четыре
     // раза), и из обработчика /info на каждый опрос страницы.
-    if (measured && millis() - lastMs < BAT_READ_MS) return volts;
+    if (measured && millis() - lastMs < BAT_READ_MS)
+        return volts;
     measured = true;
     lastMs = millis();
-    #ifdef VBAT_CTRL_PIN
+#ifdef VBAT_CTRL_PIN
     pinMode(VBAT_CTRL_PIN, OUTPUT);
     digitalWrite(VBAT_CTRL_PIN, VBAT_CTRL_ACTIVE);
-    delay(10);                                   // делителю нужно установиться
-    #endif
+    delay(10); // делителю нужно установиться
+#endif
     analogSetPinAttenuation(VBAT_PIN, ADC_11db); // на делителе ~0.85 В при полной батарее
     uint32_t mv = 0;
-    for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(VBAT_PIN);
-    #ifdef VBAT_CTRL_PIN
+    for (int i = 0; i < 8; i++)
+        mv += analogReadMilliVolts(VBAT_PIN);
+#ifdef VBAT_CTRL_PIN
     // Гасим делитель: на платах с управляющим пином он иначе течёт постоянно
     digitalWrite(VBAT_CTRL_PIN, VBAT_CTRL_ACTIVE == HIGH ? LOW : HIGH);
-    #endif
+#endif
     volts = (mv / 8.0f) * VBAT_DIVIDER / 1000.0f;
     return volts;
 }
@@ -60,13 +64,14 @@ bool batteryPresent() {
 
 // Кривая разряда LiPo: напряжение к проценту заряда нелинейно
 int batteryPercent() {
-    if (!batteryPresent()) return -1;
+    if (!batteryPresent())
+        return -1;
     static const float curve[][2] = {
-        { 3.30f, 0 }, { 3.55f, 10 }, { 3.65f, 25 }, { 3.75f, 50 },
-        { 3.90f, 75 }, { 4.05f, 90 }, { 4.20f, 100 },
+        {3.30f, 0}, {3.55f, 10}, {3.65f, 25}, {3.75f, 50}, {3.90f, 75}, {4.05f, 90}, {4.20f, 100},
     };
     float v = batteryVoltage();
-    if (v <= curve[0][0]) return 0;
+    if (v <= curve[0][0])
+        return 0;
     const int n = sizeof(curve) / sizeof(curve[0]);
     for (int i = 1; i < n; i++) {
         if (v < curve[i][0]) {
@@ -77,9 +82,15 @@ int batteryPercent() {
     return 100;
 }
 #else
-float batteryVoltage() { return 0; }
-int batteryPercent() { return -1; }
-bool batteryPresent() { return false; }
+float batteryVoltage() {
+    return 0;
+}
+int batteryPercent() {
+    return -1;
+}
+bool batteryPresent() {
+    return false;
+}
 #endif
 
 #ifdef SENSOR_NODE
@@ -106,8 +117,10 @@ static void drawPingResult() {
     const unsigned lost = (unsigned)pingStatLost;
     const unsigned done = (unsigned)(pingStatRecv + pingStatLost);
     display.printf("sent %u lost %u\n", (unsigned)pingStatSent, lost);
-    if (done) display.printf("loss %lu%%\n", (unsigned long)lost * 100UL / done);
-    else      display.println("loss --");
+    if (done)
+        display.printf("loss %lu%%\n", (unsigned long)lost * 100UL / done);
+    else
+        display.println("loss --");
     if (pingStatRecv == 0) {
         // Ни одного ответа: либо ещё летит первый запрос, либо связи нет вовсе.
         display.println(pingSentMs ? "waiting reply..." : "NO REPLY");
@@ -122,9 +135,10 @@ static void drawPingResult() {
     display.printf("rx   %s dBm\n", fmtFix(pingRssi, 0, a, sizeof(a)));
     display.printf("snr  %s dB\n", fmtFix(pingSnr, 1, b, sizeof(b)));
     display.printf("peer %d dBm\n", pingPeerRssi);
-    if (pingHopsMax == 0) display.println("hops direct");
-    else display.printf("hops %u/%lu/%u\n", pingHopsMin,
-                        (unsigned long)(pingHopsSum / pingStatRecv), pingHopsMax);
+    if (pingHopsMax == 0)
+        display.println("hops direct");
+    else
+        display.printf("hops %u/%lu/%u\n", pingHopsMin, (unsigned long)(pingHopsSum / pingStatRecv), pingHopsMax);
     display.display();
 }
 #endif
@@ -136,7 +150,7 @@ static void drawBlePin() {
     display.clearDisplay();
     display.setTextSize(1);
     display.setCursor(0, 0);
-    display.println("PAIR CODE");          // экран устройства везде на английском
+    display.println("PAIR CODE"); // экран устройства везде на английском
     char pin[12];
     snprintf(pin, sizeof(pin), "%06u", (unsigned)companionBlePin());
     display.setTextSize(3);
@@ -161,26 +175,33 @@ static bool screenDimmed = false;
 
 static void screenSetFull() {
     screenDimmed = false;
-    #if HAS_OLED
+#if HAS_OLED
     display.setBrightness((uint8_t)cfg.dispBri);
-    #endif
+#endif
 }
 
 void screenWake() {
     screenWakeMs = millis();
-    if (screenDimmed) screenSetFull();
-    if (screenOn) return;
+    if (screenDimmed)
+        screenSetFull();
+    if (screenOn)
+        return;
     screenOn = true;
     display.setPower(true);
     screenSetFull();
 }
 
-bool screenIsOn() { return screenOn; }
+bool screenIsOn() {
+    return screenOn;
+}
 
 // Длинное нажатие кнопки: горит — гасим, погас — зажигаем. Ручное решение сильнее
 // сторожа простоя: выключенный вручную экран сам не загорится.
 void screenToggle() {
-    if (screenOn && screenDimmed) { screenSetFull(); return; }   // сначала вернём яркость
+    if (screenOn && screenDimmed) {
+        screenSetFull();
+        return;
+    } // сначала вернём яркость
     if (screenOn) {
         screenOn = false;
         display.setPower(false);
@@ -192,7 +213,8 @@ void screenToggle() {
 }
 
 void screenTick() {
-    if (!screenOn) return;
+    if (!screenOn)
+        return;
     // Прошивка по радио идёт — экран держим зажжённым и не гасим, иначе ход
     // сессии (проценты, счётчики) не будет виден на панели.
     //
@@ -201,21 +223,28 @@ void screenTick() {
     // выключался совсем через две минуты — то есть ровно тогда, когда смотреть на него и
     // нужно. Медленный режим намеренно не занимает otaPhase, поэтому общий предикат и есть
     // тот единственный вопрос, которым можно узнать про любую сессию.
-    if (otaAnySessionActive()) { screenWakeMs = millis(); return; }
-    #ifdef COMPANION_NODE
+    if (otaAnySessionActive()) {
+        screenWakeMs = millis();
+        return;
+    }
+#ifdef COMPANION_NODE
     // Пока приложение не сопряжено, на экране код сопряжения — гасить нельзя,
     // иначе подключиться будет нечем.
-    if (!companionBleLinked()) { screenWakeMs = millis(); return; }
-    #endif
+    if (!companionBleLinked()) {
+        screenWakeMs = millis();
+        return;
+    }
+#endif
     unsigned long idle = millis() - screenWakeMs;
-    if (idle < SCREEN_DIM_MS) return;
+    if (idle < SCREEN_DIM_MS)
+        return;
     if (idle < SCREEN_IDLE_OFF_MS) {
         // Ступень между «горит» и «погас»: читать ещё можно, а ток уже меньше
         if (!screenDimmed) {
             screenDimmed = true;
-            #if HAS_OLED
+#if HAS_OLED
             display.setBrightness((uint8_t)((uint32_t)cfg.dispBri * SCREEN_DIM_PERCENT / 100));
-            #endif
+#endif
             Serial.println("[SCR] подсветка приглушена (простой)");
         }
         return;
@@ -232,26 +261,32 @@ void screenTick() {
 // наборе такого знака нет, а картинка в памяти стоила бы больше, чем пять отрезков.
 // Показывается, только когда телефон действительно подключён и сопряжён.
 static void drawBtIcon(int x, int y) {
-    display.drawLine(x + 3, y,      x + 3, y + 10, SSD1306_WHITE);  // ствол
-    display.drawLine(x + 3, y,      x + 6, y + 3,  SSD1306_WHITE);  // верхний луч
-    display.drawLine(x + 6, y + 3,  x,     y + 7,  SSD1306_WHITE);
-    display.drawLine(x + 3, y + 10, x + 6, y + 7,  SSD1306_WHITE);  // нижний луч
-    display.drawLine(x + 6, y + 7,  x,     y + 3,  SSD1306_WHITE);
+    display.drawLine(x + 3, y, x + 3, y + 10, SSD1306_WHITE); // ствол
+    display.drawLine(x + 3, y, x + 6, y + 3, SSD1306_WHITE);  // верхний луч
+    display.drawLine(x + 6, y + 3, x, y + 7, SSD1306_WHITE);
+    display.drawLine(x + 3, y + 10, x + 6, y + 7, SSD1306_WHITE); // нижний луч
+    display.drawLine(x + 6, y + 7, x, y + 3, SSD1306_WHITE);
 }
 #endif
 
 void drawIdleStatus() {
-    #ifdef SENSOR_NODE
-    if (!screenOn) return;          // панель выключена — не тратим шину I2C впустую
+#ifdef SENSOR_NODE
+    if (!screenOn)
+        return; // панель выключена — не тратим шину I2C впустую
     // Пока режим включён, экран занят проверкой: на него и смотрят, пока ходят запросы.
-    if (pingModeOn ||
-        (pingShowUntil != 0 && (long)(millis() - pingShowUntil) < 0)) { drawPingResult(); return; }
-    #endif
-    #ifdef COMPANION_NODE
+    if (pingModeOn || (pingShowUntil != 0 && (long)(millis() - pingShowUntil) < 0)) {
+        drawPingResult();
+        return;
+    }
+#endif
+#ifdef COMPANION_NODE
     // Пока телефон не подключился, экран занят кодом сопряжения: его вводят в приложении,
     // и код меняется при каждом запуске, так что подсмотреть его можно только здесь.
-    if (!companionBleLinked()) { drawBlePin(); return; }
-    #endif
+    if (!companionBleLinked()) {
+        drawBlePin();
+        return;
+    }
+#endif
     display.clearDisplay();
     display.setTextSize(1);
     display.setCursor(0, 0);
@@ -262,31 +297,33 @@ void drawIdleStatus() {
     char tbuf[32];
     strftime(tbuf, sizeof(tbuf), "%H:%M:%S  %d.%m", &tm_now);
     unsigned long up = millis() / 1000;
-    #ifdef SENSOR_NODE
+#ifdef SENSOR_NODE
     display.println(cfgReady() ? cfg.name.c_str() : "NO CONFIG");
     display.println(tbuf);
-    if (timeSyncMs) display.printf("sync %s ago\n", agoStr(timeSyncMs).c_str());
-    else            display.println("sync: never");
+    if (timeSyncMs)
+        display.printf("sync %s ago\n", agoStr(timeSyncMs).c_str());
+    else
+        display.println("sync: never");
     display.printf("Up: %luh%02lum\n", up / 3600, (up % 3600) / 60);
     if (sensorLastSent.length() > 0) {
         display.printf("TX: %s\n", sensorLastSent.substring(0, 17).c_str());
         display.printf("    %s ago\n", agoStr(sensorLastSentMs).c_str());
     }
-    #else
-    #if FEATURE_WIFI
+#else
+#if FEATURE_WIFI
     // WiFi/MQTT статус: 1 строка, "+" = подключено, "-" = нет. У прошивальщика брокера нет,
     // и вторая половина строки ему не про что — показываем только то, что у него есть.
-    const char* w = wifiConnected ? "+" : "-";
-    #if FEATURE_MQTT
-    const char* m = mqttConnected ? "+" : "-";
+    const char *w = wifiConnected ? "+" : "-";
+#if FEATURE_MQTT
+    const char *m = mqttConnected ? "+" : "-";
     display.printf("WiFi:%s MQTT:%s\n", w, m);
-    #else
+#else
     display.printf("WiFi:%s\n", w);
-    #endif
+#endif
     if (txChannelIdx >= 0 && txChannelIdx < numChannels) {
         display.printf("TX: %s\n", channels[txChannelIdx].name);
     }
-    #endif
+#endif
     display.println(tbuf);
     // uptime + температура CPU (встроенный датчик ESP32-S3)
     int t = (int)cpuTempC();
@@ -295,27 +332,28 @@ void drawIdleStatus() {
     if (lastMessage.length() > 0) {
         display.printf("Last: %s\n", lastMessage.substring(0, 20).c_str());
     }
-    #endif
+#endif
     display.setCursor(0, SCREEN_HEIGHT - 8);
     display.print("v" FW_VERSION);
-    #ifdef SENSOR_NODE
-    if (fwVersionDiffers) display.print("*");
-    #endif
-    #if HAS_BATTERY
+#ifdef SENSOR_NODE
+    if (fwVersionDiffers)
+        display.print("*");
+#endif
+#if HAS_BATTERY
     // без аккумулятора индикатор не рисуем вовсе, чтобы не показывать "0% 0.00V"
     if (batteryPresent()) {
         char bat[16];
         char v[12];
-        snprintf(bat, sizeof(bat), "%d%% %sV", batteryPercent(),
-                 fmtFix(batteryVoltage(), 2, v, sizeof(v)));
+        snprintf(bat, sizeof(bat), "%d%% %sV", batteryPercent(), fmtFix(batteryVoltage(), 2, v, sizeof(v)));
         display.setCursor(SCREEN_WIDTH - (int)strlen(bat) * 6, SCREEN_HEIGHT - 8);
         display.print(bat);
     }
-    #endif
-    #if defined(COMPANION_NODE) && HAS_OLED
+#endif
+#if defined(COMPANION_NODE) && HAS_OLED
     // Значок связи с телефоном — в правом верхнем углу, чтобы не спорить с часами
-    if (companionBleLinked()) drawBtIcon(SCREEN_WIDTH - 8, 0);
-    #endif
+    if (companionBleLinked())
+        drawBtIcon(SCREEN_WIDTH - 8, 0);
+#endif
     display.display();
 }
 
@@ -328,11 +366,11 @@ void statusScreenTick() {
     // Показать статус на экране (обновляем раз в 500мс)
     if (isListening && (millis() - lastDisplayUpdate > 500)) {
         lastDisplayUpdate = millis();
-        #ifdef SENSOR_NODE
-        bool rxScreenHeld = false;   // сенсор входящие пакеты не рисует, статус не ждёт паузы после приёма
-        #else
+#ifdef SENSOR_NODE
+        bool rxScreenHeld = false; // сенсор входящие пакеты не рисует, статус не ждёт паузы после приёма
+#else
         bool rxScreenHeld = millis() - lastRxDisplay <= 5000;
-        #endif
+#endif
         // otaSlowOn — то же, что otaFastMode, но для медленного режима: пока идёт сессия, на
         // экране её ход, и обычный статус не должен его затирать. Без этого прогресс мигал —
         // появлялся на долю секунды и сменялся статусом, потому что статус рисуется каждые

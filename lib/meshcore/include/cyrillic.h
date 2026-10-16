@@ -18,86 +18,115 @@ namespace utf8cp866 {
 
 // Hand-tuned overrides for TTF-derived glyphs that do not survive the 6x8
 // raster well. Key = CP866 byte; value = 8 row bytes (MSB = col 0).
-static const uint8_t OVERRIDE_SH[8] = { 0xA8, 0xA8, 0xA8, 0xA8, 0xA8, 0xA8, 0xFC, 0xFC };
+static const uint8_t OVERRIDE_SH[8] = {0xA8, 0xA8, 0xA8, 0xA8, 0xA8, 0xA8, 0xFC, 0xFC};
 
 inline void fetchGlyph(uint8_t cp866, uint8_t (&out)[8]) {
-  if (cp866 < 0x80 || cp866 > 0xF1) {
-    memset(out, 0, 8);
-    return;
-  }
-  memcpy(out, CYRILLIC_CP866_GLYPHS[cp866 - 0x80], 8);
-  if (cp866 == 0x98) memcpy(out, OVERRIDE_SH, 8);  // Ш
+    if (cp866 < 0x80 || cp866 > 0xF1) {
+        memset(out, 0, 8);
+        return;
+    }
+    memcpy(out, CYRILLIC_CP866_GLYPHS[cp866 - 0x80], 8);
+    if (cp866 == 0x98)
+        memcpy(out, OVERRIDE_SH, 8); // Ш
 }
 
 inline uint8_t unicodeToCp866(uint32_t cp) {
-  if (cp >= 0x0410 && cp <= 0x041F) return 0x80 + (uint8_t)(cp - 0x0410);  // А-П
-  if (cp >= 0x0420 && cp <= 0x042F) return 0x90 + (uint8_t)(cp - 0x0420);  // Р-Я
-  if (cp >= 0x0430 && cp <= 0x043F) return 0xA0 + (uint8_t)(cp - 0x0430);  // а-п
-  if (cp >= 0x0440 && cp <= 0x044F) return 0xE0 + (uint8_t)(cp - 0x0440);  // р-я
-  if (cp == 0x0401) return 0xF0;                                           // Ё
-  if (cp == 0x0451) return 0xF1;                                           // ё
-  return '?';
+    if (cp >= 0x0410 && cp <= 0x041F)
+        return 0x80 + (uint8_t)(cp - 0x0410); // А-П
+    if (cp >= 0x0420 && cp <= 0x042F)
+        return 0x90 + (uint8_t)(cp - 0x0420); // Р-Я
+    if (cp >= 0x0430 && cp <= 0x043F)
+        return 0xA0 + (uint8_t)(cp - 0x0430); // а-п
+    if (cp >= 0x0440 && cp <= 0x044F)
+        return 0xE0 + (uint8_t)(cp - 0x0440); // р-я
+    if (cp == 0x0401)
+        return 0xF0; // Ё
+    if (cp == 0x0451)
+        return 0xF1; // ё
+    return '?';
 }
 
 // Streaming UTF-8 -> CP866 decoder. Feed bytes one at a time; returns true
 // and fills `out` only when a whole character has been decoded.
 struct Decoder {
-  uint32_t cp = 0;
-  uint8_t need = 0;
+    uint32_t cp = 0;
+    uint8_t need = 0;
 
-  void reset() { cp = 0; need = 0; }
-
-  // Цикл, а не рекурсия, и это не вкусовщина. Битый хвост последовательности разбирался
-  // повторным вызовом самой себя (reset(); return decode(...)) — глубиной на один шаг, но
-  // для компилятора это рекурсия, а значит функцию нельзя встроить, и она остаётся
-  // отдельным символом. У приложений T-Deck, которые собираются отдельным DSO, прямой
-  // вызов такого символа линкер отвергает («dangerous relocation: invalid relocation for
-  // dynamic symbol»), и ни одно приложение с русским текстом не собиралось вовсе. Второй
-  // проход по тому же байту здесь ровно один, поэтому цикл выражает то же самое буквально.
-  bool decode(uint8_t in, uint8_t &out) {
-    for (int pass = 0; pass < 2; pass++) {
-      if (need == 0) {
-        if (in < 0x80) { out = in; return true; }               // ASCII
-        if (in >= 0xC0 && in <= 0xDF) { cp = in & 0x1F; need = 1; return false; }
-        if (in >= 0xE0 && in <= 0xEF) { cp = in & 0x0F; need = 2; return false; }
-        if (in >= 0xF0 && in <= 0xF7) { cp = in & 0x07; need = 3; return false; }
-        out = '?'; return true;                                 // stray continuation
-      }
-      if (in >= 0x80 && in <= 0xBF) {
-        cp = (cp << 6) | (in & 0x3F);
-        if (--need == 0) { out = unicodeToCp866(cp); return true; }
-        return false;
-      }
-      // invalid continuation (e.g. text cut in the middle of a sequence):
-      // drop what was pending and re-process the current byte.
-      reset();
+    void reset() {
+        cp = 0;
+        need = 0;
     }
-    out = '?';
-    return true;
-  }
+
+    // Цикл, а не рекурсия, и это не вкусовщина. Битый хвост последовательности разбирался
+    // повторным вызовом самой себя (reset(); return decode(...)) — глубиной на один шаг, но
+    // для компилятора это рекурсия, а значит функцию нельзя встроить, и она остаётся
+    // отдельным символом. У приложений T-Deck, которые собираются отдельным DSO, прямой
+    // вызов такого символа линкер отвергает («dangerous relocation: invalid relocation for
+    // dynamic symbol»), и ни одно приложение с русским текстом не собиралось вовсе. Второй
+    // проход по тому же байту здесь ровно один, поэтому цикл выражает то же самое буквально.
+    bool decode(uint8_t in, uint8_t &out) {
+        for (int pass = 0; pass < 2; pass++) {
+            if (need == 0) {
+                if (in < 0x80) {
+                    out = in;
+                    return true;
+                } // ASCII
+                if (in >= 0xC0 && in <= 0xDF) {
+                    cp = in & 0x1F;
+                    need = 1;
+                    return false;
+                }
+                if (in >= 0xE0 && in <= 0xEF) {
+                    cp = in & 0x0F;
+                    need = 2;
+                    return false;
+                }
+                if (in >= 0xF0 && in <= 0xF7) {
+                    cp = in & 0x07;
+                    need = 3;
+                    return false;
+                }
+                out = '?';
+                return true; // stray continuation
+            }
+            if (in >= 0x80 && in <= 0xBF) {
+                cp = (cp << 6) | (in & 0x3F);
+                if (--need == 0) {
+                    out = unicodeToCp866(cp);
+                    return true;
+                }
+                return false;
+            }
+            // invalid continuation (e.g. text cut in the middle of a sequence):
+            // drop what was pending and re-process the current byte.
+            reset();
+        }
+        out = '?';
+        return true;
+    }
 };
 
 // Draw one CP866 byte at (x,y). Bytes < 0x80 go to the classic GFX font.
-inline void drawCp866Glyph(Adafruit_GFX &g, int16_t x, int16_t y, uint8_t cp866,
-                           uint16_t color, uint8_t sx, uint8_t sy) {
-  if (cp866 < 0x80) {
-    // Фон передаём равным цвету: при bg == color drawChar рисует только точки глифа и не
-    // закрашивает прямоугольник под буквой. С нулём латиница выводилась по чёрному полю, а
-    // кириллица ниже — попиксельно и прозрачно, то есть один и тот же текст выглядел
-    // по-разному. На монохромных платах видно не было (под текстом и так чёрное), а на
-    // цветной панели буквы вырезали чёрные прямоугольники в фоне.
-    g.drawChar(x, y, (unsigned char)cp866, color, color, sx, sy);
-    return;
-  }
-  uint8_t rows[8];
-  fetchGlyph(cp866, rows);
-  for (uint8_t r = 0; r < 8; r++) {
-    for (uint8_t c = 0; c < 6; c++) {
-      if (rows[r] & (0x80 >> c)) {
-        g.writePixel(x + c * sx, y + r * sy, color);
-      }
+inline void drawCp866Glyph(Adafruit_GFX &g, int16_t x, int16_t y, uint8_t cp866, uint16_t color, uint8_t sx,
+                           uint8_t sy) {
+    if (cp866 < 0x80) {
+        // Фон передаём равным цвету: при bg == color drawChar рисует только точки глифа и не
+        // закрашивает прямоугольник под буквой. С нулём латиница выводилась по чёрному полю, а
+        // кириллица ниже — попиксельно и прозрачно, то есть один и тот же текст выглядел
+        // по-разному. На монохромных платах видно не было (под текстом и так чёрное), а на
+        // цветной панели буквы вырезали чёрные прямоугольники в фоне.
+        g.drawChar(x, y, (unsigned char)cp866, color, color, sx, sy);
+        return;
     }
-  }
+    uint8_t rows[8];
+    fetchGlyph(cp866, rows);
+    for (uint8_t r = 0; r < 8; r++) {
+        for (uint8_t c = 0; c < 6; c++) {
+            if (rows[r] & (0x80 >> c)) {
+                g.writePixel(x + c * sx, y + r * sy, color);
+            }
+        }
+    }
 }
 
 // Body shared by every display class: decode one byte; swallow UTF-8
@@ -105,23 +134,28 @@ inline void drawCp866Glyph(Adafruit_GFX &g, int16_t x, int16_t y, uint8_t cp866,
 // Cyrillic manually, with the classic 6px advance / 8px line height.
 // NOTE: never calls display.write() here (would recurse through the
 // virtual override) - the whole cursor/advance logic is replicated.
-inline size_t processByte(Adafruit_GFX &display, Decoder &u8, uint8_t c,
-                          uint16_t color, uint8_t sx, uint8_t sy) {
-  uint8_t d;
-  if (!u8.decode(c, d)) return 1;
-  if (d == '\r') { u8.reset(); return 1; }
-  if (d == '\n') {
-    u8.reset();
-    display.setCursor(0, display.getCursorY() + 8 * sy);
+inline size_t processByte(Adafruit_GFX &display, Decoder &u8, uint8_t c, uint16_t color, uint8_t sx, uint8_t sy) {
+    uint8_t d;
+    if (!u8.decode(c, d))
+        return 1;
+    if (d == '\r') {
+        u8.reset();
+        return 1;
+    }
+    if (d == '\n') {
+        u8.reset();
+        display.setCursor(0, display.getCursorY() + 8 * sy);
+        return 1;
+    }
+    if (d < 0x20) {
+        return 1;
+    } // skip other control chars (tab etc.)
+    if (display.getCursorX() + 6 * sx > display.width()) {
+        display.setCursor(0, display.getCursorY() + 8 * sy);
+    }
+    drawCp866Glyph(display, display.getCursorX(), display.getCursorY(), d, color, sx, sy);
+    display.setCursor(display.getCursorX() + 6 * sx, display.getCursorY());
     return 1;
-  }
-  if (d < 0x20) { return 1; }  // skip other control chars (tab etc.)
-  if (display.getCursorX() + 6 * sx > display.width()) {
-    display.setCursor(0, display.getCursorY() + 8 * sy);
-  }
-  drawCp866Glyph(display, display.getCursorX(), display.getCursorY(), d, color, sx, sy);
-  display.setCursor(display.getCursorX() + 6 * sx, display.getCursorY());
-  return 1;
 }
 
-}  // namespace utf8cp866
+} // namespace utf8cp866

@@ -28,120 +28,120 @@
 // SX1262 SPI pins
 // ---------------------------------------------------------------------------
 #ifndef LORA_CS
-  #if defined(P_LORA_NSS)
-    #define LORA_CS   P_LORA_NSS
-  #else
-    #define LORA_CS   8
-  #endif
+#if defined(P_LORA_NSS)
+#define LORA_CS P_LORA_NSS
+#else
+#define LORA_CS 8
+#endif
 #endif
 
 #ifndef LORA_DIO1
-  #if defined(P_LORA_DIO_1)
-    #define LORA_DIO1 P_LORA_DIO_1
-  #else
-    #define LORA_DIO1 14
-  #endif
+#if defined(P_LORA_DIO_1)
+#define LORA_DIO1 P_LORA_DIO_1
+#else
+#define LORA_DIO1 14
+#endif
 #endif
 
 #ifndef LORA_RST
-  #if defined(P_LORA_RESET)
-    #define LORA_RST  P_LORA_RESET
-  #else
-    #define LORA_RST  12
-  #endif
+#if defined(P_LORA_RESET)
+#define LORA_RST P_LORA_RESET
+#else
+#define LORA_RST 12
+#endif
 #endif
 
 #ifndef LORA_BUSY
-  #if defined(P_LORA_BUSY)
-    #define LORA_BUSY P_LORA_BUSY
-  #else
-    #define LORA_BUSY 13
-  #endif
+#if defined(P_LORA_BUSY)
+#define LORA_BUSY P_LORA_BUSY
+#else
+#define LORA_BUSY 13
+#endif
 #endif
 
 #ifndef LORA_SCK
-  #if defined(P_LORA_SCLK)
-    #define LORA_SCK  P_LORA_SCLK
-  #else
-    #define LORA_SCK  9
-  #endif
+#if defined(P_LORA_SCLK)
+#define LORA_SCK P_LORA_SCLK
+#else
+#define LORA_SCK 9
+#endif
 #endif
 
 #ifndef LORA_MISO
-  #if defined(P_LORA_MISO)
-    #define LORA_MISO P_LORA_MISO
-  #else
-    #define LORA_MISO 11
-  #endif
+#if defined(P_LORA_MISO)
+#define LORA_MISO P_LORA_MISO
+#else
+#define LORA_MISO 11
+#endif
 #endif
 
 #ifndef LORA_MOSI
-  #if defined(P_LORA_MOSI)
-    #define LORA_MOSI P_LORA_MOSI
-  #else
-    #define LORA_MOSI 10
-  #endif
+#if defined(P_LORA_MOSI)
+#define LORA_MOSI P_LORA_MOSI
+#else
+#define LORA_MOSI 10
+#endif
 #endif
 
 // ---------------------------------------------------------------------------
 // Radio parameters
 // ---------------------------------------------------------------------------
 #ifndef LORA_FREQ
-  #define LORA_FREQ      868.731018
+#define LORA_FREQ 868.731018
 #endif
 #ifndef LORA_BW
-  #define LORA_BW        62.5
+#define LORA_BW 62.5
 #endif
 #ifndef LORA_SF
-  #define LORA_SF        8
+#define LORA_SF 8
 #endif
 #ifndef LORA_CR
-  #define LORA_CR        7
+#define LORA_CR 7
 #endif
 #ifndef LORA_SYNC_WORD
-  #define LORA_SYNC_WORD 0x12
+#define LORA_SYNC_WORD 0x12
 #endif
 #ifndef LORA_TX_POWER
-  #define LORA_TX_POWER  10
+#define LORA_TX_POWER 10
 #endif
 #ifndef LORA_PREAMBLE
-  #define LORA_PREAMBLE  16
+#define LORA_PREAMBLE 16
 #endif
 
 // ---------------------------------------------------------------------------
 // FEM (external power amplifier / LNA board)
 // ---------------------------------------------------------------------------
 #ifdef P_LORA_PA_POWER
-  #define FEM_VCC_PIN P_LORA_PA_POWER
+#define FEM_VCC_PIN P_LORA_PA_POWER
 #endif
 #ifdef P_LORA_KCT8103L_PA_CSD
-  #define FEM_EN_PIN  P_LORA_KCT8103L_PA_CSD
+#define FEM_EN_PIN P_LORA_KCT8103L_PA_CSD
 #endif
 #ifdef P_LORA_KCT8103L_PA_CTX
-  #define FEM_TX_PIN  P_LORA_KCT8103L_PA_CTX
+#define FEM_TX_PIN P_LORA_KCT8103L_PA_CTX
 #endif
 
 #ifndef HAS_FEM
-  #if defined(FEM_TX_PIN) && defined(FEM_EN_PIN) && defined(FEM_VCC_PIN)
-    #define HAS_FEM 1
-  #else
-    #define HAS_FEM 0
-    #warning "No FEM pins defined, building WITHOUT external FEM control"
-  #endif
+#if defined(FEM_TX_PIN) && defined(FEM_EN_PIN) && defined(FEM_VCC_PIN)
+#define HAS_FEM 1
+#else
+#define HAS_FEM 0
+#warning "No FEM pins defined, building WITHOUT external FEM control"
+#endif
 #endif
 
 // ---------------------------------------------------------------------------
 // Peripheral power rail (VEXT)
 // ---------------------------------------------------------------------------
 #ifdef PIN_VEXT_EN
-  #define VEXT_PIN PIN_VEXT_EN
+#define VEXT_PIN PIN_VEXT_EN
 #endif
 #ifndef VEXT_EN_ACTIVE
-  #if defined(PIN_VEXT_EN_ACTIVE)
-    #define VEXT_EN_ACTIVE PIN_VEXT_EN_ACTIVE
-  #else
-    #define VEXT_EN_ACTIVE LOW
-  #endif
+#if defined(PIN_VEXT_EN_ACTIVE)
+#define VEXT_EN_ACTIVE PIN_VEXT_EN_ACTIVE
+#else
+#define VEXT_EN_ACTIVE LOW
+#endif
 #endif
 
 // ---------------------------------------------------------------------------
@@ -150,7 +150,7 @@
 // Задаётся build-флагом -DBOARD_CODE, схема — производитель + модель.
 // ---------------------------------------------------------------------------
 #ifndef BOARD_CODE
-  #define BOARD_CODE "esp32"
+#define BOARD_CODE "esp32"
 #endif
 
 // ---------------------------------------------------------------------------
@@ -162,42 +162,42 @@
 // всегда. Тогда достаточно -DPIN_VBAT_READ (и -DPIN_VBAT_DIVIDER, если делитель не 4.9).
 // ---------------------------------------------------------------------------
 #if defined(PIN_VBAT_READ)
-  #define HAS_BATTERY 1
-  #define VBAT_PIN PIN_VBAT_READ
-  #ifdef PIN_VBAT_CTRL
-    #define VBAT_CTRL_PIN PIN_VBAT_CTRL
-    #ifndef PIN_VBAT_CTRL_ACTIVE
-      #define PIN_VBAT_CTRL_ACTIVE HIGH
-    #endif
-    #define VBAT_CTRL_ACTIVE PIN_VBAT_CTRL_ACTIVE
-  #endif
-  #ifndef PIN_VBAT_DIVIDER
-    #define PIN_VBAT_DIVIDER 4.9f      // (390k + 100k) / 100k
-  #endif
-  #define VBAT_DIVIDER PIN_VBAT_DIVIDER
+#define HAS_BATTERY 1
+#define VBAT_PIN PIN_VBAT_READ
+#ifdef PIN_VBAT_CTRL
+#define VBAT_CTRL_PIN PIN_VBAT_CTRL
+#ifndef PIN_VBAT_CTRL_ACTIVE
+#define PIN_VBAT_CTRL_ACTIVE HIGH
+#endif
+#define VBAT_CTRL_ACTIVE PIN_VBAT_CTRL_ACTIVE
+#endif
+#ifndef PIN_VBAT_DIVIDER
+#define PIN_VBAT_DIVIDER 4.9f // (390k + 100k) / 100k
+#endif
+#define VBAT_DIVIDER PIN_VBAT_DIVIDER
 #else
-  #define HAS_BATTERY 0
+#define HAS_BATTERY 0
 #endif
 
 // ---------------------------------------------------------------------------
 // User button
 // ---------------------------------------------------------------------------
 #ifndef BUTTON_PIN
-  #if defined(PIN_USER_BTN)
-    #define BUTTON_PIN PIN_USER_BTN
-  #else
-    #define BUTTON_PIN -1
-  #endif
+#if defined(PIN_USER_BTN)
+#define BUTTON_PIN PIN_USER_BTN
+#else
+#define BUTTON_PIN -1
+#endif
 #endif
 
 // ---------------------------------------------------------------------------
 // I2C pins
 // ---------------------------------------------------------------------------
 #ifdef PIN_BOARD_SDA
-  #define SDA_PIN PIN_BOARD_SDA
+#define SDA_PIN PIN_BOARD_SDA
 #endif
 #ifdef PIN_BOARD_SCL
-  #define SCL_PIN PIN_BOARD_SCL
+#define SCL_PIN PIN_BOARD_SCL
 #endif
 
 // ---------------------------------------------------------------------------
@@ -205,24 +205,24 @@
 // they are; it simply does nothing on boards without a screen.
 // ---------------------------------------------------------------------------
 #ifndef SCREEN_WIDTH
-  #define SCREEN_WIDTH 128
+#define SCREEN_WIDTH 128
 #endif
 #ifndef SCREEN_HEIGHT
-  #define SCREEN_HEIGHT 64
+#define SCREEN_HEIGHT 64
 #endif
 #ifndef OLED_RESET
-  #ifdef PIN_OLED_RESET
-    #define OLED_RESET PIN_OLED_RESET
-  #else
-    #define OLED_RESET 21
-  #endif
+#ifdef PIN_OLED_RESET
+#define OLED_RESET PIN_OLED_RESET
+#else
+#define OLED_RESET 21
+#endif
 #endif
 #ifndef SCREEN_ADDRESS
-  #define SCREEN_ADDRESS 0x3C
+#define SCREEN_ADDRESS 0x3C
 #endif
 
 #ifndef HAS_OLED
-  #define HAS_OLED 1
+#define HAS_OLED 1
 #endif
 
 // Display-объект и драйверы живут в oled.h (прошивка) — mesh-network-core включает

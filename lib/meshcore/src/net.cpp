@@ -1,8 +1,8 @@
 #include "config.h"
 #include "globals.h"
 #include "net.h"
-#include "mqtt.h"     // mqttConnectTick: ход брокера идёт следом за поднятой сетью
-#include "ota.h"      // slog
+#include "mqtt.h" // mqttConnectTick: ход брокера идёт следом за поднятой сетью
+#include "ota.h"  // slog
 
 #if FEATURE_WIFI
 
@@ -23,7 +23,8 @@ unsigned long lastNtpSyncMs = 0;
 
 void netTick() {
     // без настроек подключаться некуда: устройство ждёт настройки в консоли
-    if (cfg.wifiSsid.length() == 0) return;
+    if (cfg.wifiSsid.length() == 0)
+        return;
 
     bool connectedNow = (WiFi.status() == WL_CONNECTED);
     if (wifiConnected && !connectedNow) {
@@ -44,7 +45,7 @@ void netTick() {
             Serial.println("[WiFi] timeout, retry in 5s");
             wifiConnInProgress = false;
         }
-        return;   // без сети дальше идти некуда
+        return; // без сети дальше идти некуда
     }
     if (!wifiConnected) {
         wifiConnected = true;
@@ -56,13 +57,13 @@ void netTick() {
         if (!ntpStarted) {
             ntpStarted = true;
             lastNtpSyncMs = millis();
-            configTime(0, 0, "pool.ntp.org");   // синхронизация в UTC
+            configTime(0, 0, "pool.ntp.org"); // синхронизация в UTC
         }
 #endif
     }
 
 #if FEATURE_MQTT
-    mqttConnectTick();   // сеть есть — теперь брокер
+    mqttConnectTick(); // сеть есть — теперь брокер
 #endif
 }
 

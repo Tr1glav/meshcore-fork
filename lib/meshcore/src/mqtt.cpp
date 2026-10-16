@@ -8,7 +8,7 @@
 #if FEATURE_MQTT
 
 #include <esp_sntp.h>
-#include "net.h"   // wifiClient: брокер работает по нему
+#include "net.h" // wifiClient: брокер работает по нему
 
 // Состояние брокера и Home Assistant. Сеть и время теперь в net.cpp: они нужны и тому, у
 // кого брокера нет вовсе, и одним признаком быть не должны.
@@ -25,7 +25,7 @@ char snsBtnSlug[48];
 unsigned long lastSensorAvailCheckMs = 0;
 unsigned long lastSensorTimeSyncMs = 0;
 
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
+void mqttCallback(char *topic, byte *payload, unsigned int length) {
     char msg[256];
     int mlen = min((unsigned int)255, length);
     memcpy(msg, payload, mlen);
@@ -81,111 +81,111 @@ void publishDiscovery() {
     // Device block общий для всех сущностей бота
     char devBlock[256];
     snprintf(devBlock, sizeof(devBlock),
-        "\"identifiers\":[\"meshcore_bot_%s\"],"
-        "\"name\":\"%s\","
-        "\"manufacturer\":\"MeshCore\","
-        "\"model\":\"ESP32-S3 Listener\","
-        "\"sw_version\":\"" FW_VERSION "\"",
-        slug, nameEsc);
+             "\"identifiers\":[\"meshcore_bot_%s\"],"
+             "\"name\":\"%s\","
+             "\"manufacturer\":\"MeshCore\","
+             "\"model\":\"ESP32-S3 Listener\","
+             "\"sw_version\":\"" FW_VERSION "\"",
+             slug, nameEsc);
 
     char topic[128], payload[512];
 
     // --- Sensor: последний отправитель (state = имя отправителя) ---
     snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/last_sender/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s LastSender\","
-        "\"state_topic\":\"%s/state\","
-        "\"value_template\":\"{{ value_json.sender }}\","
-        "\"json_attributes_topic\":\"%s/state\","
-        "\"unique_id\":\"meshcore_%s_lastsender\","
-        "\"device\":{%s}}",
-        nameEsc, mqttPrefix, mqttPrefix, slug, devBlock);
+             "{\"name\":\"%s LastSender\","
+             "\"state_topic\":\"%s/state\","
+             "\"value_template\":\"{{ value_json.sender }}\","
+             "\"json_attributes_topic\":\"%s/state\","
+             "\"unique_id\":\"meshcore_%s_lastsender\","
+             "\"device\":{%s}}",
+             nameEsc, mqttPrefix, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Sensor: статус ---
     snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/status/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s Status\","
-        "\"state_topic\":\"%s/status\","
-        "\"value_template\":\"{{ value_json.uptime }}\","
-        "\"json_attributes_topic\":\"%s/status\","
-        "\"unique_id\":\"meshcore_%s_stat\","
-        "\"icon\":\"mdi:server\","
-        "\"device\":{%s}}",
-        nameEsc, mqttPrefix, mqttPrefix, slug, devBlock);
+             "{\"name\":\"%s Status\","
+             "\"state_topic\":\"%s/status\","
+             "\"value_template\":\"{{ value_json.uptime }}\","
+             "\"json_attributes_topic\":\"%s/status\","
+             "\"unique_id\":\"meshcore_%s_stat\","
+             "\"icon\":\"mdi:server\","
+             "\"device\":{%s}}",
+             nameEsc, mqttPrefix, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Sensor: IP адрес _mqtt (атрибут ip из /status) ---
     snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/ip/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s IP\","
-        "\"state_topic\":\"%s/status\","
-        "\"value_template\":\"{{ value_json.ip }}\","
-        "\"unique_id\":\"meshcore_%s_ip\","
-        "\"icon\":\"mdi:ip-network\","
-        "\"device\":{%s}}",
-        nameEsc, mqttPrefix, slug, devBlock);
+             "{\"name\":\"%s IP\","
+             "\"state_topic\":\"%s/status\","
+             "\"value_template\":\"{{ value_json.ip }}\","
+             "\"unique_id\":\"meshcore_%s_ip\","
+             "\"icon\":\"mdi:ip-network\","
+             "\"device\":{%s}}",
+             nameEsc, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Sensor: температура CPU (встроенный датчик ESP32-S3) ---
     snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/temp/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s Temp\","
-        "\"state_topic\":\"%s/status\","
-        "\"value_template\":\"{{ value_json.temp | float }}\","
-        "\"unit_of_measurement\":\"°C\","
-        "\"unique_id\":\"meshcore_%s_temp\","
-        "\"icon\":\"mdi:thermometer\","
-        "\"device\":{%s}}",
-        nameEsc, mqttPrefix, slug, devBlock);
+             "{\"name\":\"%s Temp\","
+             "\"state_topic\":\"%s/status\","
+             "\"value_template\":\"{{ value_json.temp | float }}\","
+             "\"unit_of_measurement\":\"°C\","
+             "\"unique_id\":\"meshcore_%s_temp\","
+             "\"icon\":\"mdi:thermometer\","
+             "\"device\":{%s}}",
+             nameEsc, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Sensor: версия прошивки (поле version из /status) ---
     snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/version/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s Firmware\","
-        "\"state_topic\":\"%s/status\","
-        "\"value_template\":\"{{ value_json.version }}\","
-        "\"unique_id\":\"meshcore_%s_version\","
-        "\"icon\":\"mdi:chip\","
-        "\"entity_category\":\"diagnostic\","
-        "\"device\":{%s}}",
-        nameEsc, mqttPrefix, slug, devBlock);
+             "{\"name\":\"%s Firmware\","
+             "\"state_topic\":\"%s/status\","
+             "\"value_template\":\"{{ value_json.version }}\","
+             "\"unique_id\":\"meshcore_%s_version\","
+             "\"icon\":\"mdi:chip\","
+             "\"entity_category\":\"diagnostic\","
+             "\"device\":{%s}}",
+             nameEsc, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Sensor: last_msg выбранного канала (для триггеров) ---
     snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_%s/lastmsg/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s LastMsg\","
-        "\"state_topic\":\"%s/lastmsg\","
-        "\"force_update\":true,"
-        "\"unique_id\":\"meshcore_%s_lastmsg\","
-        "\"icon\":\"mdi:message-arrow-right\","
-        "\"device\":{%s}}",
-        nameEsc, mqttPrefix, slug, devBlock);
+             "{\"name\":\"%s LastMsg\","
+             "\"state_topic\":\"%s/lastmsg\","
+             "\"force_update\":true,"
+             "\"unique_id\":\"meshcore_%s_lastmsg\","
+             "\"icon\":\"mdi:message-arrow-right\","
+             "\"device\":{%s}}",
+             nameEsc, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Text: отправка сообщения ---
     snprintf(topic, sizeof(topic), "homeassistant/text/meshcore_%s/send/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s Send\","
-        "\"command_topic\":\"%s/cmd/send\","
-        "\"unique_id\":\"meshcore_%s_send\","
-        "\"icon\":\"mdi:message-text\","
-        "\"device\":{%s}}",
-        nameEsc, mqttPrefix, slug, devBlock);
+             "{\"name\":\"%s Send\","
+             "\"command_topic\":\"%s/cmd/send\","
+             "\"unique_id\":\"meshcore_%s_send\","
+             "\"icon\":\"mdi:message-text\","
+             "\"device\":{%s}}",
+             nameEsc, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // --- Switch: listening ---
     snprintf(topic, sizeof(topic), "homeassistant/switch/meshcore_%s/listening/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s Listening\","
-        "\"command_topic\":\"%s/cmd/listening\","
-        "\"state_topic\":\"%s/lstate\","
-        "\"unique_id\":\"meshcore_%s_sw\","
-        "\"icon\":\"mdi:radio\","
-        "\"device\":{%s}}",
-        nameEsc, mqttPrefix, mqttPrefix, slug, devBlock);
+             "{\"name\":\"%s Listening\","
+             "\"command_topic\":\"%s/cmd/listening\","
+             "\"state_topic\":\"%s/lstate\","
+             "\"unique_id\":\"meshcore_%s_sw\","
+             "\"icon\":\"mdi:radio\","
+             "\"device\":{%s}}",
+             nameEsc, mqttPrefix, mqttPrefix, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     Serial.printf("[MQTT] discovery published for <%s>\n", slug);
@@ -193,7 +193,8 @@ void publishDiscovery() {
 }
 
 void publishMessage() {
-    if (!mqttConnected) return;
+    if (!mqttConnected)
+        return;
     char escSender[64], escText[128], escChan[64], escRoute[128];
     jsonEscape(lastSender.c_str(), escSender, sizeof(escSender));
     jsonEscape(lastMessage.c_str(), escText, sizeof(escText));
@@ -207,10 +208,9 @@ void publishMessage() {
     char topic[96], payload[512];
     snprintf(topic, sizeof(topic), "%s/state", mqttPrefix);
     snprintf(payload, sizeof(payload),
-        "{\"sender\":\"%s\",\"text\":\"%s\",\"channel\":\"%s\","
-        "\"rssi\":%s,\"snr\":%s,\"hops\":%d,\"route\":\"%s\"}",
-        escSender, escText, escChan,
-        rssiS, snrS, lastHopCount, escRoute);
+             "{\"sender\":\"%s\",\"text\":\"%s\",\"channel\":\"%s\","
+             "\"rssi\":%s,\"snr\":%s,\"hops\":%d,\"route\":\"%s\"}",
+             escSender, escText, escChan, rssiS, snrS, lastHopCount, escRoute);
     mqtt.publish(topic, payload);
     Serial.printf("[MQTT] message published\n");
 
@@ -229,8 +229,10 @@ void publishMessage() {
 }
 
 void clearLastMsg() {
-    if (!lastmsgPendingClear || !mqttConnected) return;
-    if ((int32_t)(millis() - lastmsgClearAt) < 0) return;   // ещё не время (учёт wrap)
+    if (!lastmsgPendingClear || !mqttConnected)
+        return;
+    if ((int32_t)(millis() - lastmsgClearAt) < 0)
+        return; // ещё не время (учёт wrap)
     lastmsgPendingClear = false;
     char lmTopic[96];
     snprintf(lmTopic, sizeof(lmTopic), "%s/lastmsg", mqttPrefix);
@@ -239,10 +241,13 @@ void clearLastMsg() {
 }
 
 void clearSensorBtnText() {
-    if (!snsBtnPendingClear || !mqttConnected) return;
-    if ((int32_t)(millis() - snsBtnClearAt) < 0) return;
+    if (!snsBtnPendingClear || !mqttConnected)
+        return;
+    if ((int32_t)(millis() - snsBtnClearAt) < 0)
+        return;
     snsBtnPendingClear = false;
-    if (snsBtnSlug[0] == 0) return;
+    if (snsBtnSlug[0] == 0)
+        return;
     char tText[128];
     snprintf(tText, sizeof(tText), "%s/sensor/%s/text", mqttPrefix, snsBtnSlug);
     mqtt.publish(tText, "", false);
@@ -250,14 +255,19 @@ void clearSensorBtnText() {
     snsBtnSlug[0] = 0;
 }
 
-void mqttSlug(const char* name, char* out, int maxLen) {
-    if (maxLen <= 0) return;
+void mqttSlug(const char *name, char *out, int maxLen) {
+    if (maxLen <= 0)
+        return;
     int n = 0;
     bool lossy = false;
     for (int i = 0; name[i] && n < maxLen - 1; i++) {
         char c = name[i];
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') out[n++] = c;
-        else { out[n++] = '_'; lossy = true; }
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')
+            out[n++] = c;
+        else {
+            out[n++] = '_';
+            lossy = true;
+        }
     }
     out[n] = 0;
     // Кириллица (и любой другой не-ASCII) превращалась в вереницу подчёркиваний, поэтому
@@ -265,11 +275,14 @@ void mqttSlug(const char* name, char* out, int maxLen) {
     // таких узлов в Home Assistant затирали друг друга. Добавляем к slug хвост от хэша
     // исходного имени. Для чисто латинских имён, где ничего не потерялось, slug остаётся
     // прежним: уже созданные в HA сущности не переименовываются.
-    if (!lossy) return;
-    uint16_t h = crc16buf((const uint8_t*)name, strlen(name));
-    int room = maxLen - 1 - 5;            // место под "_xxxx" и завершающий ноль
-    if (room < 0) return;
-    if (n > room) n = room;
+    if (!lossy)
+        return;
+    uint16_t h = crc16buf((const uint8_t *)name, strlen(name));
+    int room = maxLen - 1 - 5; // место под "_xxxx" и завершающий ноль
+    if (room < 0)
+        return;
+    if (n > room)
+        n = room;
     snprintf(out + n, maxLen - n, "_%04x", h);
 }
 
@@ -277,9 +290,11 @@ void mqttSlug(const char* name, char* out, int maxLen) {
 // узел сообщает в hello: сенсор и компаньон живут на одной плате, и различить их иначе
 // нельзя. Пусто — прошивка узла старая, окружение она не передаёт; такие узлы у нас
 // всегда были сенсорами, поэтому это и значение по умолчанию.
-static const char* roleFromEnv(const String& env) {
-    if (env.endsWith("companion"))   return "Companion";
-    if (env.endsWith("coordinator")) return "Coordinator";
+static const char *roleFromEnv(const String &env) {
+    if (env.endsWith("companion"))
+        return "Companion";
+    if (env.endsWith("coordinator"))
+        return "Coordinator";
     return "Sensor";
 }
 
@@ -287,16 +302,22 @@ static const char* roleFromEnv(const String& env) {
 // Home Assistant, поэтому проверка тут не формальность: кавычка или скобка в «координате»
 // сломала бы разбор, а буквы молча превратили бы точку на карте в мусор. Формат ровно
 // тот, что шлёт узел, — необязательный минус, цифры, одна точка.
-static bool isCoordText(const String& v) {
+static bool isCoordText(const String &v) {
     int len = v.length();
-    if (len < 3 || len > 12) return false;
+    if (len < 3 || len > 12)
+        return false;
     int i = 0, dots = 0, digits = 0;
-    if (v[0] == '-') i = 1;
+    if (v[0] == '-')
+        i = 1;
     for (; i < len; i++) {
         char c = v[i];
-        if (c == '.') { if (++dots > 1) return false; }
-        else if (c >= '0' && c <= '9') digits++;
-        else return false;
+        if (c == '.') {
+            if (++dots > 1)
+                return false;
+        } else if (c >= '0' && c <= '9')
+            digits++;
+        else
+            return false;
     }
     return dots == 1 && digits >= 2;
 }
@@ -307,47 +328,58 @@ static bool isCoordText(const String& v) {
 //
 // Проверяем строго по двум основам, а не режем любой «:хвост из цифр»: у прочих сообщений
 // такой хвост — обычные данные («t:25»), и молча срезать его нельзя.
-static bool bareButton(const String& m, String& bare) {
-    const char* bases[2] = { SENSOR_MSG_BUTTON, SENSOR_MSG_BUTTON2 };
-    for (const char* b : bases) {
+static bool bareButton(const String &m, String &bare) {
+    const char *bases[2] = {SENSOR_MSG_BUTTON, SENSOR_MSG_BUTTON2};
+    for (const char *b : bases) {
         size_t bl = strlen(b);
-        if (!m.startsWith(b)) continue;
-        if (m.length() == bl) { bare = m; return true; }
-        if (m[bl] != ':' || m.length() == bl + 1) continue;
+        if (!m.startsWith(b))
+            continue;
+        if (m.length() == bl) {
+            bare = m;
+            return true;
+        }
+        if (m[bl] != ':' || m.length() == bl + 1)
+            continue;
         bool digits = true;
         for (size_t i = bl + 1; i < m.length(); i++) {
-            if (m[i] < '0' || m[i] > '9') { digits = false; break; }
+            if (m[i] < '0' || m[i] > '9') {
+                digits = false;
+                break;
+            }
         }
-        if (digits) { bare = m.substring(0, bl); return true; }
+        if (digits) {
+            bare = m.substring(0, bl);
+            return true;
+        }
     }
     return false;
 }
 
 // Точка узла на карте. Отдельной функцией, а не строкой в publishSensorDisc: сущность
 // заводится не при появлении узла, а при первых пришедших координатах.
-static void publishSensorPosDisc(const String& sender, const char* slug, const String& env) {
-    const char* role = roleFromEnv(env);
+static void publishSensorPosDisc(const String &sender, const char *slug, const String &env) {
+    const char *role = roleFromEnv(env);
     char senderEsc[64];
     jsonEscape(sender.c_str(), senderEsc, sizeof(senderEsc));
     char devBlock[192];
     snprintf(devBlock, sizeof(devBlock),
-        "\"identifiers\":[\"meshcore_sensor_%s\"],\"name\":\"MeshBot %s %s\","
-        "\"manufacturer\":\"MeshCore\",\"model\":\"%s node\"",
-        slug, role, slug, role);
+             "\"identifiers\":[\"meshcore_sensor_%s\"],\"name\":\"MeshBot %s %s\","
+             "\"manufacturer\":\"MeshCore\",\"model\":\"%s node\"",
+             slug, role, slug, role);
     char topic[128], payload[512];
     snprintf(topic, sizeof(topic), "homeassistant/device_tracker/meshcore_sensor_%s/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s position\",\"json_attributes_topic\":\"%s/sensor/%s/position\","
-        "\"source_type\":\"gps\",\"icon\":\"mdi:map-marker\","
-        "\"unique_id\":\"meshcore_sensor_%s_position\","
-        "\"device\":{%s}}",
-        senderEsc, mqttPrefix, slug, slug, devBlock);
+             "{\"name\":\"%s position\",\"json_attributes_topic\":\"%s/sensor/%s/position\","
+             "\"source_type\":\"gps\",\"icon\":\"mdi:map-marker\","
+             "\"unique_id\":\"meshcore_sensor_%s_position\","
+             "\"device\":{%s}}",
+             senderEsc, mqttPrefix, slug, slug, devBlock);
     mqtt.publish(topic, payload, true);
     Serial.printf("[MQTT] карта: %s\n", slug);
 }
 
-void publishSensorDisc(const String& sender, const char* slug, const String& env) {
-    const char* role = roleFromEnv(env);
+void publishSensorDisc(const String &sender, const char *slug, const String &env) {
+    const char *role = roleFromEnv(env);
     // Имя узла вставляется в discovery-конфиг дословно. Имя может содержать кавычки,
     // обратные слэши и управляющие символы — без экранирования Home Assistant сломает
     // разбор JSON-конфига, и датчик просто не появится в интерфейсе.
@@ -355,9 +387,9 @@ void publishSensorDisc(const String& sender, const char* slug, const String& env
     jsonEscape(sender.c_str(), senderEsc, sizeof(senderEsc));
     char devBlock[192];
     snprintf(devBlock, sizeof(devBlock),
-        "\"identifiers\":[\"meshcore_sensor_%s\"],\"name\":\"MeshBot %s %s\","
-        "\"manufacturer\":\"MeshCore\",\"model\":\"%s node\"",
-        slug, role, slug, role);
+             "\"identifiers\":[\"meshcore_sensor_%s\"],\"name\":\"MeshBot %s %s\","
+             "\"manufacturer\":\"MeshCore\",\"model\":\"%s node\"",
+             slug, role, slug, role);
     // Один буфер на все сущности: функция вызывается глубоко из разбора пакета, стек не бесконечен
     char topic[128], payload[512];
 
@@ -365,68 +397,68 @@ void publishSensorDisc(const String& sender, const char* slug, const String& env
     // а у нас сущность read-only — это state от сенсора).
     snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_sensor_%s/text/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s data\",\"state_topic\":\"%s/sensor/%s/text\","
-        "\"icon\":\"mdi:sprout\",\"unique_id\":\"meshcore_sensor_%s_text\","
-        "\"entity_category\":\"diagnostic\","
-        "\"device\":{%s}}",
-        senderEsc, mqttPrefix, slug, slug, devBlock);
+             "{\"name\":\"%s data\",\"state_topic\":\"%s/sensor/%s/text\","
+             "\"icon\":\"mdi:sprout\",\"unique_id\":\"meshcore_sensor_%s_text\","
+             "\"entity_category\":\"diagnostic\","
+             "\"device\":{%s}}",
+             senderEsc, mqttPrefix, slug, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_sensor_%s/rssi/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s RSSI\",\"state_topic\":\"%s/sensor/%s/rssi\","
-        "\"unit_of_measurement\":\"dBm\",\"device_class\":\"signal_strength\","
-        "\"unique_id\":\"meshcore_sensor_%s_rssi\","
-        "\"device\":{%s}}",
-        senderEsc, mqttPrefix, slug, slug, devBlock);
+             "{\"name\":\"%s RSSI\",\"state_topic\":\"%s/sensor/%s/rssi\","
+             "\"unit_of_measurement\":\"dBm\",\"device_class\":\"signal_strength\","
+             "\"unique_id\":\"meshcore_sensor_%s_rssi\","
+             "\"device\":{%s}}",
+             senderEsc, mqttPrefix, slug, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // Availability: бинарник device_class=connectivity, «online» пока датчик шлёт.
     snprintf(topic, sizeof(topic), "homeassistant/binary_sensor/meshcore_sensor_%s/available/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s available\",\"state_topic\":\"%s/sensor/%s/available\","
-        "\"payload_on\":\"online\",\"payload_off\":\"offline\",\"device_class\":\"connectivity\","
-        "\"unique_id\":\"meshcore_sensor_%s_available\","
-        "\"device\":{%s}}",
-        senderEsc, mqttPrefix, slug, slug, devBlock);
+             "{\"name\":\"%s available\",\"state_topic\":\"%s/sensor/%s/available\","
+             "\"payload_on\":\"online\",\"payload_off\":\"offline\",\"device_class\":\"connectivity\","
+             "\"unique_id\":\"meshcore_sensor_%s_available\","
+             "\"device\":{%s}}",
+             senderEsc, mqttPrefix, slug, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_sensor_%s/version/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s firmware\",\"state_topic\":\"%s/sensor/%s/version\","
-        "\"icon\":\"mdi:chip\",\"entity_category\":\"diagnostic\","
-        "\"unique_id\":\"meshcore_sensor_%s_version\","
-        "\"device\":{%s}}",
-        senderEsc, mqttPrefix, slug, slug, devBlock);
+             "{\"name\":\"%s firmware\",\"state_topic\":\"%s/sensor/%s/version\","
+             "\"icon\":\"mdi:chip\",\"entity_category\":\"diagnostic\","
+             "\"unique_id\":\"meshcore_sensor_%s_version\","
+             "\"device\":{%s}}",
+             senderEsc, mqttPrefix, slug, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // Заряд и напряжение батареи сенсора — приходят в hello
     snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_sensor_%s/battery/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s battery\",\"state_topic\":\"%s/sensor/%s/battery\","
-        "\"device_class\":\"battery\",\"unit_of_measurement\":\"%%\",\"state_class\":\"measurement\","
-        "\"unique_id\":\"meshcore_sensor_%s_battery\","
-        "\"device\":{%s}}",
-        senderEsc, mqttPrefix, slug, slug, devBlock);
+             "{\"name\":\"%s battery\",\"state_topic\":\"%s/sensor/%s/battery\","
+             "\"device_class\":\"battery\",\"unit_of_measurement\":\"%%\",\"state_class\":\"measurement\","
+             "\"unique_id\":\"meshcore_sensor_%s_battery\","
+             "\"device\":{%s}}",
+             senderEsc, mqttPrefix, slug, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_sensor_%s/board/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s board\",\"state_topic\":\"%s/sensor/%s/board\","
-        "\"icon\":\"mdi:developer-board\",\"entity_category\":\"diagnostic\","
-        "\"unique_id\":\"meshcore_sensor_%s_board\","
-        "\"device\":{%s}}",
-        senderEsc, mqttPrefix, slug, slug, devBlock);
+             "{\"name\":\"%s board\",\"state_topic\":\"%s/sensor/%s/board\","
+             "\"icon\":\"mdi:developer-board\",\"entity_category\":\"diagnostic\","
+             "\"unique_id\":\"meshcore_sensor_%s_board\","
+             "\"device\":{%s}}",
+             senderEsc, mqttPrefix, slug, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     snprintf(topic, sizeof(topic), "homeassistant/sensor/meshcore_sensor_%s/voltage/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s voltage\",\"state_topic\":\"%s/sensor/%s/voltage\","
-        "\"device_class\":\"voltage\",\"unit_of_measurement\":\"V\",\"state_class\":\"measurement\","
-        "\"entity_category\":\"diagnostic\","
-        "\"unique_id\":\"meshcore_sensor_%s_voltage\","
-        "\"device\":{%s}}",
-        senderEsc, mqttPrefix, slug, slug, devBlock);
+             "{\"name\":\"%s voltage\",\"state_topic\":\"%s/sensor/%s/voltage\","
+             "\"device_class\":\"voltage\",\"unit_of_measurement\":\"V\",\"state_class\":\"measurement\","
+             "\"entity_category\":\"diagnostic\","
+             "\"unique_id\":\"meshcore_sensor_%s_voltage\","
+             "\"device\":{%s}}",
+             senderEsc, mqttPrefix, slug, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     // Event entity: MQTT event platform — появляется как device-trigger "Fired"
@@ -434,19 +466,20 @@ void publishSensorDisc(const String& sender, const char* slug, const String& env
     // публикует его в event_type_topic, HA генерирует событие.
     snprintf(topic, sizeof(topic), "homeassistant/event/meshcore_sensor_%s/button/config", slug);
     snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s Button\","
-        "\"state_topic\":\"%s/sensor/%s/button\","
-        "\"event_types\":[\"button\",\"button2\"],"
-        "\"unique_id\":\"meshcore_sensor_%s_button\","
-        "\"device\":{%s}}",
-        senderEsc, mqttPrefix, slug, slug, devBlock);
+             "{\"name\":\"%s Button\","
+             "\"state_topic\":\"%s/sensor/%s/button\","
+             "\"event_types\":[\"button\",\"button2\"],"
+             "\"unique_id\":\"meshcore_sensor_%s_button\","
+             "\"device\":{%s}}",
+             senderEsc, mqttPrefix, slug, slug, devBlock);
     mqtt.publish(topic, payload, true);
 
     Serial.printf("[MQTT] sensor discovery published: %s\n", slug);
 }
 
 void publishSensorAvailability(int idx) {
-    if (!mqttConnected) return;
+    if (!mqttConnected)
+        return;
     char slug[48], topic[128];
     mqttSlug(sensorDeviceDisc[idx].c_str(), slug, sizeof(slug));
     snprintf(topic, sizeof(topic), "%s/sensor/%s/available", mqttPrefix, slug);
@@ -460,16 +493,15 @@ bool publishSensorMessage() {
     const int idx = lastSensorIdx;
     bool cameOnline = lastSensorCameOnline;
     const bool hello = lastHello.isHello;
-    const String& ver = lastHello.ver;
-    const String& batPct = lastHello.batPct;
-    const String& batVolt = lastHello.batVolt;
-    const String& envName = lastHello.env;
-    const String& lat = lastHello.lat;
-    const String& lon = lastHello.lon;
+    const String &ver = lastHello.ver;
+    const String &batPct = lastHello.batPct;
+    const String &batVolt = lastHello.batVolt;
+    const String &envName = lastHello.env;
+    const String &lat = lastHello.lat;
+    const String &lon = lastHello.lon;
 
     if (!mqttConnected) {
-        Serial.printf("[SNS] %s: %s (MQTT not connected, skipped)\n",
-                      lastSender.c_str(), lastMessage.c_str());
+        Serial.printf("[SNS] %s: %s (MQTT not connected, skipped)\n", lastSender.c_str(), lastMessage.c_str());
         return false;
     }
     char slug[48];
@@ -518,8 +550,7 @@ bool publishSensorMessage() {
             // Точка на карте: Home Assistant берёт широту и долготу из атрибутов
             // device_tracker и сам определяет зону.
             char pos[96];
-            snprintf(pos, sizeof(pos), "{\"latitude\":%s,\"longitude\":%s}",
-                     lat.c_str(), lon.c_str());
+            snprintf(pos, sizeof(pos), "{\"latitude\":%s,\"longitude\":%s}", lat.c_str(), lon.c_str());
             snprintf(t, sizeof(t), "%s/sensor/%s/position", mqttPrefix, slug);
             mqtt.publish(t, pos, true);
             // Сущность карты заводится при ПЕРВЫХ координатах, а не вместе с остальными:
@@ -530,10 +561,8 @@ bool publishSensorMessage() {
             }
         }
         Serial.printf("[SNS] heartbeat from %s: v%s, батарея %s%%%s%s\n", lastSender.c_str(),
-                      ver.length() ? ver.c_str() : "?",
-                      batPct.length() ? batPct.c_str() : "?",
-                      lat.length() ? ", координаты " : "",
-                      lat.length() ? lat.c_str() : "");
+                      ver.length() ? ver.c_str() : "?", batPct.length() ? batPct.c_str() : "?",
+                      lat.length() ? ", координаты " : "", lat.length() ? lat.c_str() : "");
         return true;
     }
     // --- данные: text + rssi ---
@@ -569,34 +598,31 @@ bool publishSensorMessage() {
 }
 
 void publishStatus() {
-    if (!mqttConnected) return;
+    if (!mqttConnected)
+        return;
     // Экранируем кавычки в именах/сообщениях для JSON
     char prvEsc[64];
     jsonEscape(privateChannelName.c_str(), prvEsc, sizeof(prvEsc));
     char chEsc[64];
-    const char* chName = (txChannelIdx >= 0 && txChannelIdx < numChannels)
-                         ? channels[txChannelIdx].name : "?";
+    const char *chName = (txChannelIdx >= 0 && txChannelIdx < numChannels) ? channels[txChannelIdx].name : "?";
     jsonEscape(chName, chEsc, sizeof(chEsc));
     char topic[96], payload[384];
     unsigned long upSec = millis() / 1000;
     char tempS[12];
-    fmtFix(cpuTempC(), 1, tempS, sizeof(tempS));   // без float-printf
+    fmtFix(cpuTempC(), 1, tempS, sizeof(tempS)); // без float-printf
     snprintf(topic, sizeof(topic), "%s/status", mqttPrefix);
     snprintf(payload, sizeof(payload),
-        "{\"version\":\"" FW_VERSION "\",\"board\":\"" BOARD_CODE "\",\"wifi\":true,\"mqtt\":true,\"lora_rx\":%s,"
-        "\"uptime\":%lu,\"packets\":%d,\"duplicates\":%lu,"
-        "\"sent\":%lu,\"cad_giveups\":%lu,\"relay_full\":%lu,\"reply_dropped\":%lu,"
-        "\"reply_deferred\":%lu,\"no_pubkey\":%lu,"
-        "\"temp\":%s,\"ip\":\"%s\","
-        "\"channel\":\"%s\",\"private\":\"%s\"}",
-        isListening ? "true" : "false",
-        upSec, packetCount, duplicateCount,
-        (unsigned long)framesSentCount, (unsigned long)cadGiveUps,
-        (unsigned long)relayQueueDrops, (unsigned long)replyDropped,
-        (unsigned long)replyDeferred, (unsigned long)dmNoPubkey,
-        tempS,
-        wifiConnected ? WiFi.localIP().toString().c_str() : "0.0.0.0",
-        chEsc, prvEsc);
+             "{\"version\":\"" FW_VERSION "\",\"board\":\"" BOARD_CODE
+             "\",\"wifi\":true,\"mqtt\":true,\"lora_rx\":%s,"
+             "\"uptime\":%lu,\"packets\":%d,\"duplicates\":%lu,"
+             "\"sent\":%lu,\"cad_giveups\":%lu,\"relay_full\":%lu,\"reply_dropped\":%lu,"
+             "\"reply_deferred\":%lu,\"no_pubkey\":%lu,"
+             "\"temp\":%s,\"ip\":\"%s\","
+             "\"channel\":\"%s\",\"private\":\"%s\"}",
+             isListening ? "true" : "false", upSec, packetCount, duplicateCount, (unsigned long)framesSentCount,
+             (unsigned long)cadGiveUps, (unsigned long)relayQueueDrops, (unsigned long)replyDropped,
+             (unsigned long)replyDeferred, (unsigned long)dmNoPubkey, tempS,
+             wifiConnected ? WiFi.localIP().toString().c_str() : "0.0.0.0", chEsc, prvEsc);
     mqtt.publish(topic, payload, true);
 
     // Listening state
@@ -614,8 +640,8 @@ void setupMQTT() {
     snprintf(mqttPrefix, sizeof(mqttPrefix), "meshcore/bot/%s", slug);
     mqtt.setServer(cfg.mqttHost.c_str(), cfg.mqttPort);
     mqtt.setCallback(mqttCallback);
-    mqtt.setBufferSize(768);   // discovery-конфиг весит до ~600 Б
-    mqtt.setSocketTimeout(3);  // ограничиваем блокировку connect() до ~3 с
+    mqtt.setBufferSize(768);  // discovery-конфиг весит до ~600 Б
+    mqtt.setSocketTimeout(3); // ограничиваем блокировку connect() до ~3 с
 }
 
 // Шаг подключения к брокеру. Сеть к этому моменту уже поднята — её машина состояния живёт
@@ -623,16 +649,19 @@ void setupMQTT() {
 // tickRetryConnections, и «есть сеть» с «есть брокер» не различались.
 void mqttConnectTick() {
 #if FEATURE_MQTT
-    if (cfg.mqttHost.length() == 0) return;
-    if (mqttConnected && mqtt.connected()) return;
-    if (mqttConnected) mqttConnected = false;
+    if (cfg.mqttHost.length() == 0)
+        return;
+    if (mqttConnected && mqtt.connected())
+        return;
+    if (mqttConnected)
+        mqttConnected = false;
 
     Serial.printf("[MQTT] connecting to %s:%d ...", cfg.mqttHost.c_str(), cfg.mqttPort);
     char clientId[48];
     snprintf(clientId, sizeof(clientId), "meshcore_%s_%lu", cfg.name.c_str(), millis() % 100000);
 
-    const char* mqUser = cfg.mqttUser.length() ? cfg.mqttUser.c_str() : NULL;
-    const char* mqPass = cfg.mqttPass.length() ? cfg.mqttPass.c_str() : NULL;
+    const char *mqUser = cfg.mqttUser.length() ? cfg.mqttUser.c_str() : NULL;
+    const char *mqPass = cfg.mqttPass.length() ? cfg.mqttPass.c_str() : NULL;
     if (mqtt.connect(clientId, mqUser, mqPass)) {
         mqttConnected = true;
         Serial.println(" OK");
@@ -644,7 +673,8 @@ void mqttConnectTick() {
 
         // Discovery бота публикуем только при ПЕРВОМ подключении (reconnect его
         // повторяет поток retained-конфигов). Обновления — по факту изменений.
-        if (!discoveryPublished) publishDiscovery();
+        if (!discoveryPublished)
+            publishDiscovery();
         publishStatus();
         // Брокер мог потерять retained-состояние, пока нас не было: discovery сенсоров
         // уйдёт с их следующим сообщением, availability — сразу

@@ -1,0 +1,13 @@
+# Хуки намеренно local, а не mirrors-clang-format с пином версии: пин жил своей жизнью
+# (v18.1.8 при clang-format 22 на машине), и один и тот же файл форматировался по-разному
+# из pre-commit и из `make format`. Теперь форматтер один — тот, что на PATH, как в
+# Makefile. Опции, которые версии понимают по-разному, закреплены в .clang-format явно.
+repos:
+  - repo: local
+    hooks:
+      - id: clang-format
+        name: clang-format
+        entry: clang-format
+        args: [-i, --style=file]
+        language: system
+        types_or: [c, c++]

@@ -1,13 +1,13 @@
 #include "config.h"
 #include "globals.h"
-#include "strbuf.h"   // strAppend: позиция, которая не уезжает за буфер
+#include "strbuf.h" // strAppend: позиция, которая не уезжает за буфер
 #include "crypto.h"
 #include "radio.h"
 #include "mesh.h"
 #include "ota.h"
 #include "ota_internal.h"
-#include "support.h"   // прошивальщик: показываем его на странице
-#include "fwupdate.h"   // проверка обновлений по кнопке
+#include "support.h"  // прошивальщик: показываем его на странице
+#include "fwupdate.h" // проверка обновлений по кнопке
 #include "display.h"
 #include <esp_system.h>
 #include <WiFi.h>
@@ -28,18 +28,28 @@
 // касается, и держать его в библиотеке протокола значило тащить <WebServer.h> в каждый узел.
 WebServer otaServer(3232);
 
-static const char* resetReasonStr() {
+static const char *resetReasonStr() {
     switch (esp_reset_reason()) {
-        case ESP_RST_POWERON:   return "power on";
-        case ESP_RST_SW:        return "software restart";
-        case ESP_RST_PANIC:     return "PANIC (падение)";
-        case ESP_RST_INT_WDT:   return "interrupt watchdog";
-        case ESP_RST_TASK_WDT:  return "task watchdog";
-        case ESP_RST_WDT:       return "other watchdog";
-        case ESP_RST_BROWNOUT:  return "BROWNOUT (просадка питания)";
-        case ESP_RST_EXT:       return "external reset";
-        case ESP_RST_DEEPSLEEP: return "deep sleep";
-        default:                return "unknown";
+        case ESP_RST_POWERON:
+            return "power on";
+        case ESP_RST_SW:
+            return "software restart";
+        case ESP_RST_PANIC:
+            return "PANIC (падение)";
+        case ESP_RST_INT_WDT:
+            return "interrupt watchdog";
+        case ESP_RST_TASK_WDT:
+            return "task watchdog";
+        case ESP_RST_WDT:
+            return "other watchdog";
+        case ESP_RST_BROWNOUT:
+            return "BROWNOUT (просадка питания)";
+        case ESP_RST_EXT:
+            return "external reset";
+        case ESP_RST_DEEPSLEEP:
+            return "deep sleep";
+        default:
+            return "unknown";
     }
 }
 
@@ -54,18 +64,16 @@ String buildDiagReport() {
     r += "flash chip: " + String(ESP.getFlashChipSize()) + " B\r\n";
     r += "-- partitions (runtime) --\r\n";
     {
-        esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY,
-                                                         ESP_PARTITION_SUBTYPE_ANY, NULL);
+        esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
         for (; it != NULL; it = esp_partition_next(it)) {
-            const esp_partition_t* p = esp_partition_get(it);
+            const esp_partition_t *p = esp_partition_get(it);
             char line[96];
-            snprintf(line, sizeof(line),
-                     "  %-10s type=%d sub=%d off=0x%06X size=%uK\r\n",
-                     p->label, (int)p->type, (int)p->subtype,
-                     (unsigned)p->address, p->size / 1024);
+            snprintf(line, sizeof(line), "  %-10s type=%d sub=%d off=0x%06X size=%uK\r\n", p->label, (int)p->type,
+                     (int)p->subtype, (unsigned)p->address, p->size / 1024);
             r += line;
         }
-        if (it) esp_partition_iterator_release(it);
+        if (it)
+            esp_partition_iterator_release(it);
     }
     r += "-- mesh OTA state --\r\n";
     r += "  otaFwReady=" + String(otaFwReady ? "true" : "false");
@@ -75,21 +83,25 @@ String buildDiagReport() {
     if (LittleFS.exists("/ota.bin")) {
         File f = LittleFS.open("/ota.bin", "r");
         r += "  /ota.bin exists, size=" + String(f ? (long)f.size() : -1L) + "\r\n";
-        if (f) f.close();
+        if (f)
+            f.close();
     } else {
         r += "  /ota.bin НЕТ\r\n";
     }
     r += "  sensors known: " + String(sensorDeviceDiscCount) + "\r\n";
     r += "  sensors online: ";
     int on = 0;
-    for (int i = 0; i < sensorDeviceDiscCount; i++) if (sensorOnlineNow[i]) on++;
+    for (int i = 0; i < sensorDeviceDiscCount; i++)
+        if (sensorOnlineNow[i])
+            on++;
     r += String(on) + "\r\n";
     r += "\r\n===== LOG TAIL =====\r\n";
     {
         String tail;
         uint32_t total;
         logGetSnapshot(tail, total);
-        if (total > tail.length()) r += "…(начало обрезано)…\r\n";
+        if (total > tail.length())
+            r += "…(начало обрезано)…\r\n";
         r += tail;
     }
     return r;
@@ -100,8 +112,8 @@ String buildDiagReport() {
 void otaHandleSelfTest() {
     // Место на файловой системе: без этих чисел не отличить «файл не дописался» от
     // «в разделе кончились блоки», а скачанный образ молча обрывался именно так.
-    String r = "Место: занято " + String((unsigned)LittleFS.usedBytes()) +
-               " из " + String((unsigned)LittleFS.totalBytes()) + " Б\r\n";
+    String r = "Место: занято " + String((unsigned)LittleFS.usedBytes()) + " из " +
+               String((unsigned)LittleFS.totalBytes()) + " Б\r\n";
     {
         File d = LittleFS.open("/");
         for (File e = d.openNextFile(); e; e = d.openNextFile()) {
@@ -113,7 +125,7 @@ void otaHandleSelfTest() {
     if (!t) {
         r += "open(w) FAILED — файловая система не работает";
     } else {
-        int w = (int)t.write((const uint8_t*)"probe", 5);
+        int w = (int)t.write((const uint8_t *)"probe", 5);
         t.close();
         if (w != 5) {
             r += "write FAILED";
@@ -123,7 +135,7 @@ void otaHandleSelfTest() {
                 r += "open(r) FAILED";
             } else {
                 char b[8] = {0};
-                int rd = (int)t2.read((uint8_t*)b, 5);
+                int rd = (int)t2.read((uint8_t *)b, 5);
                 t2.close();
                 r += "OK, прочитано \"" + String(b) + "\" (" + String(rd) + " Б)";
             }
@@ -142,8 +154,8 @@ void otaHandleConfigGet() {
         char name[24], val[96], item[200];
         jsonEscape(cfgFieldName(i), name, sizeof(name));
         jsonEscape(cfgFieldValue(i, false).c_str(), val, sizeof(val));
-        snprintf(item, sizeof(item), "%s{\"f\":\"%s\",\"v\":\"%s\",\"s\":%s}",
-                 i ? "," : "", name, val, cfgFieldSecret(i) ? "true" : "false");
+        snprintf(item, sizeof(item), "%s{\"f\":\"%s\",\"v\":\"%s\",\"s\":%s}", i ? "," : "", name, val,
+                 cfgFieldSecret(i) ? "true" : "false");
         json += item;
     }
     json += "]";
@@ -159,20 +171,27 @@ void otaHandleConfigPost() {
     String unknown, bad;
     for (int i = 0; i < otaServer.args(); i++) {
         String n = otaServer.argName(i);
-        if (n == "reboot" || n == "plain") continue;
+        if (n == "reboot" || n == "plain")
+            continue;
         int rc = cfgApply(n, otaServer.arg(i));
-        if (rc == CFG_APPLY_OK) { changed++; slog("[WEB] настройка %s изменена\n", n.c_str()); }
-        else if (rc == CFG_APPLY_UNKNOWN) unknown += " " + n;
-        else bad += " " + n;   // значение вне диапазона — в NVS не поедет
+        if (rc == CFG_APPLY_OK) {
+            changed++;
+            slog("[WEB] настройка %s изменена\n", n.c_str());
+        } else if (rc == CFG_APPLY_UNKNOWN)
+            unknown += " " + n;
+        else
+            bad += " " + n; // значение вне диапазона — в NVS не поедет
     }
     // Ничего не сохраняем: правки лежат только в памяти, и без save они пропадут сами.
     // Раньше отказ cfgApply терялся, и страница отвечала «OK, изменено полей: N», хотя
     // поле оставалось прежним.
     if (unknown.length() > 0 || bad.length() > 0) {
         String msg;
-        if (unknown.length() > 0) msg += "неизвестные поля:" + unknown;
+        if (unknown.length() > 0)
+            msg += "неизвестные поля:" + unknown;
         if (bad.length() > 0) {
-            if (msg.length() > 0) msg += "; ";
+            if (msg.length() > 0)
+                msg += "; ";
             msg += "значение вне допустимого диапазона:" + bad;
         }
         slog("[WEB] настройки не сохранены — %s\n", msg.c_str());
@@ -216,13 +235,13 @@ void otaHandleInfo() {
         size_t at = strAppend(sups, sizeof(sups), 0, "[");
         bool first = true;
         for (int i = 0; i < supportCount && at < sizeof(sups) - 80; i++) {
-            if (!supportLive(i)) continue;
+            if (!supportLive(i))
+                continue;
             char nm[48], sv[24], se[40];
             jsonEscape(supports[i].name.c_str(), nm, sizeof(nm));
             jsonEscape(supports[i].ver.c_str(), sv, sizeof(sv));
             jsonEscape(supports[i].env.c_str(), se, sizeof(se));
-            at = strAppend(sups, sizeof(sups), at,
-                           "%s{\"n\":\"%s\",\"ip\":\"%s\",\"v\":\"%s\",\"e\":\"%s\"}",
+            at = strAppend(sups, sizeof(sups), at, "%s{\"n\":\"%s\",\"ip\":\"%s\",\"v\":\"%s\",\"e\":\"%s\"}",
                            first ? "" : ",", nm, supports[i].ip.c_str(), sv, se);
             first = false;
         }
@@ -236,13 +255,11 @@ void otaHandleInfo() {
     char loss[160];
     size_t la = strAppend(loss, sizeof(loss), 0, "\"cadg\":%lu", (unsigned long)cadGiveUps);
 #if MESH_HAS_RELAY_QUEUE
-    la = strAppend(loss, sizeof(loss), la, ",\"rlq\":%lu",
-                   (unsigned long)relayQueueDrops);
+    la = strAppend(loss, sizeof(loss), la, ",\"rlq\":%lu", (unsigned long)relayQueueDrops);
 #endif
 #if MESH_HAS_REPLY_QUEUE
-    la = strAppend(loss, sizeof(loss), la, ",\"rdr\":%lu,\"rdf\":%lu,\"dmn\":%lu",
-                   (unsigned long)replyDropped, (unsigned long)replyDeferred,
-                   (unsigned long)dmNoPubkey);
+    la = strAppend(loss, sizeof(loss), la, ",\"rdr\":%lu,\"rdf\":%lu,\"dmn\":%lu", (unsigned long)replyDropped,
+                   (unsigned long)replyDeferred, (unsigned long)dmNoPubkey);
 #endif
     (void)la;
 
@@ -250,24 +267,20 @@ void otaHandleInfo() {
     snprintf(json, sizeof(json),
              "{\"up\":%lu,\"wifi\":%s,\"mqtt\":%s,\"heap\":%u,\"temp\":%s,"
              "\"bat\":%d,\"volt\":%s,\"ip\":\"%s\",\"pkts\":%d,"
-             "\"env\":\"" FW_ENV "\",\"ver\":\"" FW_VERSION "\","
+             "\"env\":\"" FW_ENV "\",\"ver\":\"" FW_VERSION
+             "\","
              "\"sups\":%s,"
              "\"fsent\":%lu,%s,"
              "\"fwready\":%s,\"fwname\":\"%s\",\"fwsize\":%u,\"fwimg\":%u}",
-             (unsigned long)(millis() / 1000),
-             wifiConnected ? "true" : "false",
+             (unsigned long)(millis() / 1000), wifiConnected ? "true" : "false",
 #if FEATURE_MQTT
              mqttConnected ? "true" : "false",
 #else
-             "false",   // брокера в этой сборке нет — страница показывает «MQTT: -»
+             "false", // брокера в этой сборке нет — страница показывает «MQTT: -»
 #endif
-             (unsigned)ESP.getFreeHeap(), temp,
-             batteryPercent(), volt,
-             wifiConnected ? WiFi.localIP().toString().c_str() : "-", packetCount,
-             sups,
-             (unsigned long)framesSentCount, loss,
-             otaFwReady ? "true" : "false", fwname,
-             (unsigned)otaFwSize, (unsigned)otaImgSize);
+             (unsigned)ESP.getFreeHeap(), temp, batteryPercent(), volt,
+             wifiConnected ? WiFi.localIP().toString().c_str() : "-", packetCount, sups, (unsigned long)framesSentCount,
+             loss, otaFwReady ? "true" : "false", fwname, (unsigned)otaFwSize, (unsigned)otaImgSize);
     otaServer.send(200, "application/json", json);
 }
 
@@ -279,7 +292,8 @@ void otaHandleLogTail() {
     uint32_t from = strtoul(otaServer.arg("from").c_str(), NULL, 10);
     uint32_t tailStart = pos - tail.length();
     String out;
-    if (from > pos) from = tailStart;   // бот перезагрузился — отдаём весь хвост
+    if (from > pos)
+        from = tailStart; // бот перезагрузился — отдаём весь хвост
     if (from < tailStart) {
         out = "…(пропущено)…\n";
         from = tailStart;
@@ -300,7 +314,8 @@ void otaHandleLogTail() {
 #define WEB_AUTH_USER "admin"
 
 static bool webAuthOk() {
-    if (cfg.apiKey.length() && otaServer.header("X-API-Key") == cfg.apiKey) return true;
+    if (cfg.apiKey.length() && otaServer.header("X-API-Key") == cfg.apiKey)
+        return true;
     if (cfg.webPass.length() == 0) {
         static bool warned = false;
         if (!warned) {
@@ -316,15 +331,17 @@ static bool webAuthOk() {
 // и итог), и два ответа на один запрос порвали бы соединение.
 static void webAuthReject() {
     slog("[WEB] отказ: ни пароля страницы, ни ключа\n");
-    otaServer.requestAuthentication(BASIC_AUTH, "meshcore",
-                                    "нужен пароль страницы (настройка web_pass)");
+    otaServer.requestAuthentication(BASIC_AUTH, "meshcore", "нужен пароль страницы (настройка web_pass)");
 }
 
 // Обёртка вокруг обработчика. Проверка стоит здесь, а не строкой в каждом обработчике:
 // строку забыли бы в новом, а тут виден сразу весь список и то, что закрыто.
 static WebServer::THandlerFunction webAuth(WebServer::THandlerFunction fn) {
     return [fn]() {
-        if (!webAuthOk()) { webAuthReject(); return; }
+        if (!webAuthOk()) {
+            webAuthReject();
+            return;
+        }
         fn();
     };
 }
@@ -342,7 +359,7 @@ static bool apiKeyOk() {
 
 // Значение в строку запроса. Ключи каналов — base64, а в нём есть '+', '/' и '=': '+' в
 // query означает пробел, и ключ приехал бы на прошивальщик битым.
-static String urlEncode(const String& v) {
+static String urlEncode(const String &v) {
     // Имя не HEX: в Print.h ядра Arduino это макрос основания счисления (HEX == 16).
     static const char ENC_HEX[] = "0123456789ABCDEF";
     String out;
@@ -361,9 +378,12 @@ static String urlEncode(const String& v) {
 }
 
 static int hexVal(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
     return -1;
 }
 
@@ -384,7 +404,10 @@ void otaHandleSupport() {
         return;
     }
     const String ip = otaServer.client().remoteIP().toString();
-    if (ip.length() < 7) { otaServer.send(400, "text/plain", "bad peer"); return; }
+    if (ip.length() < 7) {
+        otaServer.send(400, "text/plain", "bad peer");
+        return;
+    }
     const int idx = supportSeen(name, ip);
     // Версия и окружение приходят вместе с отметкой: отдельный запрос /info и ожидание
     // радио-heartbeat для этого больше не нужны.
@@ -392,8 +415,12 @@ void otaHandleSupport() {
     const String env = otaServer.arg("env");
     if (ver.length() && supports[idx].ver != ver)
         slog("[SUP] %s: версия %s (%s)\n", name.c_str(), ver.c_str(), env.c_str());
-    if (ver.length()) { supports[idx].ver = ver; supports[idx].infoMs = millis(); }
-    if (env.length()) supports[idx].env = env;
+    if (ver.length()) {
+        supports[idx].ver = ver;
+        supports[idx].infoMs = millis();
+    }
+    if (env.length())
+        supports[idx].env = env;
     otaServer.send(200, "text/plain", "OK");
 }
 
@@ -411,35 +438,46 @@ void otaHandleEars() {
         return;
     }
     String body = otaServer.arg("plain");
-    if (body.length() == 0) { otaServer.send(400, "application/json", "{\"recv\":0,\"dup\":0}"); return; }
+    if (body.length() == 0) {
+        otaServer.send(400, "application/json", "{\"recv\":0,\"dup\":0}");
+        return;
+    }
     int pos = 0, recv = 0, dup = 0;
     while (pos < (int)body.length()) {
         int e = body.indexOf('\n', pos);
-        if (e < 0) e = body.length();
+        if (e < 0)
+            e = body.length();
         String line = body.substring(pos, e);
         pos = e + 1;
         int c1 = line.indexOf(':');
         int c2 = (c1 < 0) ? -1 : line.indexOf(':', c1 + 1);
-        if (c1 <= 0 || c2 <= c1) continue;
+        if (c1 <= 0 || c2 <= c1)
+            continue;
         String hex = line.substring(0, c1);
         int rssi = line.substring(c1 + 1, c2).toInt();
         int snr = line.substring(c2 + 1).toInt();
-        if ((hex.length() & 1) != 0) continue;   // hex обязан быть чётным
+        if ((hex.length() & 1) != 0)
+            continue; // hex обязан быть чётным
         uint8_t frame[256];
         int n = 0;
         for (int i = 0; i + 1 < (int)hex.length() && n < 256; i += 2) {
             int hi = hexVal(hex[i]), lo = hexVal(hex[i + 1]);
-            if (hi < 0 || lo < 0) { n = 0; break; }
+            if (hi < 0 || lo < 0) {
+                n = 0;
+                break;
+            }
             frame[n++] = (uint8_t)((hi << 4) | lo);
         }
-        if (n < 9) continue;   // короче минимального сырого кадра (см. radioRxTick)
+        if (n < 9)
+            continue; // короче минимального сырого кадра (см. radioRxTick)
         recv++;
         MeshRxMeta meta;
         meta.origin = MESH_RX_FORWARDED;
         meta.rssi = (float)rssi;
         meta.snr = (float)snr;
         meta.via = otaServer.header("X-Support");
-        if (!meshRxFrame(frame, n, meta)) dup++;
+        if (!meshRxFrame(frame, n, meta))
+            dup++;
     }
     char reply[80];
     snprintf(reply, sizeof(reply), "{\"recv\":%d,\"dup\":%d,\"new\":%d}", recv, dup, recv - dup);
@@ -450,10 +488,10 @@ void otaHandleEars() {
     static uint32_t earsRxFrames = 0, earsRxDups = 0;
     earsRxFrames += (uint32_t)recv;
     earsRxDups += (uint32_t)dup;
-    if (earsRxSumMs == 0) earsRxSumMs = millis();
+    if (earsRxSumMs == 0)
+        earsRxSumMs = millis();
     else if (millis() - earsRxSumMs >= 5UL * 60 * 1000) {
-        slog("[EARS] за 5 мин принято %u кадров (дублей %u)\n",
-             (unsigned)earsRxFrames, (unsigned)earsRxDups);
+        slog("[EARS] за 5 мин принято %u кадров (дублей %u)\n", (unsigned)earsRxFrames, (unsigned)earsRxDups);
         earsRxSumMs = millis();
         earsRxFrames = earsRxDups = 0;
     }
@@ -481,10 +519,13 @@ void otaHandleRadiotx() {
     int n = 0;
     for (int i = 0; i + 1 < (int)hex.length() && n < 256; i += 2) {
         int hi = hexVal(hex[i]), lo = hexVal(hex[i + 1]);
-        if (hi < 0 || lo < 0) { n = 0; break; }
+        if (hi < 0 || lo < 0) {
+            n = 0;
+            break;
+        }
         frame[n++] = (uint8_t)((hi << 4) | lo);
     }
-    if (n < 9) {   // короче минимального сырого кадра (см. radioRxTick) — в эфир не идёт
+    if (n < 9) { // короче минимального сырого кадра (см. radioRxTick) — в эфир не идёт
         otaServer.send(400, "text/plain", "bad frame");
         return;
     }
@@ -505,7 +546,7 @@ void otaHandleSensors() {
         jsonEscape(sensorDeviceDisc[i].c_str(), name, sizeof(name));
         jsonEscape(sensorFwVersion[i].c_str(), ver, sizeof(ver));
         jsonEscape(sensorEnv[i].c_str(), env, sizeof(env));
-        fmtFix(sensorRssi[i], 0, rssi, sizeof(rssi));   // без float-printf, как и везде
+        fmtFix(sensorRssi[i], 0, rssi, sizeof(rssi)); // без float-printf, как и везде
         // Хопы: по ним видно, можно ли узел прошить ИЗ ЭФИРА. -1 — из эфира не слышали.
         // Свежая оценка: страница должна показывать то же, по чему принимается решение о
         // сессии, иначе «напрямую» на странице и отказ по кнопке противоречили бы друг другу.
@@ -515,16 +556,17 @@ void otaHandleSensors() {
         // прошивальщику — тогда сессию поведёт он, и «хопы: ?» это не отказ, а объяснение.
         via[0] = 0;
         const uint8_t vs = sensorViaSup[i];
-        if (vs == 0xFF) jsonEscape("?", via, sizeof(via));
-        else if (vs > 0 && vs - 1 < supportCount) jsonEscape(supports[vs - 1].name.c_str(), via, sizeof(via));
+        if (vs == 0xFF)
+            jsonEscape("?", via, sizeof(via));
+        else if (vs > 0 && vs - 1 < supportCount)
+            jsonEscape(supports[vs - 1].name.c_str(), via, sizeof(via));
         fmtFix(sensorViaRssi[i], 0, vrssi, sizeof(vrssi));
         snprintf(item, sizeof(item),
                  "%s{\"name\":\"%s\",\"ver\":\"%s\",\"env\":\"%s\","
                  "\"online\":%s,\"seen_s\":%lu,\"bat\":%d,\"rssi\":%s,\"hops\":%d,"
                  "\"via\":\"%s\",\"virssi\":%s}",
                  i ? "," : "", name, ver, env, sensorOnlineNow[i] ? "true" : "false",
-                 (millis() - sensorLastActive[i]) / 1000, sensorBattery[i], rssi, hops,
-                 via, vrssi);
+                 (millis() - sensorLastActive[i]) / 1000, sensorBattery[i], rssi, hops, via, vrssi);
         json += item;
     }
     json += "]";
@@ -545,19 +587,23 @@ static String cfgQueue[CFG_QUEUE_MAX];
 static uint8_t cfgQHead = 0, cfgQCount = 0;
 static unsigned long cfgQNextMs = 0;
 
-static bool cfgQueuePush(const String& msg) {
-    if (cfgQCount >= CFG_QUEUE_MAX) return false;
+static bool cfgQueuePush(const String &msg) {
+    if (cfgQCount >= CFG_QUEUE_MAX)
+        return false;
     cfgQueue[(cfgQHead + cfgQCount) % CFG_QUEUE_MAX] = msg;
     cfgQCount++;
     return true;
 }
 
 void webTick() {
-    if (cfgQCount == 0) return;
-    if (otaAnySessionActive()) return;   // идёт прошивка — эфир занят целиком, очередь ждёт
-    if (cfgQNextMs != 0 && (long)(millis() - cfgQNextMs) < 0) return;
+    if (cfgQCount == 0)
+        return;
+    if (otaAnySessionActive())
+        return; // идёт прошивка — эфир занят целиком, очередь ждёт
+    if (cfgQNextMs != 0 && (long)(millis() - cfgQNextMs) < 0)
+        return;
     String msg = cfgQueue[cfgQHead];
-    cfgQueue[cfgQHead] = String();       // не держим текст в очереди дольше нужного
+    cfgQueue[cfgQHead] = String(); // не держим текст в очереди дольше нужного
     cfgQHead = (cfgQHead + 1) % CFG_QUEUE_MAX;
     cfgQCount--;
     slog("[CFG] -> %s\n", msg.c_str());
@@ -566,8 +612,14 @@ void webTick() {
 }
 
 void otaHandleSensorsConfig() {
-    if (otaAnySessionActive()) { otaServer.send(409, "text/plain; charset=utf-8", "идёт прошивка сенсора"); return; }
-    if (sensorChannelIdx < 0) { otaServer.send(503, "text/plain; charset=utf-8", "канал сенсоров не настроен"); return; }
+    if (otaAnySessionActive()) {
+        otaServer.send(409, "text/plain; charset=utf-8", "идёт прошивка сенсора");
+        return;
+    }
+    if (sensorChannelIdx < 0) {
+        otaServer.send(503, "text/plain; charset=utf-8", "канал сенсоров не настроен");
+        return;
+    }
     String target = otaServer.arg("target");
     if (target.length() == 0 || target.length() > 31) {
         otaServer.send(400, "text/plain; charset=utf-8", "не указан сенсор");
@@ -588,16 +640,20 @@ void otaHandleSensorsConfig() {
             // (у радио-пути он тоже текст). Разворачиваем в "поле=значение" здесь, чтобы
             // страница осталась одна на оба пути; секреты у прошивальщика уже замаскированы.
             String text;
-            for (int at = 0; (at = answer.indexOf("\"f\":\"", at)) >= 0; ) {
+            for (int at = 0; (at = answer.indexOf("\"f\":\"", at)) >= 0;) {
                 at += 5;
                 const int fe = answer.indexOf('"', at);
-                if (fe < 0) break;
+                if (fe < 0)
+                    break;
                 const String field = answer.substring(at, fe);
                 const int vs = answer.indexOf("\"v\":\"", fe);
-                if (vs < 0) break;
+                if (vs < 0)
+                    break;
                 const int ve = answer.indexOf('"', vs + 5);
-                if (ve < 0) break;
-                if (text.length()) text += ", ";
+                if (ve < 0)
+                    break;
+                if (text.length())
+                    text += ", ";
                 text += field + "=" + answer.substring(vs + 5, ve);
                 at = ve;
             }
@@ -609,14 +665,17 @@ void otaHandleSensorsConfig() {
         int fields = 0;
         for (int i = 0; i < otaServer.args(); i++) {
             String n = otaServer.argName(i);
-            if (n == "target" || n == "save" || n == "reboot" || n == "get" || n == "plain") continue;
-            if (query.length()) query += "&";
+            if (n == "target" || n == "save" || n == "reboot" || n == "get" || n == "plain")
+                continue;
+            if (query.length())
+                query += "&";
             query += n + "=" + urlEncode(otaServer.arg(i));
             fields++;
         }
         // save по сети не нужен: /config у прошивальщика сохраняет применённое сам (cfgSave),
         // в отличие от радио-очереди, где save — отдельное сообщение.
-        if (otaServer.arg("reboot") == "1") query += (query.length() ? "&" : "") + String("reboot=1");
+        if (otaServer.arg("reboot") == "1")
+            query += (query.length() ? "&" : "") + String("reboot=1");
         if (!supportConfigRequest(supIdx, true, query, answer)) {
             otaServer.send(504, "text/plain; charset=utf-8", "прошивальщик не ответил");
             return;
@@ -637,15 +696,21 @@ void otaHandleSensorsConfig() {
     int sent = 0, lost = 0;
     for (int i = 0; i < otaServer.args(); i++) {
         String n = otaServer.argName(i);
-        if (n == "target" || n == "save" || n == "reboot" || n == "get" || n == "plain") continue;
-        if (cfgQueuePush("cfg:" + target + ":" + n + "=" + otaServer.arg(i))) sent++;
-        else lost++;
+        if (n == "target" || n == "save" || n == "reboot" || n == "get" || n == "plain")
+            continue;
+        if (cfgQueuePush("cfg:" + target + ":" + n + "=" + otaServer.arg(i)))
+            sent++;
+        else
+            lost++;
     }
-    if (otaServer.arg("save") == "1" && !cfgQueuePush("cfg:" + target + ":save")) lost++;
-    if (otaServer.arg("reboot") == "1" && !cfgQueuePush("cfg:" + target + ":reboot")) lost++;
-    String answer = String("в очереди полей: ") + sent + ", уходят по одному раз в "
-                  + (CFG_MSG_GAP_MS / 1000) + " с, ответы смотрите в журнале";
-    if (lost > 0) answer += ", НЕ поместилось: " + String(lost);
+    if (otaServer.arg("save") == "1" && !cfgQueuePush("cfg:" + target + ":save"))
+        lost++;
+    if (otaServer.arg("reboot") == "1" && !cfgQueuePush("cfg:" + target + ":reboot"))
+        lost++;
+    String answer = String("в очереди полей: ") + sent + ", уходят по одному раз в " + (CFG_MSG_GAP_MS / 1000) +
+                    " с, ответы смотрите в журнале";
+    if (lost > 0)
+        answer += ", НЕ поместилось: " + String(lost);
     slog("[CFG] -> %s: в очередь поставлено %d сообщений%s\n", target.c_str(), sent,
          lost > 0 ? " (часть не поместилась)" : "");
     otaServer.send(200, "text/plain; charset=utf-8", answer);
@@ -660,8 +725,7 @@ void otaHandleFwCheck() {
         return;
     }
     fwRequestCheck();
-    otaServer.send(200, "text/plain; charset=utf-8",
-                   "проверяю обновления, ход и результат — в журнале");
+    otaServer.send(200, "text/plain; charset=utf-8", "проверяю обновления, ход и результат — в журнале");
 }
 
 // Полоса прогресса скачивания образа: сколько байт из скольких уже легло на флеш.
@@ -670,21 +734,28 @@ void otaHandleFwCheck() {
 void otaHandleFwStatus() {
     char copy[sizeof(fwDlTarget)];
     size_t i = 0;
-    while (i < sizeof(copy) - 1 && fwDlTarget[i]) { copy[i] = fwDlTarget[i]; i++; }
-    copy[i] = 0;   // ноль сразу за именем: дальше в буфере мусор со стека
+    while (i < sizeof(copy) - 1 && fwDlTarget[i]) {
+        copy[i] = fwDlTarget[i];
+        i++;
+    }
+    copy[i] = 0; // ноль сразу за именем: дальше в буфере мусор со стека
     char tgt[sizeof(copy)];
     jsonEscape(copy, tgt, sizeof(tgt));
     char json[192];
-    snprintf(json, sizeof(json),
-             "{\"phase\":%u,\"got\":%u,\"total\":%u,\"attempt\":%u,\"target\":\"%s\"}",
-             (unsigned)fwDlPhase, (unsigned)fwDlGot, (unsigned)fwDlTotal,
-             (unsigned)fwDlAttempt, tgt);
+    snprintf(json, sizeof(json), "{\"phase\":%u,\"got\":%u,\"total\":%u,\"attempt\":%u,\"target\":\"%s\"}",
+             (unsigned)fwDlPhase, (unsigned)fwDlGot, (unsigned)fwDlTotal, (unsigned)fwDlAttempt, tgt);
     otaServer.send(200, "application/json", json);
 }
 
 void otaHandleSensorsHello() {
-    if (otaAnySessionActive()) { otaServer.send(409, "text/plain", "идёт прошивка сенсора"); return; }
-    if (sensorChannelIdx < 0) { otaServer.send(503, "text/plain", "канал сенсоров не настроен"); return; }
+    if (otaAnySessionActive()) {
+        otaServer.send(409, "text/plain", "идёт прошивка сенсора");
+        return;
+    }
+    if (sensorChannelIdx < 0) {
+        otaServer.send(503, "text/plain", "канал сенсоров не настроен");
+        return;
+    }
     slog("[WEB] опрос сенсоров (%s)\n", SENSOR_MSG_HELLO_REQ);
     sensorSendMsg(SENSOR_MSG_HELLO_REQ);
     otaServer.send(200, "text/plain", "sent");
@@ -810,7 +881,7 @@ static const char PAGE_HTML[] PROGMEM = R"HTML(<!DOCTYPE html><html lang='ru'><h
 
 // Статика отдаётся потоком из флеша, без копии в куче и без распаковки на боте:
 // заголовок Content-Encoding говорит браузеру распаковать самому.
-static void sendGz(const char* type, const uint8_t* data, size_t len) {
+static void sendGz(const char *type, const uint8_t *data, size_t len) {
     otaServer.sendHeader("Content-Encoding", "gzip");
     otaServer.sendHeader("Cache-Control", "public, max-age=31536000, immutable");
     otaServer.setContentLength(len);
@@ -818,8 +889,12 @@ static void sendGz(const char* type, const uint8_t* data, size_t len) {
     otaServer.sendContent_P((PGM_P)data, len);
 }
 
-void otaHandleCss() { sendGz("text/css; charset=utf-8", WEB_STYLE_CSS_GZ, WEB_STYLE_CSS_GZ_LEN); }
-void otaHandleJs()  { sendGz("application/javascript; charset=utf-8", WEB_APP_JS_GZ, WEB_APP_JS_GZ_LEN); }
+void otaHandleCss() {
+    sendGz("text/css; charset=utf-8", WEB_STYLE_CSS_GZ, WEB_STYLE_CSS_GZ_LEN);
+}
+void otaHandleJs() {
+    sendGz("application/javascript; charset=utf-8", WEB_APP_JS_GZ, WEB_APP_JS_GZ_LEN);
+}
 
 void otaHandleRoot() {
     String page = FPSTR(PAGE_HTML);
@@ -836,9 +911,9 @@ void otaHandleRoot() {
 
 // После неудачной самопрошивки возвращаем радио и усилитель, иначе бот оглохнет до перезагрузки
 static void otaSelfUpdateResume() {
-    #if HAS_FEM
+#if HAS_FEM
     digitalWrite(FEM_EN_PIN, HIGH);
-    #endif
+#endif
     radio.startReceive();
     isListening = true;
 }
@@ -854,224 +929,230 @@ static char otaSelfErr[64] = "";
 static bool upAllowed = false;
 
 void otaHandleUpdate() {
-    HTTPUpload& up = otaServer.upload();
+    HTTPUpload &up = otaServer.upload();
     switch (up.status) {
-    case UPLOAD_FILE_START:
-        upAllowed = webAuthOk();
-        if (!upAllowed) {
-            slog("[OTA] загрузка отклонена: ни пароля страницы, ни ключа\n");
-            return;
-        }
-        Serial.printf("\n[OTA] загрузка: %s\n", up.filename.c_str());
-        fwScanReset(&otaSelfScan);
-        otaSelfErr[0] = 0;
-        #if HAS_OLED
-        display.clearDisplay();
-        display.setCursor(0, 0);
-        display.println("OTA update...");
-        display.display();
-        #endif
-        // на время записи радио и сеть выключены
-        radio.sleep();
-        isListening = false;
-#if FEATURE_MQTT
-        if (mqttConnected) {
-            mqtt.disconnect();
-            mqttConnected = false;   // при неудаче otaSelfUpdateResume не оставит ложь: цикл тут же переподключит
-        }
-#endif
-        #if HAS_FEM
-        digitalWrite(FEM_EN_PIN, LOW);
-        #endif
-        // totalSize на START ещё 0 (Arduino core) — размер ограничит сам раздел OTA
-        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
-        break;
-    case UPLOAD_FILE_WRITE:
-        if (Update.isRunning()) {
-            fwScanFeed(&otaSelfScan, up.buf, up.currentSize);
-            if (Update.write(up.buf, up.currentSize) != up.currentSize) Update.printError(Serial);
-        }
-        break;
-    case UPLOAD_FILE_END:
-    {
-        if (!upAllowed) break;
-        // Образ чужой платы не запустится, а снимать его придётся USB-кабелем,
-        // поэтому до применения прошивки проверяем маркер.
-        int verdict = fwScanVerdict(&otaSelfScan);
-        if (verdict < 0) {
-            snprintf(otaSelfErr, sizeof(otaSelfErr), "образ платы %s, а это " BOARD_CODE,
-                     otaSelfScan.other);
-            slog("[OTA] отклонено: %s\n", otaSelfErr);
-            Update.abort();
-            #if HAS_OLED
-            display.println("WRONG BOARD!");
+        case UPLOAD_FILE_START:
+            upAllowed = webAuthOk();
+            if (!upAllowed) {
+                slog("[OTA] загрузка отклонена: ни пароля страницы, ни ключа\n");
+                return;
+            }
+            Serial.printf("\n[OTA] загрузка: %s\n", up.filename.c_str());
+            fwScanReset(&otaSelfScan);
+            otaSelfErr[0] = 0;
+#if HAS_OLED
+            display.clearDisplay();
+            display.setCursor(0, 0);
+            display.println("OTA update...");
             display.display();
-            #endif
+#endif
+            // на время записи радио и сеть выключены
+            radio.sleep();
+            isListening = false;
+#if FEATURE_MQTT
+            if (mqttConnected) {
+                mqtt.disconnect();
+                mqttConnected = false; // при неудаче otaSelfUpdateResume не оставит ложь: цикл тут же переподключит
+            }
+#endif
+#if HAS_FEM
+            digitalWrite(FEM_EN_PIN, LOW);
+#endif
+            // totalSize на START ещё 0 (Arduino core) — размер ограничит сам раздел OTA
+            if (!Update.begin(UPDATE_SIZE_UNKNOWN))
+                Update.printError(Serial);
+            break;
+        case UPLOAD_FILE_WRITE:
+            if (Update.isRunning()) {
+                fwScanFeed(&otaSelfScan, up.buf, up.currentSize);
+                if (Update.write(up.buf, up.currentSize) != up.currentSize)
+                    Update.printError(Serial);
+            }
+            break;
+        case UPLOAD_FILE_END: {
+            if (!upAllowed)
+                break;
+            // Образ чужой платы не запустится, а снимать его придётся USB-кабелем,
+            // поэтому до применения прошивки проверяем маркер.
+            int verdict = fwScanVerdict(&otaSelfScan);
+            if (verdict < 0) {
+                snprintf(otaSelfErr, sizeof(otaSelfErr), "образ платы %s, а это " BOARD_CODE, otaSelfScan.other);
+                slog("[OTA] отклонено: %s\n", otaSelfErr);
+                Update.abort();
+#if HAS_OLED
+                display.println("WRONG BOARD!");
+                display.display();
+#endif
+                otaSelfUpdateResume();
+                break;
+            }
+            if (verdict == 0)
+                slog("[OTA] в образе нет маркера платы — прошиваем как есть\n");
+            if (Update.end(true)) {
+                Serial.printf("[OTA] OK, %u bytes, reboot...\n", (unsigned)up.totalSize);
+#if HAS_OLED
+                display.println("OK! Rebooting...");
+                display.display();
+#endif
+                otaServer.send(200, "text/plain", "OK rebooting");
+                delay(300);
+                ESP.restart();
+            }
+            Update.printError(Serial);
+#if HAS_OLED
+            display.println("OTA FAILED!");
+            display.display();
+#endif
             otaSelfUpdateResume();
             break;
         }
-        if (verdict == 0) slog("[OTA] в образе нет маркера платы — прошиваем как есть\n");
-        if (Update.end(true)) {
-            Serial.printf("[OTA] OK, %u bytes, reboot...\n", (unsigned)up.totalSize);
-            #if HAS_OLED
-            display.println("OK! Rebooting...");
-            display.display();
-            #endif
-            otaServer.send(200, "text/plain", "OK rebooting");
-            delay(300);
-            ESP.restart();
-        }
-        Update.printError(Serial);
-        #if HAS_OLED
-        display.println("OTA FAILED!");
-        display.display();
-        #endif
-        otaSelfUpdateResume();
-        break;
-    }
-    case UPLOAD_FILE_ABORTED:
-        if (!upAllowed) break;
-        Update.abort();
-        otaSelfUpdateResume();
-        Serial.println("[OTA] прервано");
-        break;
-    default:
-        break;
+        case UPLOAD_FILE_ABORTED:
+            if (!upAllowed)
+                break;
+            Update.abort();
+            otaSelfUpdateResume();
+            Serial.println("[OTA] прервано");
+            break;
+        default:
+            break;
     }
 }
 
 static bool otaSaveTooBig = false;
 
 void otaHandleSaveFw() {
-    HTTPUpload& up = otaServer.upload();
+    HTTPUpload &up = otaServer.upload();
     switch (up.status) {
-    case UPLOAD_FILE_START:
-    {
-        // Как и в /update: право проверяем до первого байта, дальше всё под otaSaving.
-        if (!webAuthOk()) {
-            otaSaving = false;
+        case UPLOAD_FILE_START: {
+            // Как и в /update: право проверяем до первого байта, дальше всё под otaSaving.
+            if (!webAuthOk()) {
+                otaSaving = false;
+                otaSaveOk = false;
+                slog("[OTA-SAVE] отклонено: ни пароля страницы, ни ключа\n");
+                return;
+            }
+            if (otaPhase != OTA_PHASE_IDLE && otaPhase != OTA_PHASE_DONE)
+                otaBotAbort("новый файл");
+            // Медленную сессию новый файл не прерывает, а губит молча: она читает /ota.bin
+            // часами, а открытие того же файла на запись ниже обрезает его под её хэндлом.
+            // Прерывать её за пользователя нельзя — это часы работы и, возможно, единственный
+            // способ дотянуться до узла, — поэтому отказываем и говорим, что идёт.
+            if (otaSlowOn) {
+                otaSaving = false;
+                otaSaveOk = false;
+                slog("[OTA-SAVE] отклонено: идёт медленная прошивка %s\n", otaSlowTarget.c_str());
+                otaServer.send(409, "text/plain; charset=utf-8",
+                               "идёт медленная прошивка — прервите её, если нужен новый образ");
+                return;
+            }
+            // Идёт сетевая загрузка образа (задача fwFetch): она пишет /ota.bin.part, и её
+            // финализация в главном цикле держит общие флаги. Свою заливку начинать нельзя —
+            // обе писали бы /ota.bin и otaFwReady/otaFwName, и результат смешался бы.
+            bool busy = fwNetBusy();
+#if FEATURE_MESH_OTA_SENDER
+            busy = busy || supportBusy(); // передача прошивальщику читает тот же /ota.bin
+#endif
+            if (busy) {
+                otaSaving = false;
+                otaSaveOk = false;
+                slog("[OTA-SAVE] отклонено: идёт сетевая загрузка образа\n");
+                otaServer.send(503, "text/plain; charset=utf-8", "идёт сетевая загрузка образа, подождите");
+                return;
+            }
+            otaSaving = true;
             otaSaveOk = false;
-            slog("[OTA-SAVE] отклонено: ни пароля страницы, ни ключа\n");
-            return;
-        }
-        if (otaPhase != OTA_PHASE_IDLE && otaPhase != OTA_PHASE_DONE) otaBotAbort("новый файл");
-        // Медленную сессию новый файл не прерывает, а губит молча: она читает /ota.bin
-        // часами, а открытие того же файла на запись ниже обрезает его под её хэндлом.
-        // Прерывать её за пользователя нельзя — это часы работы и, возможно, единственный
-        // способ дотянуться до узла, — поэтому отказываем и говорим, что идёт.
-        if (otaSlowOn) {
-            otaSaving = false;
-            otaSaveOk = false;
-            slog("[OTA-SAVE] отклонено: идёт медленная прошивка %s\n", otaSlowTarget.c_str());
-            otaServer.send(409, "text/plain; charset=utf-8",
-                           "идёт медленная прошивка — прервите её, если нужен новый образ");
-            return;
-        }
-        // Идёт сетевая загрузка образа (задача fwFetch): она пишет /ota.bin.part, и её
-        // финализация в главном цикле держит общие флаги. Свою заливку начинать нельзя —
-        // обе писали бы /ota.bin и otaFwReady/otaFwName, и результат смешался бы.
-        bool busy = fwNetBusy();
-        #if FEATURE_MESH_OTA_SENDER
-        busy = busy || supportBusy();   // передача прошивальщику читает тот же /ota.bin
-        #endif
-        if (busy) {
-            otaSaving = false;
-            otaSaveOk = false;
-            slog("[OTA-SAVE] отклонено: идёт сетевая загрузка образа\n");
-            otaServer.send(503, "text/plain; charset=utf-8", "идёт сетевая загрузка образа, подождите");
-            return;
-        }
-        otaSaving = true;
-        otaSaveOk = false;
-        otaSaveTooBig = false;
-        otaWriteCalls = 0;
-        otaWriteBytes = 0;
-        otaWriteSkipped = 0;
-        // закрываем любые остатки прошлой сессии, иначе на /ota.bin висит чужой handle
-        if (otaFile) { otaFile.close(); otaFile = File(); }
-        otaFwName = up.filename;
-        slog("\n[OTA-SAVE] %s (%u байт)\n", up.filename.c_str(), (unsigned)up.totalSize);
-        otaFile = LittleFS.open("/ota.bin", "w");
-        if (!otaFile) slog("[OTA-SAVE] LittleFS.open FAILED\n");
-        break;
-    }
-    case UPLOAD_FILE_WRITE:
-    {
-        otaWriteCalls++;
-        if (otaSaving && otaFile && otaWriteBytes + up.currentSize > OTA_MAX_FW_BYTES) {
-            slog("[OTA-SAVE] файл больше лимита %lu байт, отменяем\n", (unsigned long)OTA_MAX_FW_BYTES);
-            otaFile.close();
-            otaFile = File();
-            LittleFS.remove("/ota.bin");
-            otaSaving = false;
-            otaSaveTooBig = true;
+            otaSaveTooBig = false;
+            otaWriteCalls = 0;
+            otaWriteBytes = 0;
+            otaWriteSkipped = 0;
+            // закрываем любые остатки прошлой сессии, иначе на /ota.bin висит чужой handle
+            if (otaFile) {
+                otaFile.close();
+                otaFile = File();
+            }
+            otaFwName = up.filename;
+            slog("\n[OTA-SAVE] %s (%u байт)\n", up.filename.c_str(), (unsigned)up.totalSize);
+            otaFile = LittleFS.open("/ota.bin", "w");
+            if (!otaFile)
+                slog("[OTA-SAVE] LittleFS.open FAILED\n");
             break;
         }
-        if (otaSaving && otaFile) {
-            size_t w = otaFile.write(up.buf, up.currentSize);
-            otaWriteBytes += w;
-            if (w != up.currentSize) slog("[OTA-SAVE] write short (%u/%u)\n",
-                                          (unsigned)w, (unsigned)up.currentSize);
-        } else {
-            otaWriteSkipped++;
-            if (!otaSaveTooBig) slog("[OTA-SAVE] WRITE skipped (saving=%d, file=%d)\n",
-                                     (int)otaSaving, (int)(bool)otaFile);
+        case UPLOAD_FILE_WRITE: {
+            otaWriteCalls++;
+            if (otaSaving && otaFile && otaWriteBytes + up.currentSize > OTA_MAX_FW_BYTES) {
+                slog("[OTA-SAVE] файл больше лимита %lu байт, отменяем\n", (unsigned long)OTA_MAX_FW_BYTES);
+                otaFile.close();
+                otaFile = File();
+                LittleFS.remove("/ota.bin");
+                otaSaving = false;
+                otaSaveTooBig = true;
+                break;
+            }
+            if (otaSaving && otaFile) {
+                size_t w = otaFile.write(up.buf, up.currentSize);
+                otaWriteBytes += w;
+                if (w != up.currentSize)
+                    slog("[OTA-SAVE] write short (%u/%u)\n", (unsigned)w, (unsigned)up.currentSize);
+            } else {
+                otaWriteSkipped++;
+                if (!otaSaveTooBig)
+                    slog("[OTA-SAVE] WRITE skipped (saving=%d, file=%d)\n", (int)otaSaving, (int)(bool)otaFile);
+            }
+            break;
         }
-        break;
-    }
-    case UPLOAD_FILE_END:
-    {
-        // Счётчики заливки — только когда есть на что смотреть: пропущенные колбэки или
-        // расхождение с объявленной длиной. В обычной заливке итог скажет строка ниже.
-        if (otaWriteSkipped || (up.totalSize && otaWriteBytes != up.totalSize))
-            slog("[OTA-SAVE] вызовов %lu, записано %lu из %u, пропущено %lu\n",
-                 otaWriteCalls, otaWriteBytes, (unsigned)up.totalSize, otaWriteSkipped);
-        if (otaSaving && otaFile) {
-            // В ESP-IDF VFS fstat() НЕ видит буферизованные данные до fflush/close,
-            // поэтому size() возвращает 0. Закрываем first → flush на диск → reopen для size.
-            otaFile.close();
-            otaFile = File();
-            otaSaving = false;
-            if (otaWriteBytes == 0) {
-                otaFwSize = 0;
+        case UPLOAD_FILE_END: {
+            // Счётчики заливки — только когда есть на что смотреть: пропущенные колбэки или
+            // расхождение с объявленной длиной. В обычной заливке итог скажет строка ниже.
+            if (otaWriteSkipped || (up.totalSize && otaWriteBytes != up.totalSize))
+                slog("[OTA-SAVE] вызовов %lu, записано %lu из %u, пропущено %lu\n", otaWriteCalls, otaWriteBytes,
+                     (unsigned)up.totalSize, otaWriteSkipped);
+            if (otaSaving && otaFile) {
+                // В ESP-IDF VFS fstat() НЕ видит буферизованные данные до fflush/close,
+                // поэтому size() возвращает 0. Закрываем first → flush на диск → reopen для size.
+                otaFile.close();
+                otaFile = File();
+                otaSaving = false;
+                if (otaWriteBytes == 0) {
+                    otaFwSize = 0;
+                    otaFwReady = false;
+                    otaSaveOk = false;
+                    slog("[OTA-SAVE] FAIL — write вернул 0 байт\n");
+                } else {
+                    // Переоткрываем для проверки (flush при close записал на диск)
+                    otaInspectStoredFw();
+                    otaSaveOk = true;
+                    File n = LittleFS.open("/ota.name", "w");
+                    if (n) {
+                        n.print(otaFwName);
+                        n.close();
+                    }
+                    slog("[OTA-SAVE] записано %lu байт, .otaz=%d\n", otaWriteBytes, (int)otaFwReady);
+                    // Сверяем с длиной потока в файле: otaFwSize учитывает ещё и хвост нулей,
+                    // который дописывается в эфир, но в файле его нет (см. OTA_Z_TAIL_PAD).
+                    uint32_t inFile = otaFwSize - OTA_Z_TAIL_PAD + OTA_Z_HDR;
+                    if (otaFwReady && inFile != (uint32_t)otaWriteBytes) {
+                        slog("[OTA-SAVE] ВНИМАНИЕ: size()=%u != writeBytes=%lu\n", (unsigned)inFile, otaWriteBytes);
+                    }
+                }
+            } else {
+                otaSaving = false;
                 otaFwReady = false;
                 otaSaveOk = false;
-                slog("[OTA-SAVE] FAIL — write вернул 0 байт\n");
-            } else {
-                // Переоткрываем для проверки (flush при close записал на диск)
-                otaInspectStoredFw();
-                otaSaveOk = true;
-                File n = LittleFS.open("/ota.name", "w");
-                if (n) {
-                    n.print(otaFwName);
-                    n.close();
-                }
-                slog("[OTA-SAVE] записано %lu байт, .otaz=%d\n", otaWriteBytes, (int)otaFwReady);
-                // Сверяем с длиной потока в файле: otaFwSize учитывает ещё и хвост нулей,
-                // который дописывается в эфир, но в файле его нет (см. OTA_Z_TAIL_PAD).
-                uint32_t inFile = otaFwSize - OTA_Z_TAIL_PAD + OTA_Z_HDR;
-                if (otaFwReady && inFile != (uint32_t)otaWriteBytes) {
-                    slog("[OTA-SAVE] ВНИМАНИЕ: size()=%u != writeBytes=%lu\n",
-                         (unsigned)inFile, otaWriteBytes);
-                }
+                slog("[OTA-SAVE] FAIL — %s\n", otaSaveTooBig ? "файл больше лимита" : "file not open");
             }
-        } else {
-            otaSaving = false;
-            otaFwReady = false;
-            otaSaveOk = false;
-            slog("[OTA-SAVE] FAIL — %s\n", otaSaveTooBig ? "файл больше лимита" : "file not open");
+            break;
         }
-        break;
-    }
-    case UPLOAD_FILE_ABORTED:
-    {
-        otaSaving = false;
-        otaSaveOk = false;
-        if (otaFile) { otaFile.close(); otaFile = File(); };
-        otaFwReady = false;
-        slog("[OTA-SAVE] прервано\n");
-        break;
-    }
+        case UPLOAD_FILE_ABORTED: {
+            otaSaving = false;
+            otaSaveOk = false;
+            if (otaFile) {
+                otaFile.close();
+                otaFile = File();
+            };
+            otaFwReady = false;
+            slog("[OTA-SAVE] прервано\n");
+            break;
+        }
     }
 }
 
@@ -1117,8 +1198,7 @@ void otaHandleStartOta() {
     // сразу записывал новой первый повтор.
     if (!otaStartSession(target)) {
         slog("[WEB] /ota/start отклонён: %s\n", otaLastErr[0] ? otaLastErr : "нельзя начать сессию");
-        otaServer.send(409, "text/plain; charset=utf-8",
-                       otaLastErr[0] ? otaLastErr : "сессию начать нельзя");
+        otaServer.send(409, "text/plain; charset=utf-8", otaLastErr[0] ? otaLastErr : "сессию начать нельзя");
         return;
     }
     otaServer.send(200, "text/plain", "started");
@@ -1131,7 +1211,8 @@ void otaHandleAbort() {
     if (otaSlowOn) {
         otaSlowAbort("отменено вручную");
     } else if (otaDelegate.length() > 0) {
-        if (supportAbortDelegated()) slog("[WEB] отмена передана %s\n", otaDelegate.c_str());
+        if (supportAbortDelegated())
+            slog("[WEB] отмена передана %s\n", otaDelegate.c_str());
         otaDelegate = "";
     } else if (otaPhase != OTA_PHASE_IDLE) {
         otaBotAbort("manual");
@@ -1141,9 +1222,11 @@ void otaHandleAbort() {
 
 // Ход медленной сессии в тех же полях, что и быстрой: страница ничего нового не разбирает,
 // а «sent/total» считаются в чанках — по ним и видно движение.
-static bool otaSlowStatusJson(String& out) {
-    if (!otaSlowOn && !otaSlowFinishedOk) return false;
-    if (otaSlowChunks == 0) return false;
+static bool otaSlowStatusJson(String &out) {
+    if (!otaSlowOn && !otaSlowFinishedOk)
+        return false;
+    if (otaSlowChunks == 0)
+        return false;
     // Фазу считаем сами, а не берём из otaPhase: он принадлежит быстрому режиму, и писать
     // в него отсюда значит будить его машину сессии.
     const unsigned phase = otaSlowOn ? (unsigned)OTA_PHASE_DATA : (unsigned)OTA_PHASE_DONE;
@@ -1156,8 +1239,7 @@ static bool otaSlowStatusJson(String& out) {
              "\"retr\":%u,\"polls\":0,\"retrs\":0,\"sup\":0,"
              "\"err\":\"%s\",\"note\":\"%s\",\"target\":\"%s\",\"ver\":\"\","
              "\"back\":false,\"slow\":true}",
-             phase, (unsigned)otaSlowAcked, (unsigned)otaSlowChunks,
-             (unsigned)otaSlowRetries, err, note, tgt);
+             phase, (unsigned)otaSlowAcked, (unsigned)otaSlowChunks, (unsigned)otaSlowRetries, err, note, tgt);
     out = buf;
     return true;
 }
@@ -1166,19 +1248,23 @@ void otaHandleStatus() {
     // Медленная сессия идёт у нас самих — показываем её, не спрашивая никого.
     if (otaSlowOn || otaSlowFinishedOk) {
         String slow;
-        if (otaSlowStatusJson(slow)) { otaServer.send(200, "application/json", slow); return; }
+        if (otaSlowStatusJson(slow)) {
+            otaServer.send(200, "application/json", slow);
+            return;
+        }
     }
     // Сессию ведёт прошивальщик — показываем ЕГО ход, а не свой простой. Ответ у него в
     // том же формате, поэтому страница разбирает его теми же полями; добавляем только имя
     // ведущего, чтобы подпись говорила, чья это прошивка.
     if (otaDelegate.length() > 0) {
         String st;
-        const int have = supportStatusCached(st);   // из кэша: в обработчике по сети не ходим
+        const int have = supportStatusCached(st); // из кэша: в обработчике по сети не ходим
         if (have > 0) {
             char who[48];
             jsonEscape(otaDelegate.c_str(), who, sizeof(who));
             int brace = st.lastIndexOf('}');
-            if (brace > 0) st = st.substring(0, brace) + ",\"deleg\":\"" + who + "\"}";
+            if (brace > 0)
+                st = st.substring(0, brace) + ",\"deleg\":\"" + who + "\"}";
             // Сессия у него кончилась — дальше показываем своё состояние. Первые
             // секунды после передачи он ещё в фазе 0: сессия там только заводится, и
             // принять это за конец значит показать «завершена» на самом старте.
@@ -1197,7 +1283,10 @@ void otaHandleStatus() {
     }
     int idx = -1;
     for (int i = 0; i < sensorDeviceDiscCount; i++) {
-        if (sensorDeviceDisc[i] == otaTarget) { idx = i; break; }
+        if (sensorDeviceDisc[i] == otaTarget) {
+            idx = i;
+            break;
+        }
     }
     char tgt[48], err[64], ver[32];
     jsonEscape(otaTarget.c_str(), tgt, sizeof(tgt));
@@ -1210,13 +1299,13 @@ void otaHandleStatus() {
     // бы зависшей на всю минуту.
     uint8_t sup = 0;
     uint32_t sent = otaSentBytes, total = otaFwSize;
-    #if FEATURE_MESH_OTA_SENDER
+#if FEATURE_MESH_OTA_SENDER
     if (supportBusy()) {
         sup = supportJobKind();
         sent = supportJobSent();
         total = supportJobTotal();
     }
-    #endif
+#endif
     unsigned long endMs = (otaPhase == OTA_PHASE_DONE) ? otaDoneMs : millis();
     // back: сенсор прислал hello уже после подтверждения прошивки — значит, загрузился с неё
     bool back = otaPhase == OTA_PHASE_DONE && idx >= 0 && sensorLastActive[idx] > otaDoneMs;
@@ -1225,11 +1314,9 @@ void otaHandleStatus() {
              "{\"phase\":%u,\"fw\":%s,\"sent\":%u,\"total\":%u,\"elapsed_ms\":%lu,\"retr\":%u,"
              "\"polls\":%u,\"retrs\":%u,\"sup\":%u,"
              "\"err\":\"%s\",\"note\":\"%s\",\"target\":\"%s\",\"ver\":\"%s\",\"back\":%s}",
-             (unsigned)otaPhase, otaFwReady ? "true" : "false",
-             (unsigned)sent, (unsigned)total,
-             otaSessionMs ? endMs - otaSessionMs : 0UL, (unsigned)otaRetries,
-             (unsigned)otaPolls, (unsigned)otaRetrTotal, (unsigned)sup,
-             err, note, tgt, ver, back ? "true" : "false");
+             (unsigned)otaPhase, otaFwReady ? "true" : "false", (unsigned)sent, (unsigned)total,
+             otaSessionMs ? endMs - otaSessionMs : 0UL, (unsigned)otaRetries, (unsigned)otaPolls,
+             (unsigned)otaRetrTotal, (unsigned)sup, err, note, tgt, ver, back ? "true" : "false");
     otaServer.send(200, "application/json", json);
 }
 
@@ -1239,76 +1326,83 @@ void setupOtaServer() {
     // без collectHeaders header("X-API-Key") всегда пустой, и форвард умер бы с "403 forbidden".
     // X-Support — имя прошивальщика в его POST /ears: по нему ответ на пинг уходит
     // обратно через того же, кто кадр и принёс.
-    const char* headerKeys[] = {"X-API-Key", "X-Support"};
+    const char *headerKeys[] = {"X-API-Key", "X-Support"};
     size_t headerKeysCount = sizeof(headerKeys) / sizeof(headerKeys[0]);
     otaServer.collectHeaders(headerKeys, headerKeysCount);
-    #if !FEATURE_SUPPORT
-    otaServer.on("/", HTTP_GET, webAuth(otaHandleRoot));   // веб-морда: нужна только координатору
-    #endif
+#if !FEATURE_SUPPORT
+    otaServer.on("/", HTTP_GET, webAuth(otaHandleRoot)); // веб-морда: нужна только координатору
+#endif
     otaServer.on("/update", HTTP_POST, webAuth([]() {
-        otaServer.sendHeader("Connection", "close");
-        if (otaSelfErr[0]) otaServer.send(200, "text/plain", String("FAIL: ") + otaSelfErr);
-        else otaServer.send(200, "text/plain", Update.hasError() ? "FAIL" : "OK");
-    }), otaHandleUpdate);
+                     otaServer.sendHeader("Connection", "close");
+                     if (otaSelfErr[0])
+                         otaServer.send(200, "text/plain", String("FAIL: ") + otaSelfErr);
+                     else
+                         otaServer.send(200, "text/plain", Update.hasError() ? "FAIL" : "OK");
+                 }),
+                 otaHandleUpdate);
     otaServer.on("/savefw", HTTP_POST, webAuth([]() {
-        otaServer.sendHeader("Connection", "close");
-        if (otaSaveOk && otaFwReady) {
-            otaServer.send(200, "text/plain", "OK");
-        } else {
-            slog("[WEB] /savefw -> FAIL (saveOk=%d fwSize=%u)\n",
-                 (int)otaSaveOk, (unsigned)otaFwSize);
-            otaServer.send(200, "text/plain",
-                           otaSaveTooBig ? "FAIL: файл больше 3 МБ" :
-                           otaSaveOk ? "FAIL: для сенсора нужен .otaz" : "FAIL: файл не открылся (LittleFS)");
-        }
-    }), otaHandleSaveFw);
+                     otaServer.sendHeader("Connection", "close");
+                     if (otaSaveOk && otaFwReady) {
+                         otaServer.send(200, "text/plain", "OK");
+                     } else {
+                         slog("[WEB] /savefw -> FAIL (saveOk=%d fwSize=%u)\n", (int)otaSaveOk, (unsigned)otaFwSize);
+                         otaServer.send(200, "text/plain",
+                                        otaSaveTooBig ? "FAIL: файл больше 3 МБ"
+                                        : otaSaveOk   ? "FAIL: для сенсора нужен .otaz"
+                                                      : "FAIL: файл не открылся (LittleFS)");
+                     }
+                 }),
+                 otaHandleSaveFw);
     otaServer.on("/ota/start", HTTP_POST, webAuth(otaHandleStartOta));
     otaServer.on("/ota/abort", HTTP_POST, webAuth(otaHandleAbort));
     otaServer.on("/ota/status", HTTP_GET, webAuth(otaHandleStatus));
     otaServer.on("/sensors", HTTP_GET, webAuth(otaHandleSensors));
-    #ifndef SENSOR_NODE
-    otaServer.on("/ears", HTTP_POST, otaHandleEars);   // «вторые уши»: приём кадров по сети
-    otaServer.on("/support", HTTP_POST, otaHandleSupport);   // отметка прошивальщика
-    #endif
-    #ifdef SENSOR_NODE
-    otaServer.on("/radiotx", HTTP_POST, otaHandleRadiotx);   // обратно: координатор шлёт кадр в эфир
-    #endif
+#ifndef SENSOR_NODE
+    otaServer.on("/ears", HTTP_POST, otaHandleEars);       // «вторые уши»: приём кадров по сети
+    otaServer.on("/support", HTTP_POST, otaHandleSupport); // отметка прошивальщика
+#endif
+#ifdef SENSOR_NODE
+    otaServer.on("/radiotx", HTTP_POST, otaHandleRadiotx); // обратно: координатор шлёт кадр в эфир
+#endif
     otaServer.on("/sensors/hello", HTTP_POST, webAuth(otaHandleSensorsHello));
     otaServer.on("/fw/check", HTTP_POST, webAuth(otaHandleFwCheck));
     otaServer.on("/fw/status", HTTP_GET, webAuth(otaHandleFwStatus));
     otaServer.on("/sensors/config", HTTP_POST, webAuth(otaHandleSensorsConfig));
     otaServer.on("/logs", HTTP_GET, webAuth([]() {
-        String tail;
-        uint32_t pos;
-        logGetSnapshot(tail, pos);
-        otaServer.sendHeader("X-Log-Pos", String(pos));
-        otaServer.send(200, "text/plain; charset=utf-8", buildDiagReport());
-    }));
+                     String tail;
+                     uint32_t pos;
+                     logGetSnapshot(tail, pos);
+                     otaServer.sendHeader("X-Log-Pos", String(pos));
+                     otaServer.send(200, "text/plain; charset=utf-8", buildDiagReport());
+                 }));
     otaServer.on("/logs/tail", HTTP_GET, webAuth(otaHandleLogTail));
     otaServer.on("/info", HTTP_GET, webAuth(otaHandleInfo));
     otaServer.on("/selftest", HTTP_GET, webAuth(otaHandleSelfTest));
     // Обслуживание: раздел, переставший принимать запись, лечится только пересозданием.
     // Образ прошивки не жаль — он всегда скачивается заново с релиза.
     otaServer.on("/fs/format", HTTP_POST, webAuth([]() {
-        if (fwNetBusy()) {
-            otaServer.send(503, "text/plain; charset=utf-8", "идёт сетевая загрузка образа, подождите");
-            return;
-        }
-        if (otaFile) { otaFile.close(); otaFile = File(); }
-        otaFwReady = false;
-        otaFwSize = 0;
-        otaSaveOk = false;
-        bool ok = LittleFS.format();
-        LittleFS.begin(true);
-        slog("[FS] пересоздание раздела: %s\n", ok ? "готово" : "ошибка");
-        otaServer.send(ok ? 200 : 500, "text/plain; charset=utf-8", ok ? "OK" : "FAIL");
-    }));
+                     if (fwNetBusy()) {
+                         otaServer.send(503, "text/plain; charset=utf-8", "идёт сетевая загрузка образа, подождите");
+                         return;
+                     }
+                     if (otaFile) {
+                         otaFile.close();
+                         otaFile = File();
+                     }
+                     otaFwReady = false;
+                     otaFwSize = 0;
+                     otaSaveOk = false;
+                     bool ok = LittleFS.format();
+                     LittleFS.begin(true);
+                     slog("[FS] пересоздание раздела: %s\n", ok ? "готово" : "ошибка");
+                     otaServer.send(ok ? 200 : 500, "text/plain; charset=utf-8", ok ? "OK" : "FAIL");
+                 }));
     otaServer.on("/config", HTTP_GET, webAuth(otaHandleConfigGet));
     otaServer.on("/config", HTTP_POST, webAuth(otaHandleConfigPost));
-    #if !FEATURE_SUPPORT
+#if !FEATURE_SUPPORT
     otaServer.on("/style.css", HTTP_GET, webAuth(otaHandleCss));
     otaServer.on("/app.js", HTTP_GET, webAuth(otaHandleJs));
-    #endif
+#endif
     otaServer.begin();
     Serial.println("OTA server: http://<ip>:3232/update | /ota/start");
 }
