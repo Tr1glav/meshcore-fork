@@ -826,6 +826,24 @@ static const char PAGE_HTML[] PROGMEM = R"HTML(<!DOCTYPE html><html lang='ru'><h
 <button id='ab' class='ab' hidden>Прервать</button>
 </div>
 </div>
+<div class='box'>
+<div class='box-h'><span class='n'>3</span>пакет приложения</div>
+<!-- Отдельный шаг, а не второй способ в шаге 2: узел и прогресс те же, а груз другой.
+     Пакет едет ТОЛЬКО медленным режимом, поэтому галочки способа здесь нет — быстрый
+     увёл бы узел на FSK и оглушил его ко всей сети, а кончилась бы сессия перезагрузкой. -->
+<div id='apdrop' class='drop'>
+<div class='drop-ico'>↓</div>
+<div class='drop-main'>
+<div>Перетащите .tapp сюда или нажмите, чтобы выбрать</div>
+<div id='apname' class='drop-file'></div>
+<div id='apver' class='drop-ver'></div>
+</div>
+</div>
+<input id='apfile' type='file' accept='.tapp' hidden>
+<button id='apgo' class='go' disabled>Отправить пакет узлу</button>
+<div class='hint'>Пакет уходит обычными сообщениями канала: это часы, зато через ретрансляторы.
+Узел не перезагружается — приложение ставится на карту и появляется в меню.</div>
+</div>
 </div>
 </section>
 

@@ -10,7 +10,7 @@ const ago=s=>s<60?s+' с':s<3600?Math.floor(s/60)+' мин':Math.floor(s/3600)+'
 const upfmt=s=>s>=86400?Math.floor(s/86400)+' д '+Math.floor(s%86400/3600)+' ч':s>=3600?Math.floor(s/3600)+' ч '+Math.floor(s%3600/60)+' мин':Math.floor(s/60)+' мин';
 const ERRS={'timeout p1':'сенсор не ответил на старт','timeout p2':'сенсор перестал отвечать на чанки','timeout p3':'сенсор не подтвердил прошивку','no progress':'сенсор не принимает чанки','sensor fail':'сенсор сообщил об ошибке записи','read err':'не читается файл на боте','encrypt err':'ошибка шифрования чанка','no file':'файл на боте не открыт','новый файл':'сессия прервана загрузкой нового файла','manual':'прервано вручную','no RAM':'на сенсоре не хватило памяти','begin fail':'сенсор не смог открыть раздел прошивки','no first chunk':'сенсор не дождался первого чанка','stall timeout':'сенсор перестал получать данные','write fail':'сенсор не смог записать образ','size mismatch':'на сенсор пришло не столько байт','crc mismatch':'контрольная сумма образа не совпала','end fail':'сенсор забраковал образ при записи','board mismatch':'образ собран для другой платы','from bot':'сессию прервал бот'};
 const errText=e=>ERRS[e]||e;
-let file=null,poll=null,busy=false,vErr=false,sensors=[],info={},target='__self__',
+let file=null,apfile=null,poll=null,busy=false,vErr=false,sensors=[],info={},target='__self__',
     downloading=false;
 const isSelf=()=>target=='__self__';
 function st(t,c){$('st').textContent=t;$('st').className='status'+(c?' '+c:'');vErr=false;toast(t,c)}
@@ -71,6 +71,9 @@ function refresh(){
     if(si){si.disabled=busy||downloading;if(isSelf())si.checked=false;}
   }
   $('fwgo')&&($('fwgo').disabled=busy||isSelf());
+  // Пакет самому боту не отправляют: у координатора нет ни карты, ни меню приложений.
+  $('apgo')&&($('apgo').disabled=busy||isSelf()||!apfile);
+  $('apdrop')&&($('apdrop').classList.toggle('off',isSelf()));
   $('scfgbox').hidden=isSelf();
 }
 function setFile(f){
@@ -229,6 +232,43 @@ $('drop').ondragover=e=>{e.preventDefault();$('drop').classList.add('hover')};
 $('drop').ondragleave=()=>$('drop').classList.remove('hover');
 $('drop').ondrop=e=>{e.preventDefault();$('drop').classList.remove('hover');setFile(e.dataTransfer.files[0])};
 $('file').onchange=()=>setFile($('file').files[0]);
+
+// ===== ПАКЕТ ПРИЛОЖЕНИЯ =====
+// Своя зона и своя кнопка, но тот же выбранный узел и тот же прогресс: груз другой,
+// механизм один (mesh OTA возит данные, вид груза объявляется в сессии).
+function setAppFile(f){
+  if(!f)return;
+  if(!/\.tapp$/i.test(f.name)){st('Нужен файл .tapp — пакет приложения','err');return}
+  apfile=f;
+  $('apname').textContent=f.name+' ('+kb(f.size)+')';
+  // Имя пакета несёт версию (calendar_v1.0.2.tapp) — показываем её, чтобы не отправить
+  // вслепую не то, что собирались.
+  const m=f.name.match(/_v(\d+\.\d+\.\d+)\./);
+  $('apver').textContent=m?'версия '+m[1]:'';
+  refresh();
+}
+$('apdrop').onclick=()=>$('apfile').click();
+$('apdrop').ondragover=e=>{e.preventDefault();$('apdrop').classList.add('hover')};
+$('apdrop').ondragleave=()=>$('apdrop').classList.remove('hover');
+$('apdrop').ondrop=e=>{e.preventDefault();$('apdrop').classList.remove('hover');setAppFile(e.dataTransfer.files[0])};
+$('apfile').onchange=()=>setAppFile($('apfile').files[0]);
+$('apgo').onclick=async()=>{
+  if(!apfile)return;
+  // Сессия занимает эфир на часы — спрашиваем, как и у медленной прошивки.
+  if(!confirm('Отправить пакет узлу «'+target+'»? Идёт обычными сообщениями канала — это часы.'))return;
+  busy=true;refresh();
+  try{
+    const r=await uploadFile('/apps/save',apfile);
+    if(r.indexOf('OK')<0)throw new Error(r||'FAIL');
+    // kind=app: что везём, объявляется в сессии. slow=1 обязателен — быстрый режим пакет
+    // не возит, и координатор откажет раньше ядра.
+    const q=await fetch('/ota/start?target='+encodeURIComponent(target)+'&kind=app&slow=1',{method:'POST'});
+    if(!q.ok)throw new Error(await q.text());
+    $('ab').hidden=false;
+    bar(0,'Пакет: раздаю по каналу…','');
+    track();
+  }catch(e){st(e.message,'err');finish()}
+};
 $('ab').onclick=()=>fetch('/ota/abort',{method:'POST'}).catch(()=>{});
 $('ask').onclick=async()=>{
   $('ask').disabled=true;
@@ -343,9 +383,14 @@ $('dl').onclick=()=>{
   URL.revokeObjectURL(a.href);
 };
 function upload(url){
+  return uploadFile(url,file);
+}
+// Отдельно от upload(): пакет грузится тем же способом, но своим файлом, и прибивать
+// функцию к одной переменной значило бы иметь две копии одного XHR.
+function uploadFile(url,f){
   return new Promise((ok,fail)=>{
     const x=new XMLHttpRequest(),fd=new FormData();
-    fd.append('fw',file);
+    fd.append('fw',f);
     x.open('POST',url);
     x.upload.onprogress=e=>{if(e.lengthComputable)bar(Math.round(e.loaded*100/e.total),'Загрузка на бот',kb(e.loaded)+' из '+kb(e.total))};
     x.onload=()=>ok(x.responseText);
