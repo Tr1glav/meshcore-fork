@@ -1020,6 +1020,82 @@ void otaHandleUpdate() {
 
 static bool otaSaveTooBig = false;
 
+// ===== ЗАЛИВКА ПАКЕТА ПРИЛОЖЕНИЯ =====
+// Короткий брат otaHandleSaveFw, а не его копия: у пакета нет прошивочных связей —
+// ни otaFwReady, ни otaFwName, ни разбора маркера платы, ни сетевой догрузки из релиза.
+// Остаётся ровно три обязанности: право, запрет во время идущей медленной сессии (она
+// читает этот же файл часами) и проверка, что в файле действительно пакет.
+static File appSaveFile;
+static bool appSaveOk = false;
+static uint32_t appSaveLen = 0;
+
+void otaHandleSaveApp() {
+    HTTPUpload &up = otaServer.upload();
+    switch (up.status) {
+        case UPLOAD_FILE_START: {
+            // Право проверяем до первого байта, как и в /update: дальше решает appSaveOk.
+            appSaveOk = false;
+            appSaveLen = 0;
+            if (!webAuthOk()) {
+                slog("[APP-SAVE] отклонено: ни пароля страницы, ни ключа\n");
+                return;
+            }
+            // Открытие на запись обрезало бы файл под хэндлом идущей сессии: она читает его
+            // чанк за чанком часами. Прерывать её за пользователя нельзя.
+            if (otaSlowOn) {
+                slog("[APP-SAVE] отклонено: идёт медленная сессия на %s\n", otaSlowTarget.c_str());
+                return;
+            }
+            appSaveFile = LittleFS.open(OTA_SLOW_APP_FILE, "w");
+            if (!appSaveFile) {
+                slog("[APP-SAVE] не открылся %s\n", OTA_SLOW_APP_FILE);
+                return;
+            }
+            appSaveOk = true;
+            break;
+        }
+        case UPLOAD_FILE_WRITE:
+            if (appSaveOk && appSaveFile) {
+                if (appSaveFile.write(up.buf, up.currentSize) != up.currentSize) {
+                    appSaveOk = false;
+                    appSaveFile.close();
+                    slog("[APP-SAVE] не записалось: кончилось место?\n");
+                    break;
+                }
+                appSaveLen += up.currentSize;
+            }
+            break;
+        case UPLOAD_FILE_END:
+        case UPLOAD_FILE_ABORTED: {
+            if (!appSaveFile)
+                break;
+            appSaveFile.close();
+            if (up.status == UPLOAD_FILE_ABORTED) {
+                appSaveOk = false;
+                break;
+            }
+            // Магию сверяем ПОСЛЕ записи, читая файл: иначе пришлось бы ждать первых
+            // двенадцати байт в UPLOAD_FILE_WRITE, а они могут прийти и по одному.
+            // Заголовок у .tapp тот же, что у .otaz, и в нём лежит размер распакованного —
+            // его потом возьмёт отправитель (otaSlowSrcOpen).
+            File chk = LittleFS.open(OTA_SLOW_APP_FILE, "r");
+            uint8_t magic[4] = {0, 0, 0, 0};
+            if (chk) {
+                chk.read(magic, sizeof(magic));
+                chk.close();
+            }
+            if (appSaveLen <= OTA_Z_HDR || memcmp(magic, TDECK_TAPP_MAGIC_WIRE, 4) != 0) {
+                appSaveOk = false;
+                LittleFS.remove(OTA_SLOW_APP_FILE); // мусор не храним: отправка упрётся в него же
+                slog("[APP-SAVE] это не пакет .tapp (%u байт)\n", (unsigned)appSaveLen);
+                break;
+            }
+            slog("[APP-SAVE] пакет принят: %u байт\n", (unsigned)appSaveLen);
+            break;
+        }
+    }
+}
+
 void otaHandleSaveFw() {
     HTTPUpload &up = otaServer.upload();
     switch (up.status) {
@@ -1165,12 +1241,23 @@ void otaHandleStartOta() {
         return;
     }
     String target = otaServer.arg("target");
+    // Вид груза: mesh OTA возит не только прошивку (см. OtaKind в ota.h). Отдельного
+    // эндпоинта под пакет нет намеренно — сессию начинает одно место, и раздваивать этот
+    // путь значило бы разъехаться двум копиям проверок цели, занятости и фазы.
+    const bool sendApp = (otaServer.arg("kind") == OTA_KIND_APP_WIRE);
     if (otaPhase != OTA_PHASE_IDLE && otaPhase != OTA_PHASE_DONE) {
         slog("[WEB] /ota/start busy (phase=%d)\n", otaPhase);
         otaServer.send(409, "text/plain", "busy");
         return;
     }
-    if (!otaFwReady) {
+    if (sendApp && otaServer.arg("slow") != "1") {
+        // Быстрый режим возит только прошивку: в нём узел уходит на FSK и глохнет ко всей
+        // сети, а кончается сессия перезагрузкой. Пакету это не нужно, и ядро такую сессию
+        // всё равно отвергнет — отказываем раньше и внятнее.
+        otaServer.send(400, "text/plain; charset=utf-8", "пакет едет только медленным режимом");
+        return;
+    }
+    if (!sendApp && !otaFwReady) {
         slog("[WEB] /ota/start: нет .otaz на боте\n");
         otaServer.send(400, "text/plain", "нет .otaz на боте");
         return;
@@ -1184,7 +1271,7 @@ void otaHandleStartOta() {
     // было проверить: иначе он испытывается только на тех узлах, до которых иначе не
     // дотянуться, то есть ровно тогда, когда что-то уже сломалось.
     if (otaServer.arg("slow") == "1") {
-        if (!otaStartSessionSlow(target)) {
+        if (!otaStartSessionSlow(target, sendApp ? OTA_KIND_PACKAGE : OTA_KIND_FIRMWARE)) {
             slog("[WEB] /ota/start?slow: отклонён: %s\n", otaLastErr[0] ? otaLastErr : "нельзя");
             otaServer.send(409, "text/plain; charset=utf-8",
                            otaLastErr[0] ? otaLastErr : "медленный режим начать нельзя");
@@ -1353,6 +1440,18 @@ void setupOtaServer() {
                      }
                  }),
                  otaHandleSaveFw);
+    // Пакет приложения: тот же способ, что у прошивки, — заливка в LittleFS, отправка
+    // медленной сессией через /ota/start?kind=app&slow=1.
+    otaServer.on("/apps/save", HTTP_POST, webAuth([]() {
+                     if (appSaveOk) {
+                         otaServer.send(200, "text/plain", "OK");
+                     } else {
+                         otaServer.send(200, "text/plain; charset=utf-8",
+                                        otaSlowOn ? "FAIL: идёт медленная сессия"
+                                                  : "FAIL: не пакет .tapp или не записалось");
+                     }
+                 }),
+                 otaHandleSaveApp);
     otaServer.on("/ota/start", HTTP_POST, webAuth(otaHandleStartOta));
     otaServer.on("/ota/abort", HTTP_POST, webAuth(otaHandleAbort));
     otaServer.on("/ota/status", HTTP_GET, webAuth(otaHandleStatus));
