@@ -20,6 +20,14 @@ jobs:
       run:
         working-directory: meshcore-fork
     steps:
+      # Общий линт-конвейер: .clang-format, .clang-format-ignore и цели make. Один источник правды
+      # для обеих прошивок и для машины разработчика — раньше этих файлов в CI не было
+      # вовсе, и clang-format брал бы стиль LLVM по умолчанию. Идёт первым: кладётся в
+      # корень workspace, остальные репозитории ложатся подкаталогами рядом.
+      - uses: actions/checkout@v4
+        with:
+          repository: Tr1glav/mesh-network-lint
+
       - uses: actions/checkout@v4
         with:
           path: meshcore-fork
@@ -75,20 +83,26 @@ jobs:
 
       # Линтинг до сборки: форматирование C++/Python и синтаксис Python.
       # clang-tidy нужен compile_commands.json — он появляется после pio run, поэтому ниже.
+      # Из pip, а не apt: apt на раннере требует sudo, без него шаг падал с «Could not
+      # open lock file», и ни один релиз после v0.5.28 не доехал. Версия clang-format
+      # закреплена и совпадает с локальной — иначе CI и `make format` спорят о
+      # расстановке трейлинг-комментариев, а это 244 строки на 33 файлах.
       - name: Установка линтеров
-        run: |
-          pip install ruff
-          apt-get update && apt-get install -y clang-format-18
+        run: pip install ruff clang-format==22.1.8
+
+      # Проверки — те же цели make, что и локально. Прежние шаги перечисляли пути сами, от
+      # корня workspace, а выполнялись из каталога прошивки (defaults.run.working-directory):
+      # глоб не совпадал ни с чем, цикл for не выполнялся ни разу, и проверка форматирования
+      # молча не проверяла ничего. Держать список файлов в двух местах больше нечем.
       - name: C++ format check
-        run: |
-          for f in mesh-network-core/src/*.cpp mesh-network-core/include/*.h \
-                   meshcore-fork/lib/meshcore/src/*.cpp meshcore-fork/lib/meshcore/include/*.h; do
-            clang-format-18 --dry-run --Werror "$f" || { echo "FAIL: $f"; exit 1; }
-          done
+        run: make format-cpp-check
+        working-directory: ${{ github.workspace }}
       - name: Python format check
-        run: ruff format --check mesh-network-tools/
+        run: make format-py-check
+        working-directory: ${{ github.workspace }}
       - name: Python lint
-        run: ruff check mesh-network-tools/
+        run: make lint-py
+        working-directory: ${{ github.workspace }}
 
       # Проверки на хосте: границы буферов с санитайзерами, формат .otaz, сканер маркера
       # платы, синтаксис страницы. Им нужны g++ и node — на ubuntu-latest они есть.
@@ -110,18 +124,25 @@ jobs:
         run: pio run
 
       # clang-tidy после сборки: нужен compile_commands.json, который появляется после pio run.
+      # sudo обязателен: без него apt падает на блокировке /var/lib/apt/lists.
+      # clang нужен самому tools/clang_tidy.py — он спрашивает у него, какие флаги из
+      # базы PlatformIO (она собрана для xtensa-gcc) clang понимает.
       - name: Установка clang-tidy
-        run: apt-get install -y clang-tidy
+        run: sudo apt-get update && sudo apt-get install -y clang-tidy clang
+
+      # pio run сам compile_commands.json не пишет — нужен отдельный target. Прежний шаг
+      # искал его по пути .pio/build/tdeck (это вообще из workflow другой прошивки),
+      # не находил и печатал «not found», то есть clang-tidy не запускался никогда.
+      - name: База компиляции для clang-tidy
+        env:
+          NOGIT: '1'
+        run: pio run -t compiledb
+
+      # Замечания печатаются, но сборку не валят — как и `make lint-cpp` локально.
+      # Повесить на них красный CI сейчас нельзя: их больше тысячи, и это отдельная работа.
       - name: Lint C++ (clang-tidy)
-        run: |
-          if [ -f meshcore-fork/.pio/build/tdeck/compile_commands.json ]; then
-            for f in mesh-network-core/src/*.cpp mesh-network-core/include/*.h \
-                     meshcore-fork/lib/meshcore/src/*.cpp meshcore-fork/lib/meshcore/include/*.h; do
-              clang-tidy -p meshcore-fork/.pio/build/tdeck "$f" 2>&1 || { echo "FAIL: $f"; exit 1; }
-            done
-          else
-            echo "clang-tidy: compile_commands.json not found"
-          fi
+        run: make lint-cpp
+        working-directory: ${{ github.workspace }}
 
       - name: Версия из version.txt
         id: ver
