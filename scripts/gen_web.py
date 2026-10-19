@@ -22,7 +22,8 @@ def gz(data):
 
 out = ["// Сгенерировано scripts/gen_web.py из web/ — не править", "#pragma once", ""]
 for path, name in SRC:
-    raw = open(os.path.join(PROJECT_DIR, path), "rb").read()
+    with open(os.path.join(PROJECT_DIR, path), "rb") as fh:
+        raw = fh.read()
     packed = gz(raw)
     rows = ",".join(f"0x{b:02x}" for b in packed)
     out.append(f"// {path}: {len(raw)} -> {len(packed)} байт")

@@ -23,6 +23,7 @@
     GIT=0 pio run               не трогать git в этой сборке
     NOGIT=1 pio run             то же; обязательно в CI, иначе push перезапустит workflow
 """
+
 import argparse
 import os
 import pathlib
@@ -40,9 +41,21 @@ FORBIDDEN = ("secrets.ini", "secrets.json", ".env", "firmware_output/", "build_i
 # git add -A, и в публичный репозиторий уехал бы ЛЮБОЙ файл, случайно оказавшийся в дереве —
 # дамп, выгрузка логов, заметка с паролем. Чёрный список ниже поймал бы только пять имён,
 # которые в него вписаны; этот — пропускает только то, что действительно является исходником.
-ALLOW_NEW = ("src/", "lib/", "web/", "scripts/", "boards/", "variants/",
-             ".github/", "platformio.ini", "version.txt", "core.ref", "README.md",
-             "secrets.example.json", ".gitignore")
+ALLOW_NEW = (
+    "src/",
+    "lib/",
+    "web/",
+    "scripts/",
+    "boards/",
+    "variants/",
+    ".github/",
+    "platformio.ini",
+    "version.txt",
+    "core.ref",
+    "README.md",
+    "secrets.example.json",
+    ".gitignore",
+)
 
 
 def core_pin_covers_local():
@@ -61,11 +74,12 @@ def core_pin_covers_local():
     try:
         pinned = (ROOT / "core.ref").read_text().split()[0]
     except (OSError, IndexError):
-        return True, ""                      # нет пина — нечему расходиться
+        return True, ""  # нет пина — нечему расходиться
     if not (core / ".git").exists():
-        return True, ""                      # ядра рядом нет: в CI так и бывает
-    r = subprocess.run(["git", "describe", "--tags", "--always", "--dirty"],
-                       cwd=str(core), capture_output=True, text=True)
+        return True, ""  # ядра рядом нет: в CI так и бывает
+    r = subprocess.run(
+        ["git", "describe", "--tags", "--always", "--dirty"], cwd=str(core), capture_output=True, text=True
+    )
     actual = (r.stdout or "").strip()
     if not actual or actual == pinned:
         return True, ""
@@ -75,8 +89,7 @@ def core_pin_covers_local():
 
 
 def git(*args, check=True):
-    r = subprocess.run(["git", *args], cwd=str(ROOT), check=False, text=True,
-                       capture_output=True)
+    r = subprocess.run(["git", *args], cwd=str(ROOT), check=False, text=True, capture_output=True)
     if check and r.returncode != 0:
         sys.exit(f"git {' '.join(args)}: {(r.stderr or r.stdout).strip()}")
     return (r.stdout or "").strip()
@@ -84,8 +97,14 @@ def git(*args, check=True):
 
 def git_try(*args):
     """Сетевые операции не должны ронять сборку: нет сети — просто сообщаем."""
-    r = subprocess.run(["git", *args], cwd=str(ROOT), check=False, text=True,
-                       capture_output=True, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    r = subprocess.run(
+        ["git", *args],
+        cwd=str(ROOT),
+        check=False,
+        text=True,
+        capture_output=True,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
     return r.returncode == 0, ((r.stderr or r.stdout).strip().splitlines() or [""])[-1]
 
 
@@ -97,19 +116,19 @@ def git_try(*args):
 # просто молчали. Версия ядра видна по core.ref.
 AREAS = (
     ("lib/meshcore/src/companion", "компаньон"),
-    ("lib/meshcore/src/mqtt",      "MQTT"),
-    ("lib/meshcore/src/support",   "прошивальщик"),
-    ("lib/meshcore/src/fwupdate",  "автообновление"),
-    ("lib/meshcore/src/display",   "экран"),
-    ("lib/meshcore/src/web",       "страница"),
-    ("lib/meshcore/",              "прошивка"),
-    ("core.ref",                   "версия ядра"),
-    ("src/main.cpp",               "главный цикл"),
-    ("web/",                       "страница"),
-    ("scripts/",                   "скрипты"),
-    (".github/",                   "сборка"),
-    ("platformio.ini",             "сборка"),
-    ("README",                     "документация"),
+    ("lib/meshcore/src/mqtt", "MQTT"),
+    ("lib/meshcore/src/support", "прошивальщик"),
+    ("lib/meshcore/src/fwupdate", "автообновление"),
+    ("lib/meshcore/src/display", "экран"),
+    ("lib/meshcore/src/web", "страница"),
+    ("lib/meshcore/", "прошивка"),
+    ("core.ref", "версия ядра"),
+    ("src/main.cpp", "главный цикл"),
+    ("web/", "страница"),
+    ("scripts/", "скрипты"),
+    (".github/", "сборка"),
+    ("platformio.ini", "сборка"),
+    ("README", "документация"),
 )
 
 
@@ -131,8 +150,9 @@ def version():
 
 def main():
     ap = argparse.ArgumentParser(description="коммит, отправка и релизная ветка")
-    ap.add_argument("--release", action="store_true",
-                    help="создать ветку release/v<версия> — она запускает выкладку в Actions")
+    ap.add_argument(
+        "--release", action="store_true", help="создать ветку release/v<версия> — она запускает выкладку в Actions"
+    )
     ap.add_argument("--no-push", action="store_true", help="не отправлять на origin")
     ap.add_argument("--dry-run", action="store_true", help="только показать план")
     ap.add_argument("-m", "--message", help="описание коммита")
@@ -147,8 +167,7 @@ def main():
     skipped = []
     # core.quotepath=false: иначе git печатает кириллицу в именах восьмеричными кодами,
     # и строка «этот файл не добавлен» становится нечитаемой ровно тогда, когда нужна.
-    for f in git("-c", "core.quotepath=false", "ls-files", "--others",
-                 "--exclude-standard").splitlines():
+    for f in git("-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard").splitlines():
         if f.startswith(ALLOW_NEW):
             git("add", "--", f)
         else:
@@ -200,8 +219,10 @@ def main():
     covered, why = core_pin_covers_local()
     if not covered:
         print("[release] отправка ОТМЕНЕНА: " + why)
-        print("[release] CI собирает прошивку по core.ref, а не по рабочему дереву. Выпустите "
-              "ядро тегом и переведите core.ref на него — тогда отправляйте.")
+        print(
+            "[release] CI собирает прошивку по core.ref, а не по рабочему дереву. Выпустите "
+            "ядро тегом и переведите core.ref на него — тогда отправляйте."
+        )
         return
 
     ok, msg = git_try("push", "-u", "origin", branch)

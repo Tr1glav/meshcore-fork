@@ -19,6 +19,7 @@
 Устройство — ключ из раздела "devices" файла secrets.json.
 Порт: берётся из "port" устройства, иначе --port, иначе автоопределение.
 """
+
 import argparse
 import json
 import os
@@ -38,6 +39,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 PROJECT = ROOT
 SECRETS = ROOT / "secrets.json"
 BAUD = 115200
+
 
 # ===== Сколько ждать ответ консоли настроек =====
 # Главный цикл прошивки на время передачи стоит ЦЕЛИКОМ: radio.transmit() блокирующий, а
@@ -66,11 +68,13 @@ def console_reply_timeout(core_dir=None, floor=15.0):
         txt = (core / "include" / "config.h").read_text(encoding="utf-8")
     except OSError:
         return floor
+
     def val(name):
         m = re.search(r"(?m)^#define\s+%s\s+(\d+)" % name, txt)
         if not m:
             raise KeyError(name)
         return int(m.group(1))
+
     try:
         repeats = val("FLOOD_REPEATS")
         tx_worst = val("CAD_WAIT_BUDGET_MS") + val("FRAME_AIRTIME_MS")
@@ -94,16 +98,40 @@ def refused(buf):
 
 # Какие поля отправлять устройству в зависимости от роли. Сенсору WiFi и MQTT не нужны:
 # он живёт только на радио, и лишние поля только занимали бы место в NVS.
-RADIO_FIELDS = ["lora_freq", "lora_bw", "lora_sf", "lora_cr", "lora_tx",
-                "lora_pre", "lora_sync", "tz", "disp_bri", "vext_on"]
+RADIO_FIELDS = [
+    "lora_freq",
+    "lora_bw",
+    "lora_sf",
+    "lora_cr",
+    "lora_tx",
+    "lora_pre",
+    "lora_sync",
+    "tz",
+    "disp_bri",
+    "vext_on",
+]
 ROLE_FIELDS = {
     # web_pass — пароль страницы узла, api_key — общий ключ запросов между узлами по сети
     # (координатор <-> прошивальщик). Оба поля есть у всех, у кого есть страница; узлу без
     # WiFi они не нужны. Ключ обязан совпадать у координатора и прошивальщика — потому и
     # лежит в common.
-    "bot": ["name", "wifi_ssid", "wifi_pass", "mqtt_host", "mqtt_port",
-            "mqtt_user", "mqtt_pass", "prv_name", "prv_key", "sns_name", "sns_key",
-            "tx_ch", "web_pass", "api_key"] + RADIO_FIELDS,
+    "bot": [
+        "name",
+        "wifi_ssid",
+        "wifi_pass",
+        "mqtt_host",
+        "mqtt_port",
+        "mqtt_user",
+        "mqtt_pass",
+        "prv_name",
+        "prv_key",
+        "sns_name",
+        "sns_key",
+        "tx_ch",
+        "web_pass",
+        "api_key",
+    ]
+    + RADIO_FIELDS,
     "sensor": ["name", "sns_name", "sns_key"] + RADIO_FIELDS,
     # Прошивальщик — сенсорный узел, у которого есть WiFi и своя страница: он ведёт сессии
     # прошивки к узлам, до которых координатор не дотягивается. Роль была в secrets.json, но
@@ -112,8 +140,8 @@ ROLE_FIELDS = {
     # coord_ip — адрес координатора: прошивальщик отмечается у него сам, по сети (POST
     # /support), и в эфире их служебного обмена больше нет вовсе. Без этого поля отметка
     # уходить некуда, и координатор о прошивальщике не узнает.
-    "support": ["name", "wifi_ssid", "wifi_pass", "sns_name", "sns_key",
-                "coord_ip", "web_pass", "api_key"] + RADIO_FIELDS,
+    "support": ["name", "wifi_ssid", "wifi_pass", "sns_name", "sns_key", "coord_ip", "web_pass", "api_key"]
+    + RADIO_FIELDS,
     # Компаньон — сенсорный узел плюс BLE для телефонного приложения. Приватный канал
     # ему тоже нужен: в приложении это обычный чат, и без ключа его попросту не видно.
     "companion": ["name", "prv_name", "prv_key", "sns_name", "sns_key"] + RADIO_FIELDS,
@@ -122,11 +150,16 @@ SECRET_FIELDS = {"wifi_pass", "mqtt_pass", "prv_key", "sns_key", "web_pass", "ap
 
 # Соответствие старых build-флагов полям конфига — для import-ini
 INI_MAP = {
-    "WIFI_SSID": "wifi_ssid", "WIFI_PASS": "wifi_pass",
-    "MQTT_BROKER": "mqtt_host", "MQTT_PORT": "mqtt_port",
-    "MQTT_USER": "mqtt_user", "MQTT_PASS": "mqtt_pass",
-    "PRIVATE_CHANNEL_NAME": "prv_name", "PRIVATE_CHANNEL_KEY": "prv_key",
-    "SENSOR_CHANNEL_NAME": "sns_name", "SENSOR_CHANNEL_KEY": "sns_key",
+    "WIFI_SSID": "wifi_ssid",
+    "WIFI_PASS": "wifi_pass",
+    "MQTT_BROKER": "mqtt_host",
+    "MQTT_PORT": "mqtt_port",
+    "MQTT_USER": "mqtt_user",
+    "MQTT_PASS": "mqtt_pass",
+    "PRIVATE_CHANNEL_NAME": "prv_name",
+    "PRIVATE_CHANNEL_KEY": "prv_key",
+    "SENSOR_CHANNEL_NAME": "sns_name",
+    "SENSOR_CHANNEL_KEY": "sns_key",
     "TX_CHANNEL": "tx_ch",
 }
 
@@ -139,11 +172,13 @@ def mask(field, value):
 
 def load_secrets():
     if not SECRETS.exists():
-        sys.exit(f"нет {SECRETS.name} — создайте его из secrets.example.json "
-                 f"или выполните: python3 scripts/provision.py import-ini")
+        sys.exit(
+            f"нет {SECRETS.name} — создайте его из secrets.example.json "
+            f"или выполните: python3 scripts/provision.py import-ini"
+        )
     data = json.loads(SECRETS.read_text(encoding="utf-8"))
     if "devices" not in data:
-        sys.exit("в secrets.json нет раздела \"devices\"")
+        sys.exit('в secrets.json нет раздела "devices"')
     return data
 
 
@@ -161,14 +196,12 @@ def device_config(data, key):
                 dev, key = v, k
                 break
     if dev is None:
-        sys.exit(f"устройства '{key}' нет в secrets.json; есть: "
-                 + ", ".join(sorted(devices)))
+        sys.exit(f"устройства '{key}' нет в secrets.json; есть: " + ", ".join(sorted(devices)))
     role = dev.get("role")
     if role not in ROLE_FIELDS:
-        sys.exit(f"у устройства '{key}' роль должна быть одной из: "
-                 + ", ".join(sorted(ROLE_FIELDS)))
+        sys.exit(f"у устройства '{key}' роль должна быть одной из: " + ", ".join(sorted(ROLE_FIELDS)))
     merged = dict(data.get("common", {}))
-    merged["name"] = dev.get("name", key)   # имя узла = ключ, если явно не задано иное
+    merged["name"] = dev.get("name", key)  # имя узла = ключ, если явно не задано иное
     merged.update({k: v for k, v in dev.items() if k not in ("role", "env", "port")})
     fields = dev.get("fields") or ROLE_FIELDS[role]
     # Только то, что реально задано в secrets.json: отсутствующее поле оставляем на плате
@@ -249,7 +282,7 @@ def wait_for_port(path, timeout=30.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
         if os.path.exists(path):
-            time.sleep(0.7)   # дать системе доинициализировать устройство
+            time.sleep(0.7)  # дать системе доинициализировать устройство
             return True
         time.sleep(0.3)
     return False
@@ -316,15 +349,14 @@ def do_config(port, values, quiet=False, force=False):
         # ушла бы в никуда. Заодно сразу видно прошивку без консоли настроек.
         # Читаем с секретами, чтобы сверка была точной: пароль той же длины, но другой,
         # иначе молча остался бы старым. В вывод скрипта значения всё равно не попадают.
-        drain_until_quiet(ser)   # дать плате договорить загрузочный вывод
+        drain_until_quiet(ser)  # дать плате договорить загрузочный вывод
         ok, probe = talk(ser, "show all", "настроено:")
         if not ok:
-            reset_board(ser)   # не отвечает — перезагружаем и ждём баннер
+            reset_board(ser)  # не отвечает — перезагружаем и ждём баннер
             drain_until_quiet(ser)
             ok, probe = talk(ser, "show all", "настроено:")
         if not ok:
-            print("  консоль настроек не отвечает: плата не загрузилась "
-                  "или на ней прошивка без поддержки настроек")
+            print("  консоль настроек не отвечает: плата не загрузилась или на ней прошивка без поддержки настроек")
             return False
 
         current = parse_show(probe)
@@ -369,16 +401,17 @@ def do_config(port, values, quiet=False, force=False):
                 print(f"  {field}: ОШИБКА — устройство не подтвердило ({action})")
                 print("  ответ:", buf.strip().splitlines()[-1] if buf.strip() else "(пусто)")
                 if "[TX]" in buf and not refused(buf):
-                    print("  в ответе лог передачи: плата была в эфире, и консоль команду "
-                          "не читала. Это занятость, а не отказ.")
+                    print(
+                        "  в ответе лог передачи: плата была в эфире, и консоль команду "
+                        "не читала. Это занятость, а не отказ."
+                    )
                 # Молчание НЕ означает, что команда не дошла: плата могла прочитать её и
                 # ответить позже, уже после таймаута. Тогда поле применено в ОЗУ, а в NVS
                 # не записано (save не дошёл), и узел продолжает работать с половиной новых
                 # настроек — невидимо, до следующего сброса. Так и вышло 5 октября 2026:
                 # после «не подтвердило» плата показывала новое значение, а в NVS лежало
                 # старое. Перезагрузка возвращает её к сохранённому состоянию.
-                print("  перезагружаю плату: применённое в ОЗУ сбрасывается, "
-                      "в NVS остаётся прежнее")
+                print("  перезагружаю плату: применённое в ОЗУ сбрасывается, в NVS остаётся прежнее")
                 ser.write(b"reboot\n")
                 ser.flush()
                 return False
@@ -446,8 +479,9 @@ def do_verify(port, values):
         if kind == "len":
             # секретное поле: сверяем длину, значение с платы не читаем
             good = data == len(value.encode())
-            print(f"  {field}: {'ок' if good else 'РАСХОЖДЕНИЕ'} (на плате {data} симв., "
-                  f"ожидалось {len(value.encode())})")
+            print(
+                f"  {field}: {'ок' if good else 'РАСХОЖДЕНИЕ'} (на плате {data} симв., ожидалось {len(value.encode())})"
+            )
         else:
             good = same_value(data, value)
             if good:
@@ -456,8 +490,11 @@ def do_verify(port, values):
                 print(f"  {field}: РАСХОЖДЕНИЕ (на плате {data!r}, ожидалось {value!r})")
         if not good:
             bad += 1
-    print("  устройство считает себя настроенным" if "настроено: да" in buf
-          else "  ВНИМАНИЕ: устройство считает себя ненастроенным")
+    print(
+        "  устройство считает себя настроенным"
+        if "настроено: да" in buf
+        else "  ВНИМАНИЕ: устройство считает себя ненастроенным"
+    )
     return bad == 0
 
 
@@ -524,14 +561,13 @@ def cmd_flash(args):
         sys.exit(f"у устройства '{args.device}' не задано окружение (env)")
     port = pick_port(dev, args)
     print(f"[сборка] {env} -> {port} (проект {PROJECT})")
-    rc = subprocess.call(["pio", "run", "-e", env, "-t", "upload", "--upload-port", port],
-                         cwd=str(PROJECT))
+    rc = subprocess.call(["pio", "run", "-e", env, "-t", "upload", "--upload-port", port], cwd=str(PROJECT))
     if rc != 0:
         sys.exit("прошивка не удалась")
     print("[ожидание] порт возвращается после перезагрузки...")
     if not wait_for_port(port):
         sys.exit(f"порт {port} не появился — подключите плату и запустите config")
-    time.sleep(2.0)   # дать прошивке пройти инициализацию радио и экрана
+    time.sleep(2.0)  # дать прошивке пройти инициализацию радио и экрана
     if not do_config(port, values, force=args.force):
         sys.exit(1)
     print("[ожидание] перезагрузка после сохранения...")
@@ -558,15 +594,16 @@ def main():
     p = sub.add_parser("import-ini", help="создать secrets.json из secrets.ini")
     p.add_argument("--force", action="store_true", help="перезаписать существующий файл")
     p.set_defaults(func=cmd_import_ini)
-    for name, fn, help_text in (("show", cmd_show, "что будет записано"),
-                                ("config", cmd_config, "только настроить"),
-                                ("flash", cmd_flash, "собрать, прошить и настроить"),
-                                ("verify", cmd_verify, "сверить настройки с платой")):
+    for name, fn, help_text in (
+        ("show", cmd_show, "что будет записано"),
+        ("config", cmd_config, "только настроить"),
+        ("flash", cmd_flash, "собрать, прошить и настроить"),
+        ("verify", cmd_verify, "сверить настройки с платой"),
+    ):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("device", help="имя узла из secrets.json")
         if name in ("config", "flash"):
-            p.add_argument("--force", action="store_true",
-                           help="записать все поля, даже совпадающие")
+            p.add_argument("--force", action="store_true", help="записать все поля, даже совпадающие")
         p.set_defaults(func=fn)
     args = ap.parse_args()
     if args.project:

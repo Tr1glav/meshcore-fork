@@ -3,6 +3,7 @@ import re
 import shutil
 import struct
 import zlib
+
 Import("env")
 
 # Сколько последних версий хранить для каждой платы
@@ -52,8 +53,7 @@ def copy_firmware(source, target, env):
         # lib/meshcore/include/config.h: [OTAZ][размер образа 4B LE][CRC32 образа 4B LE][zlib]
         with open(firmware_path, "rb") as fh:
             raw = fh.read()
-        packed = (b"OTAZ" + struct.pack("<II", len(raw), zlib.crc32(raw) & 0xFFFFFFFF)
-                  + zlib.compress(raw, 9))
+        packed = b"OTAZ" + struct.pack("<II", len(raw), zlib.crc32(raw) & 0xFFFFFFFF) + zlib.compress(raw, 9)
         path = base + ".otaz"
         with open(path, "wb") as fh:
             fh.write(packed)
@@ -82,6 +82,7 @@ def copy_firmware(source, target, env):
     if os.environ.get("NOGIT") != "1" and os.environ.get("GIT") != "0":
         import subprocess
         import sys
+
         script = os.path.join(env.subst("$PROJECT_DIR"), "scripts", "release.py")
         cmd = [sys.executable, script]
         if os.environ.get("RELEASE") == "1":

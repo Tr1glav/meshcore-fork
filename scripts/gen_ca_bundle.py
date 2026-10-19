@@ -26,6 +26,7 @@ lib/meshcore/include/ca_bundle.h. Файл попадает в git: в нём т
 работающем устройстве можно настройкой: set tls_check 0 (это аварийный выход на случай
 смены корневого сертификата, а не рабочий режим).
 """
+
 import argparse
 import pathlib
 import socket
@@ -47,13 +48,18 @@ DEFAULT_HOSTS = [
 
 def chain_root(host, port=443, timeout=10):
     """Корень цепочки сертификатов хоста, взятый из хранилища этой машины."""
-    ctx = ssl.create_default_context()          # системное хранилище, проверка включена
-    with socket.create_connection((host, port), timeout=timeout) as raw:
-        with ctx.wrap_socket(raw, server_hostname=host) as tls:
-            if not hasattr(tls, "get_verified_chain"):
-                sys.exit("нужен Python 3.13+ (нет SSLSocket.get_verified_chain)")
-            chain = tls.get_verified_chain()
-            leaf = tls.getpeercert()
+    ctx = ssl.create_default_context()  # системное хранилище, проверка включена
+    # Один with на два менеджера вместо вложенных: сокет закрывается в любом случае, а
+    # отступ не растёт. Скобочную форму расставил ruff format — она принимается с 3.9
+    # (PEG-парсер), в CI стоит 3.11/3.12, да и сам скрипт ниже требует 3.13+.
+    with (
+        socket.create_connection((host, port), timeout=timeout) as raw,
+        ctx.wrap_socket(raw, server_hostname=host) as tls,
+    ):
+        if not hasattr(tls, "get_verified_chain"):
+            sys.exit("нужен Python 3.13+ (нет SSLSocket.get_verified_chain)")
+        chain = tls.get_verified_chain()
+        leaf = tls.getpeercert()
     if not chain:
         raise RuntimeError("сервер не отдал цепочку сертификатов")
     # Последний элемент проверенной цепочки — доверенный корень
@@ -64,8 +70,10 @@ def subject_of(pem):
     """Человекочитаемое имя сертификата — только для вывода в консоль."""
     try:
         import subprocess
-        r = subprocess.run(["openssl", "x509", "-noout", "-subject"],
-                           input=pem, capture_output=True, text=True, check=False)
+
+        r = subprocess.run(
+            ["openssl", "x509", "-noout", "-subject"], input=pem, capture_output=True, text=True, check=False
+        )
         line = (r.stdout or "").strip()
         if line:
             return line.replace("subject=", "").strip()
@@ -85,7 +93,7 @@ def main():
     for host in hosts:
         try:
             pem, leaf = chain_root(host)
-        except Exception as e:                  # noqa: BLE001 — причина важна пользователю
+        except Exception as e:  # noqa: BLE001 — причина важна пользователю
             bad.append(f"{host}: {e}")
             print(f"  {host}: НЕ УДАЛОСЬ — {e}")
             continue
